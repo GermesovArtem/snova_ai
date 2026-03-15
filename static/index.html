@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NanoBanana Admin Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        .hidden { display: none; }
+        input, button { padding: 10px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #007bff; color: white; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .nav-link { margin-right: 15px; color: #007bff; cursor: pointer; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div id="login-container" class="container">
+    <h1>Login</h1>
+    <input type="text" id="username" placeholder="Username" required><br>
+    <input type="password" id="password" placeholder="Password" required><br>
+    <button onclick="login()">Login</button>
+    <p id="login-error" style="color:red;"></p>
+</div>
+
+<div id="dashboard-container" class="container hidden">
+    <h1>Admin Dashboard</h1>
+    <nav>
+        <span class="nav-link" onclick="loadUsers()">Users</span>
+        <span class="nav-link" onclick="loadTransactions()">Transactions</span>
+        <span class="nav-link" onclick="loadPayouts()">Payouts</span>
+        <span class="nav-link" onclick="logout()" style="color:red;">Logout</span>
+    </nav>
+    <hr>
+    <div id="content-area"></div>
+</div>
+
+<script>
+    const API_BASE = window.location.origin;
+    let token = localStorage.getItem('admin_token');
+
+    if (token) showDashboard();
+
+    async function login() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const fd = new URLSearchParams();
+        fd.append('username', u);
+        fd.append('password', p);
+
+        const res = await fetch(`${API_BASE}/admin/token`, { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: fd });
+        if (res.ok) {
+            const data = await res.json();
+            token = data.access_token;
+            localStorage.setItem('admin_token', token);
+            showDashboard();
+        } else {
+            document.getElementById('login-error').innerText = 'Invalid credentials';
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('admin_token');
+        token = null;
+        document.getElementById('login-container').classList.remove('hidden');
+        document.getElementById('dashboard-container').classList.add('hidden');
+    }
+
+    function showDashboard() {
+        document.getElementById('login-container').classList.add('hidden');
+        document.getElementById('dashboard-container').classList.remove('hidden');
+        loadUsers();
+    }
+
+    async function fetchApi(path, options={}) {
+        options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+        const res = await fetch(`${API_BASE}${path}`, options);
+        if (res.status === 401) logout();
+        return res.json();
+    }
+
+    async function changeBalance(telegramId) {
+        let amount = prompt("Enter amount to ADD to balance (use minus to subtract):", "0");
+        if (amount && !isNaN(amount)) {
+            await fetchApi(`/admin/users/${telegramId}/balance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: parseFloat(amount) })
+            });
+            loadUsers();
+        }
+    }
+
+    async function loadUsers() {
+        const users = await fetchApi('/admin/users');
+        let html = '<h2>Users</h2><table><tr><th>ID</th><th>TG_ID</th><th>Username</th><th>Balance</th><th>Frozen</th><th>Actions</th></tr>';
+        users.forEach(u => {
+            html += `<tr><td>${u.id}</td><td>${u.telegram_id}</td><td>${u.username||'-'}</td><td>${u.balance}</td><td>${u.frozen_balance||0}</td>
+            <td><button onclick="changeBalance(${u.telegram_id})">+/- Balance</button></td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('content-area').innerHTML = html;
+    }
+
+    async function loadTransactions() {
+        const txs = await fetchApi('/admin/transactions');
+        let html = '<h2>Transactions (Logs)</h2><table><tr><th>ID</th><th>User ID</th><th>Amount</th><th>Type</th><th>Status</th><th>Date</th></tr>';
+        txs.forEach(t => {
+            html += `<tr><td>${t.id}</td><td>${t.user_id}</td><td>${t.amount}</td><td>${t.type}</td><td>${t.status}</td><td>${t.created_at}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('content-area').innerHTML = html;
+    }
+
+    async function updatePayout(id, status) {
+        await fetchApi(`/admin/payouts/${id}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        loadPayouts();
+    }
+
+    async function loadPayouts() {
+        const payouts = await fetchApi('/admin/payouts');
+        let html = '<h2>Payouts</h2><table><tr><th>ID</th><th>User ID</th><th>Amount</th><th>Requisites</th><th>Status</th><th>Actions</th></tr>';
+        payouts.forEach(p => {
+            html += `<tr><td>${p.id}</td><td>${p.user_id}</td><td>${p.amount}</td><td>${p.requisites}</td><td>${p.status}</td><td>`;
+            if (p.status === 'pending') {
+                html += `<button onclick="updatePayout(${p.id}, 'completed')">Approve</button>
+                         <button onclick="updatePayout(${p.id}, 'rejected')" style="background:red;">Reject</button>`;
+            }
+            html += `</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('content-area').innerHTML = html;
+    }
+</script>
+</body>
+</html>
