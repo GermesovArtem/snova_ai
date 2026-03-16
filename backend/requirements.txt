@@ -1,5 +1,16 @@
+# Backend
+fastapi
+uvicorn
+sqlalchemy[asyncio]
+asyncpg
+pydantic-settings
+pyjwt
+python-multipart
+yookassa
+pytz
+
+# Bot
 aiogram>=3.3.0
 aiohttp>=3.9.1
-aiosqlite>=0.20.0
 python-dotenv>=1.0.0
 deep-translator>=1.11.4

@@ -1,0 +1,29 @@
+import asyncio
+from backend.database import SessionLocal, engine, Base
+from backend.models.setting import SettingDB
+
+async def init_settings():
+    async with engine.begin() as conn:
+        # Убедимся, что таблицы созданы
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with SessionLocal() as session:
+        default_settings = {
+            "cost_nanobanana": "1",
+            "cost_nanobanana_2": "3",
+            "cost_nanobanana_pro": "4",
+            "start_balance": "5"
+        }
+        
+        for key, value in default_settings.items():
+            # Проверяем, нет ли уже такой настройки
+            from sqlalchemy import select
+            res = await session.execute(select(SettingDB).filter_by(key=key))
+            if not res.scalars().first():
+                session.add(SettingDB(key=key, value=value))
+        
+        await session.commit()
+        print("✅ Базовые настройки успешно добавлены в БД.")
+
+if __name__ == "__main__":
+    asyncio.run(init_settings())

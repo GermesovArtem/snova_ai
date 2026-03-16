@@ -3,7 +3,7 @@ import aiohttp
 from typing import Tuple, Optional, Any
 import logging
 
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = "http://api:8000"
 
 async def add_balance(telegram_id: int, amount: float) -> Optional[float]:
     async with aiohttp.ClientSession() as session:

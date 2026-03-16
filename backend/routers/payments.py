@@ -34,7 +34,7 @@ async def create_payment(request: CreatePaymentRequest):
         },
         "confirmation": {
             "type": "redirect",
-            "return_url": "https://t.me/your_bot_name" # Твой бот
+            "return_url": "https://t.me/snovananobananabot" # Твой бот
         },
         "capture": True,
         "description": request.description,
