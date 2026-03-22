@@ -34,6 +34,13 @@ def get_available_models():
     except:
         return {"NanoBanana": "nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
 
+def get_model_costs():
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    try:
+        return json.loads(costs_str)
+    except:
+        return {"nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+
 def get_credit_packs():
     packs_str = os.getenv("CREDIT_PACKS", '{"149": 10}')
     try:
@@ -41,16 +48,42 @@ def get_credit_packs():
     except:
         return {"149": 10}
 
+def generate_model_menu_text(balance: float, current_mm: str):
+    models = get_available_models()
+    human_name = next((name for name, mm in models.items() if mm == current_mm), current_mm)
+    
+    return (
+        f"🤖 **Управление нейросетями**\n\n"
+        f"Активная ИИ-модель: **{human_name}**\n\n"
+        f"**Standard** (Базовая версия)\n"
+        f"• Стоимость: **1 генерация**\n"
+        f"• Качество: Отличное базовое\n"
+        f"• Скорость: Моментальная\n\n"
+        f"🆕 **Nano Banana 2** (Продвинутая)\n"
+        f"• Стоимость: **3 генерации**\n"
+        f"• Разрешение: Ультра-высокое (4K)\n"
+        f"• Понимает современные тренды и мемы\n"
+        f"• Поддерживает несколько картинок-референсов\n"
+        f"• Идеально для дизайна соцсетей и стильных артов\n\n"
+        f"**Pro** (Профессиональная)\n"
+        f"• Стоимость: **4 генерации**\n"
+        f"• Разрешение: Максимальное (4K+)\n"
+        f"• Безупречная прорисовка мельчайших деталей\n"
+        f"• Идеально ровно пишет текст на картинках\n"
+        f"• Лучший выбор для сложного фотореализма\n\n"
+        f"💰 На вашем счете: **{int(balance)} генераций**"
+    )
+
 def build_main_kb(current_model: str):
     kb = InlineKeyboardBuilder()
     models = get_available_models()
+    costs = get_model_costs()
     for name, mm in models.items():
-        prefix = "✅ " if mm == current_model else ""
-        kb.button(text=f"{prefix}{name}", callback_data=f"set_model:{mm}")
+        cost = int(costs.get(mm, 1))
+        prefix = "✅ " if mm == current_model else ("🆕 " if "2" in name else "")
+        kb.button(text=f"{prefix}{name} ({cost} ген)", callback_data=f"set_model:{mm}")
     
-    kb.button(text="👤 Профиль и Баланс", callback_data="profile")
-    kb.button(text="💳 Пополнить", callback_data="buy_credits")
-    kb.adjust(1, 1, 1, 2)
+    kb.adjust(1)
     return kb.as_markup()
 
 def build_start_kb():
@@ -112,7 +145,8 @@ async def cmd_model(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id)
-        await message.answer("Выбери модель нейросети:", reply_markup=build_main_kb(user.model_preference))
+        text = generate_model_menu_text(user.balance, user.model_preference)
+        await message.answer(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
 
 @dp.message(Command("buy"))
 async def cmd_buy(message: types.Message, state: FSMContext):
@@ -161,9 +195,11 @@ async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, callback_query.from_user.id)
+        text = generate_model_menu_text(user.balance, user.model_preference)
         await callback_query.message.edit_text(
-            f"Выбери модель нейросети и отправь промпт или фото:",
-            reply_markup=build_main_kb(user.model_preference)
+            text,
+            reply_markup=build_main_kb(user.model_preference),
+            parse_mode="Markdown"
         )
 
 @dp.callback_query(F.data == "profile")
@@ -200,9 +236,10 @@ async def process_set_model(callback_query: CallbackQuery):
         user = await services.get_or_create_user(db, callback_query.from_user.id)
         user.model_preference = model
         await db.commit()
-        await callback_query.message.edit_reply_markup(reply_markup=build_main_kb(user.model_preference))
-        await callback_query.answer(f"Модель изменена на {model}")
-        await bot.send_message(callback_query.from_user.id, "Пришлите 1-4 фотографии которые нужно изменить или объединить")
+        text = generate_model_menu_text(user.balance, user.model_preference)
+        await callback_query.message.edit_text(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
+        await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
+        await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
 # --- MEDIA GROUP HANDLING ---
 @dp.message(F.media_group_id)
