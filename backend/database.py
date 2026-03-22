@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Load env variables
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/bananix_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/nanobanana")
 
 # Create Async Engine
 engine = create_async_engine(DATABASE_URL, echo=False)
