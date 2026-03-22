@@ -19,7 +19,8 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
     payload: dict[str, Any] = {
         "model": model, 
         "input": {
-            "prompt": prompt
+            "prompt": prompt,
+            "aspect_ratio": "1:1"
         }
     }
     if image_urls:
