@@ -28,7 +28,7 @@ class GenState(StatesGroup):
     waiting_for_prompt = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "nano_banana", "NanoBanana 2": "nano_banana_2", "NanoBanana PRO": "nano_banana_pro"}')
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "google/nano-banana", "NanoBanana 2": "google/nano-banana-edit", "NanoBanana PRO": "nano-banana-pro"}')
     try:
         return json.loads(models_str)
     except:
