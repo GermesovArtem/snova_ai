@@ -4,7 +4,7 @@ import os
 import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -323,14 +323,23 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             info = await services.check_generation_status(kie_task_id)
             state = info.get("state")
             if state in ["success", "completed"] and info.get("image_url"):
-                # Send photo and caption
-                caption = f"Скачать файлом — качество будет лучше, чем при просмотре здесь\n\nТекущая модель: {model}"
-                await bot.send_photo(user_id, info["image_url"], caption=caption)
                 
-                # Send text menu
-                await bot.send_message(
+                models = get_available_models()
+                human_name = next((n for n, m in models.items() if m == model), model)
+                
+                # 1. Send as high-res document
+                file_caption = f"Скачать файлом — качество будет лучше, чем при просмотре здесь\n\nТекущая модель: {human_name}"
+                await bot.send_document(
                     user_id, 
-                    "Если хотите что-то изменить или добавить напишите в чат ⬇️",
+                    document=URLInputFile(info["image_url"], filename=f"image_{kie_task_id[:8]}.png"),
+                    caption=file_caption
+                )
+                
+                # 2. Send photo preview with inline keyboard
+                await bot.send_photo(
+                    user_id, 
+                    photo=URLInputFile(info["image_url"]),
+                    caption="Если хотите что-то изменить или добавить напишите в чат ⬇️",
                     reply_markup=build_after_gen_kb()
                 )
                 
