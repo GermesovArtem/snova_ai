@@ -256,27 +256,36 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     if not data: return
     messages = data["messages"]
     
-    caption = next((m.caption for m in messages if m.caption), None)
-    
+    # Collect all images from the group
+    image_urls = []
+    caption = None
+    for m in messages:
+        if m.caption:
+            caption = m.caption
+        if m.photo:
+            file_id = m.photo[-1].file_id
+            file = await bot.get_file(file_id)
+            image_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
+            
     if not caption:
         # Prompt user for text
         await bot.send_message(user_id, "Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
         
         # Inject FSM State
         state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
-        await state.update_data(queued_images=len(messages))
+        await state.update_data(queued_images=len(messages), image_urls=image_urls)
         await state.set_state(GenState.waiting_for_prompt)
     else:
-        await start_generation_wrapper(user_id, prompt=caption)
+        await start_generation_wrapper(user_id, prompt=caption, image_urls=image_urls)
 
 @dp.message(GenState.waiting_for_prompt)
 async def handle_prompt_for_media(message: types.Message, state: FSMContext):
     prompt_text = message.text or ""
     data = await state.get_data()
-    queued = data.get("queued_images", 1)
+    image_urls = data.get("image_urls", [])
     
     await state.clear()
-    await start_generation_wrapper(message.from_user.id, prompt=prompt_text)
+    await start_generation_wrapper(message.from_user.id, prompt=prompt_text, image_urls=image_urls)
 
 # --- SINGLE PHOTO OR TEXT ---
 @dp.message(F.photo | F.text)
@@ -291,13 +300,24 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         return
 
     prompt = message.text or message.caption or ""
-    await start_generation_wrapper(message.from_user.id, prompt=prompt, single_message_obj=message)
+    image_urls = []
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        file = await bot.get_file(file_id)
+        image_urls = [f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"]
+        
+    await start_generation_wrapper(message.from_user.id, prompt=prompt, image_urls=image_urls)
 
-async def start_generation_wrapper(user_id: int, prompt: str, single_message_obj=None):
+async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list[str] = None):
+    image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
         try:
-            cost = await services.pre_charge_generation(db, user, user.model_preference)
+            # First, check model from user preference
+            model = user.model_preference
+            
+            # For logging/UI we use the preferred model name initially
+            cost = await services.pre_charge_generation(db, user, model)
         except ValueError:
             # Insufficient funds exact replica
             text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
