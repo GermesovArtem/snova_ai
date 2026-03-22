@@ -8,7 +8,7 @@ from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 
-from backend.database import get_db, AsyncSessionLocal
+from backend.database import get_db, AsyncSessionLocal, engine, Base
 from backend import services
 
 load_dotenv()
@@ -168,7 +168,12 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
         async with AsyncSessionLocal() as db:
             await services.refund_frozen_credits(db, user_id, cost)
 
+async def on_startup():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
 async def main():
+    await on_startup()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
