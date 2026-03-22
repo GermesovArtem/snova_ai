@@ -340,7 +340,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             
             # Автоматический выбор модели: если есть фото — используем специализированную модель для редактирования
             actual_model = model
-            if image_urls:
+            if image_urls and model == "google/nano-banana":
                 actual_model = "google/nano-banana-edit"
             
             # 4. Списываем баланс ЗА выбранную по факту модель
