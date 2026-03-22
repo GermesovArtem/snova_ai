@@ -269,7 +269,7 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
             
     if not caption:
         # Prompt user for text
-        await bot.send_message(user_id, "Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
+        await bot.send_message(user_id, "Введите промпт (описание того, что вы хотите сделать):", reply_markup=build_cancel_kb())
         
         # Inject FSM State
         state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
@@ -296,7 +296,7 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.photo and not message.caption:
         await state.update_data(queued_images=1)
         await state.set_state(GenState.waiting_for_prompt)
-        await message.answer("Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
+        await message.answer("Введите промпт (описание того, что вы хотите изменить):", reply_markup=build_cancel_kb())
         return
 
     prompt = message.text or message.caption or ""
