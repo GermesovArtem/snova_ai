@@ -9,7 +9,7 @@ import uuid
 logger = logging.getLogger(__name__)
 
 def get_model_cost(model_id: str) -> float:
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "google/nano-banana-edit": 3.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "google/nano-banana-edit": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
     try:
         costs = json.loads(costs_str)
         return float(costs.get(model_id, 1.0))
