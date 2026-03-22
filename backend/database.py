@@ -1,11 +1,29 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from backend.settings import settings
+from dotenv import load_dotenv
 
-engine = create_async_engine(settings.database_url, echo=True)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+# Load env variables
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/bananix_db")
+
+# Create Async Engine
+engine = create_async_engine(DATABASE_URL, echo=False)
+
+# Create session factory
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
+    class_=AsyncSession
+)
+
 Base = declarative_base()
 
 async def get_db():
-    async with SessionLocal() as session:
-        yield session
+    """Dependency for getting async database sessions"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

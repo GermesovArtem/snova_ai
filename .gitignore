@@ -1,27 +1,15 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Environments
-.env
-.venv
+*.pyc
+*.pyo
+*.pyd
+.Python
 env/
 venv/
-ENV/
-env.bak/
-venv.bak/
-
-# SQLite databases
+.env
+.venv
+.vscode/
+.idea/
 *.sqlite3
 *.db
-
-# Docker
-postgres_data/
-
-# IDEs
-.idea/
-.vscode/
-
-# Static frontend assets built
-static/node_modules/
+.DS_Store
+*.har

@@ -1,211 +1,178 @@
-import os
 import asyncio
 import logging
-from dotenv import load_dotenv
-from deep_translator import GoogleTranslator
+import os
+import json
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import CommandStart, Command
+from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import LabeledPrice, PreCheckoutQuery, URLInputFile
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from dotenv import load_dotenv
 
-from bot.api_client import get_or_create_user, get_balance, generate_image, get_referral_stats, create_payment_link
+from backend.database import get_db, AsyncSessionLocal
+from backend import services
 
 load_dotenv()
-
-API_TOKEN = os.getenv("BOT_TOKEN")
-SHOP_ID = os.getenv("SHOP_ID", "dummy")
-SECRET_KEY = os.getenv("SECRET_KEY", "dummy")
-
-# Идеально получать из БД (Settings), но пока оставляем кэш
-COSTS = {
-    "NanoBanana": int(os.getenv("COST_NANOBANANA", 5)),
-    "NanoBanana PRO": int(os.getenv("COST_NANOBANANA_PRO", 20))
-}
-
-MODEL_ENDPOINTS = {
-    "NanoBanana": "nano-banana",
-    "NanoBanana PRO": "nano-banana-pro"
-}
-
-class GenStates(StatesGroup):
-    awaiting_content = State()
-    confirm_screen = State()
-
-bot = Bot(token=API_TOKEN)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://bananix.ai")
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-async def get_current_model(state: FSMContext) -> str:
-    data = await state.get_data()
-    return data.get("current_model", "NanoBanana")
+logger = logging.getLogger(__name__)
+media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
 
-async def main_kb(user_id: int):
-    bal = await get_balance(user_id)
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🎨 Сгенерировать", callback_data="start_gen"))
-    builder.row(types.InlineKeyboardButton(text=f"👛 Баланс: {bal} 🪙", callback_data="add_funds"))
-    builder.row(types.InlineKeyboardButton(text="💰 Пригласи друга", callback_data="partners"))
-    return builder.as_markup()
-
-# --- ФАЗА 1: Authentication & Landing ---
-@dp.message(Command("start"))
-async def start(message: types.Message, command: CommandObject, state: FSMContext):
-    referrer_id = None
-    if command.args and command.args.startswith("r-"):
-        referrer_id = command.args.replace("r-", "")
-
-    await get_or_create_user(message.from_user.id, message.from_user.username, referrer_id)
-    await state.clear()
-    
-    await message.answer(
-        "👋 **Добро пожаловать в NanoBanana AI**\n\nСоздавайте потрясающие изображения за секунды!\nНажимая `[Сгенерировать]`, вы соглашаетесь с правилами сервиса.", 
-        reply_markup=await main_kb(message.from_user.id), 
-        parse_mode="Markdown"
-    )
-
-@dp.callback_query(F.data == "start_gen")
-async def start_generation_flow(call: types.CallbackQuery, state: FSMContext):
-    await state.set_state(GenStates.awaiting_content)
-    await call.message.edit_text(
-        "Отправьте мне текст (промпт) или фото (как референс) 🌠",
-        reply_markup=InlineKeyboardBuilder().row(types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")).as_markup()
-    )
-
-@dp.callback_query(F.data == "cancel")
-async def cancel_flow(call: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await call.message.edit_text(
-        "Действие отменено.", 
-        reply_markup=await main_kb(call.from_user.id)
-    )
-
-# --- ФАЗА 2: Request Handling ---
-@dp.message(GenStates.awaiting_content)
-async def process_content(message: types.Message, state: FSMContext):
-    # Обрабатываем текст или фото (упрощенно пока только текст, фото можно добавить как опцию)
-    if message.photo:
-        prompt = message.caption or "Фото референс"
-        # Заглушка: сохранить file_id для img2img, но мы используем text2img API от Kie
-        await state.update_data(prompt=prompt, img_ref=message.photo[-1].file_id)
-    elif message.text:
-        prompt = message.text
-        await state.update_data(prompt=prompt)
-    else:
-        return await message.answer("Пожалуйста, отправьте текст или фото.")
-
-    await state.set_state(GenStates.confirm_screen)
-    
-    bal = await get_balance(message.from_user.id)
-    mod = await get_current_model(state)
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text=f"✅ Сделать фото — {COSTS['NanoBanana']} кр", callback_data="gen_NanoBanana"))
-    builder.row(types.InlineKeyboardButton(text=f"🔥 NanoBanana PRO — {COSTS['NanoBanana PRO']} кр", callback_data="gen_NanoBanana PRO"))
-    builder.row(types.InlineKeyboardButton(text="❌ Отменить", callback_data="cancel"))
-    
-    await message.answer(
-        f"**Готово к генерации!**\n\nМодель: {mod}\nПромпт: {prompt}\nВаш баланс: {bal} 🪙",
-        reply_markup=builder.as_markup(),
-        parse_mode="Markdown"
-    )
-
-# --- ФАЗА 3: Generation & Transaction ---
-@dp.callback_query(F.data.startswith("gen_"), GenStates.confirm_screen)
-async def process_generation(call: types.CallbackQuery, state: FSMContext):
-    model_name = call.data.replace("gen_", "")
-    await state.update_data(current_model=model_name)
-    
-    data = await state.get_data()
-    prompt = data.get("prompt", "")
-    cost = COSTS.get(model_name, 5)
-    
-    bal = await get_balance(call.from_user.id)
-    if bal < cost:
-        await call.answer(f"⚠️ Недостаточно кредитов! Нужно {cost}.", show_alert=True)
-        return
-
-    # Loading State (Стикеры/бананы запрещены ТЗ)
-    status_msg = await call.message.edit_text("🎨 Генерация... Пожалуйста, подождите.")
-    
+def get_available_models():
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "nanobanana", "NanoBanana 2": "nano_banana_2", "NanoBanana PRO": "nanobanana_pro"}')
     try:
-        translated_prompt = GoogleTranslator(source='auto', target='en').translate(prompt)
-    except Exception:
-        translated_prompt = prompt
+        return json.loads(models_str)
+    except:
+        return {"NanoBanana": "nanobanana", "NanoBanana 2": "nano_banana_2", "NanoBanana PRO": "nanobanana_pro"}
 
-    model_endpoint = MODEL_ENDPOINTS.get(model_name, "nano-banana")
+def build_main_kb(current_model: str):
+    kb = InlineKeyboardBuilder()
+    models = get_available_models()
+    for name, mm in models.items():
+        prefix = "✅ " if mm == current_model else ""
+        kb.button(text=f"{prefix}{name}", callback_data=f"set_model:{mm}")
     
-    # API Call (уже списывает кредиты на стороне API)
-    image_url, err_msg = await generate_image(call.from_user.id, translated_prompt, model_endpoint, cost)
-    
-    if image_url:
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="✍️ Редактировать", callback_data="start_gen")) # возвращает в ожидание контента
-        builder.row(types.InlineKeyboardButton(text="🆕 Новая генерация", callback_data="start_gen"))
-        
-        await status_msg.delete()
-        await call.message.answer_photo(
-            photo=URLInputFile(image_url),
-            caption=f"✅ Готово!\n📝 {translated_prompt}",
-            reply_markup=builder.as_markup()
+    kb.button(text="👤 Профиль и Баланс", callback_data="profile")
+    kb.button(text="💳 Пополнить", callback_data="buy_credits")
+    kb.adjust(1, 1, 1, 2)
+    return kb.as_markup()
+
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
+        await message.answer(
+            f"Привет, {user.name}! 👋\n\nВыбери модель нейросети и отправь промпт или фото:",
+            reply_markup=build_main_kb(user.model_preference)
         )
-        await state.clear()
-    else:
-        # Error Handling (frozen_balance возвращается на бэкенде)
-        await status_msg.edit_text(f"❌ Ошибка! Кредиты сохранены на вашем балансе.\nДетали: {err_msg}")
-        await asyncio.sleep(3)
-        await status_msg.edit_text("Попробуйте снова:", reply_markup=await main_kb(call.from_user.id))
 
-# --- ФАЗА 4: Partners & Finance ---
-@dp.callback_query(F.data == "partners")
-async def partners_menu(call: types.CallbackQuery):
-    stats = await get_referral_stats(call.from_user.id)
-    count = stats.get("referral_count", 0)
-    link = stats.get("referral_link", f"https://t.me/your_bot_name?start=r-{call.from_user.id}")
-    
-    text = f"💰 **Партнерская программа**\n\nПриглашено друзей: {count}\nВаша ссылка:\n`{link}`\n\nПолучайте 10% от всех пополнений рефералов!"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="💸 Вывести средства", callback_data="withdraw"))
-    builder.row(types.InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel"))
-    
-    await call.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-
-@dp.callback_query(F.data == "withdraw")
-async def withdraw_request(call: types.CallbackQuery):
-    await call.answer("Функция вывода находится в разработке (Admin panel required).", show_alert=True)
-
-from bot.api_client import get_or_create_user, get_balance, generate_image, get_referral_stats, create_payment_link
-
-@dp.callback_query(F.data == "add_funds")
-async def pay(call: types.CallbackQuery):
-    # Warning message
-    await call.message.answer("⏳ Создаем защищенную ссылку на оплату...")
-    
-    # Запрашиваем ссылку у нашего бэкенда (например, на 349 руб)
-    amount = 349.0
-    description = f"Пополнение баланса NanoBanana для ID {call.from_user.id}"
-    
-    checkout_url = await create_payment_link(call.from_user.id, amount, description)
-    
-    if checkout_url:
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="💳 Оплатить 349 руб", url=checkout_url))
-        
-        await call.message.answer(
-            "Нажмите кнопку ниже, чтобы перейти к защищенной оплате ЮKassa.\n⚠️ Если вы используете VPN, пожалуйста, выключите его перед оплатой.",
-            reply_markup=builder.as_markup()
+@dp.callback_query(F.data == "main_menu")
+async def process_main_menu(callback_query: CallbackQuery):
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        await callback_query.message.edit_text(
+            f"Выбери модель нейросети и отправь промпт или фото:",
+            reply_markup=build_main_kb(user.model_preference)
         )
-    else:
-        await call.message.answer("❌ Ошибка при создании ссылки на оплату. Повторите позже.")
 
-@dp.message()
-async def default_handler(message: types.Message):
-    await message.answer("Я не понимаю эту команду. Используйте /start.")
+@dp.callback_query(F.data == "profile")
+async def process_profile(callback_query: CallbackQuery):
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        text = f"👤 <b>Профиль</b>\n\n💳 Баланс: {user.balance} кредитов\n🤖 Модель: {user.model_preference}\n❄️ Заморожено: {user.frozen_balance} кр."
+        
+        kb = InlineKeyboardBuilder()
+        kb.button(text="💳 Купить кредиты", callback_data="buy_credits")
+        kb.button(text="⬅️ Назад", callback_data="main_menu")
+        kb.adjust(1)
+        await callback_query.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
-async def run():
-    logging.basicConfig(level=logging.INFO)
+def get_credit_packs():
+    packs_str = os.getenv("CREDIT_PACKS", '{"149": 10}')
+    try:
+        return json.loads(packs_str)
+    except:
+        return {"149": 10}
+
+@dp.callback_query(F.data == "buy_credits")
+async def process_buy_credits(callback_query: CallbackQuery):
+    packs = get_credit_packs()
+    kb = InlineKeyboardBuilder()
+    for price, amount in packs.items():
+        kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
+    kb.button(text="⬅️ Назад", callback_data="profile")
+    kb.adjust(1)
+    await callback_query.message.edit_text("Выберите пакет кредитов для пополнения (оплата ЮKassa):", reply_markup=kb.as_markup())
+
+@dp.callback_query(F.data.startswith("buy:"))
+async def process_buy_packet(callback_query: CallbackQuery):
+    _, price, amount = callback_query.data.split(":")
+    await callback_query.answer(f"Создан счет на {price} руб. (имитация)", show_alert=True)
+
+@dp.callback_query(F.data.startswith("set_model:"))
+async def process_set_model(callback_query: CallbackQuery):
+    model = callback_query.data.split(":")[1]
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        user.model_preference = model
+        await db.commit()
+        await callback_query.message.edit_reply_markup(reply_markup=build_main_kb(user.model_preference))
+        await callback_query.answer(f"Модель изменена на {model}")
+
+@dp.message(F.media_group_id)
+async def handle_media_group(message: types.Message):
+    mg_id = message.media_group_id
+    if mg_id not in media_groups:
+        media_groups[mg_id] = {"messages": []}
+        loop = asyncio.get_event_loop()
+        media_groups[mg_id]["timer"] = loop.call_later(2.0, asyncio.create_task, process_media_group(mg_id, message.from_user.id))
+    media_groups[mg_id]["messages"].append(message)
+
+async def process_media_group(mg_id: str, user_id: int):
+    data = media_groups.pop(mg_id, None)
+    if not data: return
+    messages = data["messages"]
+    
+    caption = next((m.caption for m in messages if m.caption), "Сделай красиво")
+    await bot.send_message(user_id, f"Начинаем работу с альбомом ({len(messages)} фото)...")
+    # For a real integration, Telegram photo URLs expire and bot_token is secret. We extract it here hypothetically:
+    # prompt = caption
+    # image_urls = [get_public_telegram_url(msg)] 
+    
+@dp.message(F.photo | F.text)
+async def handle_single_prompt(message: types.Message):
+    if message.media_group_id: return
+    
+    prompt = message.text or message.caption or ""
+    user_id = message.from_user.id
+    
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, user_id, message.from_user.username)
+        try:
+            cost = await services.pre_charge_generation(db, user, user.model_preference)
+        except ValueError as e:
+            await message.answer(f"❌ {e}")
+            return
+            
+    msg_wait = await message.answer(f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
+    asyncio.create_task(run_generation_task(user_id, prompt, cost, user.model_preference, msg_wait.message_id))
+
+async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int):
+    try:
+        async with AsyncSessionLocal() as db:
+            kie_task_id = await services.start_generation_flow(db, user_id, prompt, [], model, cost)
+            
+        for _ in range(30):
+            await asyncio.sleep(2)
+            info = await services.check_generation_status(kie_task_id)
+            state = info.get("state")
+            if state in ["success", "completed"] and info.get("image_url"):
+                await bot.send_photo(user_id, info["image_url"], caption="🍌 Готово!")
+                await bot.delete_message(user_id, msg_id)
+                
+                async with AsyncSessionLocal() as db:
+                    await services.commit_frozen_credits(db, user_id, cost)
+                return
+            elif state in ["failed", "error"]:
+                err_text = info.get("error", "KIE server processing failed")
+                raise Exception(err_text)
+                
+        raise Exception("Timeout limit reached")
+    except Exception as e:
+        logger.error(f"Gen error: {e}")
+        await bot.edit_message_text(f"❌ Ошибка генерации: {e}", chat_id=user_id, message_id=msg_id)
+        # Perform Database Rollback
+        async with AsyncSessionLocal() as db:
+            await services.refund_frozen_credits(db, user_id, cost)
+
+async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+        logger.error("Please configure BOT_TOKEN properly in .env.")
+    else:
+        asyncio.run(main())
