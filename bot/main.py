@@ -311,12 +311,24 @@ async def start_generation_wrapper(user_id: int, prompt: str, single_message_obj
             return
             
     msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
-    asyncio.create_task(run_generation_task(user_id, prompt, cost, user.model_preference, msg_wait.message_id))
+    asyncio.create_task(run_generation_task(user_id, prompt, cost, user.model_preference, msg_wait.message_id, image_urls))
 
-async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int):
+async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str]):
     try:
         async with AsyncSessionLocal() as db:
-            kie_task_id = await services.start_generation_flow(db, user_id, prompt, [], model, cost)
+            user = await services.get_or_create_user(db, user_id) # Re-fetch user to ensure latest balance/model
+            
+            # Автоматический выбор модели: если есть фото — используем специализированную модель для редактирования
+            actual_model = model
+            if image_urls:
+                actual_model = "google/nano-banana-edit"
+            
+            # 4. Списываем баланс ЗА выбранную по факту модель
+            # This will re-check and potentially raise ValueError if funds are insufficient for the new model
+            cost = await services.pre_charge_generation(db, user, actual_model)
+            
+            # 5. Запуск генерации
+            kie_task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, actual_model, cost)
             
         for _ in range(30):
             await asyncio.sleep(2)
