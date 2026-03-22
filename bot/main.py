@@ -53,6 +53,24 @@ def build_main_kb(current_model: str):
     kb.adjust(1, 1, 1, 2)
     return kb.as_markup()
 
+def build_start_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="👉 Выбрать модель", callback_data="main_menu")
+    return kb.as_markup()
+
+def build_cancel_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="↩️ Назад", callback_data="cancel_fsm")
+    return kb.as_markup()
+
+def build_after_gen_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Сгенерировать похожее", callback_data="gen_similar")
+    kb.button(text="1️⃣ Начать с 1-го фото", callback_data="gen_first")
+    kb.button(text="🖼 Начать заново", callback_data="cancel_fsm")
+    kb.adjust(1)
+    return kb.as_markup()
+
 async def setup_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="gen", description="🎨 Редактировать фото"),
@@ -71,10 +89,22 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
-        await message.answer(
-            f"Привет, {user.name}! 👋\n\nВыбери модель нейросети и отправь промпт или фото:",
-            reply_markup=build_main_kb(user.model_preference)
+        
+        text = (
+            f"🍌 **Добро пожаловать в S•NOVA AI**\n"
+            f"— Ai фотошоп от Google в удобном телеграм-боте:\n\n"
+            f"🎁 У вас есть **{int(user.balance)} бесплатных генераций**\n\n"
+            f"**Доступные модели:**\n"
+            f"• Standard — 1 кредит, быстрая генерация\n"
+            f"• 🆕 Nano Banana 2 — 3 кредита, 4K, знает актуальные события\n"
+            f"• Pro — 4 кредита, 4K, максимальное качество\n\n"
+            f"Нажмите «Выбрать модель» чтобы начать 👇\n\n"
+            f"Пользуясь ботом, Вы принимаете наше пользовательское соглашение и политику конфиденциальности."
         )
+        
+        await message.answer(text, reply_markup=build_start_kb(), parse_mode="Markdown")
+        await asyncio.sleep(0.5)
+        await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
 # --- NATIVE MENU COMMANDS ---
 @dp.message(Command("model"))
@@ -97,12 +127,12 @@ async def cmd_buy(message: types.Message, state: FSMContext):
 
 @dp.message(Command("gen"))
 async def cmd_gen(message: types.Message, state: FSMContext):
-    await message.answer("Пришлите фото для редактирования!")
+    await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
 @dp.message(Command("create"))
 async def cmd_create(message: types.Message, state: FSMContext):
     await state.set_state(GenState.waiting_for_prompt)
-    await message.answer("Отправьте текстовое описание (промпт) того, что вы хотите сгенерировать:")
+    await message.answer("Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
@@ -115,6 +145,17 @@ async def cmd_dummies(message: types.Message):
     await message.answer("Этот раздел находится в разработке 🏗")
 
 # --- CALLBACK ROUTERS ---
+@dp.callback_query(F.data == "cancel_fsm")
+async def process_cancel_fsm(callback_query: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback_query.message.edit_text("Действие отменено.")
+    await callback_query.message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
+
+@dp.callback_query(F.data == "gen_similar")
+@dp.callback_query(F.data == "gen_first")
+async def process_gen_dummies(callback_query: CallbackQuery):
+    await callback_query.answer("Эта функция скоро появится!", show_alert=True)
+
 @dp.callback_query(F.data == "main_menu")
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -161,15 +202,16 @@ async def process_set_model(callback_query: CallbackQuery):
         await db.commit()
         await callback_query.message.edit_reply_markup(reply_markup=build_main_kb(user.model_preference))
         await callback_query.answer(f"Модель изменена на {model}")
+        await bot.send_message(callback_query.from_user.id, "Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
-# --- MESSAGE PROCESSING ---
+# --- MEDIA GROUP HANDLING ---
 @dp.message(F.media_group_id)
 async def handle_media_group(message: types.Message):
     mg_id = message.media_group_id
     if mg_id not in media_groups:
         media_groups[mg_id] = {"messages": []}
         loop = asyncio.get_event_loop()
-        media_groups[mg_id]["timer"] = loop.call_later(2.0, asyncio.create_task, process_media_group_delayed(mg_id, message.from_user.id))
+        media_groups[mg_id]["timer"] = loop.call_later(1.0, asyncio.create_task, process_media_group_delayed(mg_id, message.from_user.id))
     media_groups[mg_id]["messages"].append(message)
 
 async def process_media_group_delayed(mg_id: str, user_id: int):
@@ -181,14 +223,13 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     
     if not caption:
         # Prompt user for text
-        await bot.send_message(user_id, f"Начинаем работу с альбомом ({len(messages)} фото).\n\nНапишите текстовый промпт, что нужно с ними сделать:")
+        await bot.send_message(user_id, "Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
         
         # Inject FSM State
         state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
         await state.update_data(queued_images=len(messages))
         await state.set_state(GenState.waiting_for_prompt)
     else:
-        # Received caption along with the album - start generation directly
         await start_generation_wrapper(user_id, prompt=caption)
 
 @dp.message(GenState.waiting_for_prompt)
@@ -200,6 +241,7 @@ async def handle_prompt_for_media(message: types.Message, state: FSMContext):
     await state.clear()
     await start_generation_wrapper(message.from_user.id, prompt=prompt_text)
 
+# --- SINGLE PHOTO OR TEXT ---
 @dp.message(F.photo | F.text)
 async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.media_group_id: return
@@ -208,7 +250,7 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.photo and not message.caption:
         await state.update_data(queued_images=1)
         await state.set_state(GenState.waiting_for_prompt)
-        await message.answer("Фото получено! Пожалуйста, напишите текстовый промпт, что нужно с ним сделать:")
+        await message.answer("Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
         return
 
     prompt = message.text or message.caption or ""
@@ -219,8 +261,16 @@ async def start_generation_wrapper(user_id: int, prompt: str, single_message_obj
         user = await services.get_or_create_user(db, user_id)
         try:
             cost = await services.pre_charge_generation(db, user, user.model_preference)
-        except ValueError as e:
-            await bot.send_message(user_id, f"❌ {e}")
+        except ValueError:
+            # Insufficient funds exact replica
+            text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
+            
+            kb = InlineKeyboardBuilder()
+            kb.button(text="💳 Карта РФ(₽)", callback_data="buy_credits")
+            kb.button(text="⭐ Звёзды", callback_data="buy_credits")
+            kb.adjust(1)
+            
+            await bot.send_message(user_id, text, reply_markup=kb.as_markup())
             return
             
     msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
@@ -236,7 +286,17 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             info = await services.check_generation_status(kie_task_id)
             state = info.get("state")
             if state in ["success", "completed"] and info.get("image_url"):
-                await bot.send_photo(user_id, info["image_url"], caption="🍌 Готово!")
+                # Send photo and caption
+                caption = f"Скачать файлом — качество будет лучше, чем при просмотре здесь\n\nТекущая модель: {model}"
+                await bot.send_photo(user_id, info["image_url"], caption=caption)
+                
+                # Send text menu
+                await bot.send_message(
+                    user_id, 
+                    "Если хотите что-то изменить или добавить напишите в чат ⬇️",
+                    reply_markup=build_after_gen_kb()
+                )
+                
                 await bot.delete_message(user_id, msg_id)
                 
                 async with AsyncSessionLocal() as db:
