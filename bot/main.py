@@ -313,11 +313,13 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list[s
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
         try:
-            # First, check model from user preference
-            model = user.model_preference
-            
-            # For logging/UI we use the preferred model name initially
-            cost = await services.pre_charge_generation(db, user, model)
+            # Check and select correct model context
+            actual_model = user.model_preference
+            if image_urls and actual_model == "google/nano-banana":
+                actual_model = "google/nano-banana-edit"
+
+            # Pre-charge the user based on the correct model
+            cost = await services.pre_charge_generation(db, user, actual_model)
         except ValueError:
             # Insufficient funds exact replica
             text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
@@ -331,24 +333,15 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list[s
             return
             
     msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
-    asyncio.create_task(run_generation_task(user_id, prompt, cost, user.model_preference, msg_wait.message_id, image_urls))
+    asyncio.create_task(run_generation_task(user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls))
 
 async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str]):
     try:
         async with AsyncSessionLocal() as db:
             user = await services.get_or_create_user(db, user_id) # Re-fetch user to ensure latest balance/model
             
-            # Автоматический выбор модели: если есть фото — используем специализированную модель для редактирования
-            actual_model = model
-            if image_urls and model == "google/nano-banana":
-                actual_model = "google/nano-banana-edit"
-            
-            # 4. Списываем баланс ЗА выбранную по факту модель
-            # This will re-check and potentially raise ValueError if funds are insufficient for the new model
-            cost = await services.pre_charge_generation(db, user, actual_model)
-            
-            # 5. Запуск генерации
-            kie_task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, actual_model, cost)
+            # The cost has already been deducted in start_generation_wrapper, so we just start the task
+            kie_task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
             
         for _ in range(30):
             await asyncio.sleep(2)
