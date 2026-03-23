@@ -34,6 +34,7 @@ media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
 
 class GenState(StatesGroup):
     waiting_for_prompt = State()
+    confirming = State()
 
 def get_available_models():
     models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
@@ -106,9 +107,15 @@ def build_cancel_kb():
 
 def build_after_gen_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 Сгенерировать похожее", callback_data="gen_similar")
-    kb.button(text="1️⃣ Начать с 1-го фото", callback_data="gen_first")
+    kb.button(text="🔄 Повторить генерацию", callback_data="gen_similar")
     kb.button(text="🖼 Начать заново", callback_data="cancel_fsm")
+    kb.adjust(1)
+    return kb.as_markup()
+
+def build_confirm_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚀 Сгенерировать", callback_data="confirm_gen")
+    kb.button(text="✏️ Изменить", callback_data="edit_gen")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -190,13 +197,19 @@ async def cmd_dummies(message: types.Message):
 @user_router.callback_query(F.data == "cancel_fsm")
 async def process_cancel_fsm(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback_query.message.edit_text("Действие отменено.")
-    await callback_query.message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
+    await callback_query.message.answer("Ок! Жду ваши фото или текст для новой идеи. 😉")
+    await callback_query.answer()
 
 @user_router.callback_query(F.data == "gen_similar")
-@user_router.callback_query(F.data == "gen_first")
-async def process_gen_dummies(callback_query: CallbackQuery):
-    await callback_query.answer("Эта функция скоро появится!", show_alert=True)
+async def process_gen_similar(callback_query: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    prompt = data.get("last_prompt")
+    image_urls = data.get("last_image_urls", [])
+    if not prompt:
+         await callback_query.answer("Не удалось найти данные для повтора. Попробуйте создать новую!", show_alert=True)
+         return
+    await callback_query.answer("Запускаю повтор...")
+    await start_generation_wrapper(callback_query.from_user.id, prompt=prompt, image_urls=image_urls)
 
 @user_router.callback_query(F.data == "main_menu")
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
@@ -249,6 +262,57 @@ async def process_set_model(callback_query: CallbackQuery):
         await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
+async def show_confirmation(user_id: int, prompt: str, image_urls: list, state: FSMContext):
+    # Save for confirmation
+    await state.update_data(confirm_prompt=prompt, confirm_image_urls=image_urls)
+    await state.set_state(GenState.confirming)
+    
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, user_id)
+    
+    actual_model = user.model_preference
+    if image_urls and (actual_model == "google/nano-banana" or actual_model == "nano-banana"):
+        actual_model = "google/nano-banana-edit"
+    
+    cost = services.get_model_cost(actual_model)
+    models_map = get_available_models()
+    human_name = next((n for n, m in models_map.items() if m == user.model_preference), user.model_preference)
+    
+    img_count = f"📸 Фото: **{len(image_urls)} шт.**\n" if image_urls else ""
+    p = prompt or ""
+    safe_prompt = p[:100] + ("..." if len(p) > 100 else "")
+    text = (
+        f"✨ **Ваш промпт почти готов!**\n\n"
+        f"📝 Текст: `{safe_prompt}`\n"
+        f"{img_count}"
+        f"🤖 Модель: **{human_name}**\n"
+        f"💰 Стоимость: **{int(cost)} ген.**\n\n"
+        f"💳 Ваш баланс: **{int(user.balance)} ген.**\n\n"
+        f"Всё верно? Начинаем генерацию?"
+    )
+
+
+    await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
+
+@user_router.callback_query(GenState.confirming, F.data == "confirm_gen")
+async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    prompt = data.get("confirm_prompt")
+    image_urls = data.get("confirm_image_urls", [])
+    
+    # Save for "Similar"
+    await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
+    await state.set_state(None)
+    
+    await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...")
+    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=image_urls)
+
+@user_router.callback_query(F.data == "edit_gen")
+async def process_edit_gen(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Хорошо! Пришлите новый промпт (текст или фото) и мы попробуем еще раз. 👇")
+
+
 # --- MEDIA GROUP HANDLING ---
 @user_router.message(F.media_group_id)
 async def handle_media_group(message: types.Message):
@@ -284,16 +348,17 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
         await state.update_data(queued_images=len(messages), image_urls=image_urls)
         await state.set_state(GenState.waiting_for_prompt)
     else:
-        await start_generation_wrapper(user_id, prompt=caption, image_urls=image_urls)
+        # Instead of starting immediately, show confirmation
+        state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
+        await show_confirmation(user_id, caption, image_urls, state)
 
 @user_router.message(GenState.waiting_for_prompt)
 async def handle_prompt_for_media(message: types.Message, state: FSMContext):
-    prompt_text = message.text or ""
+    prompt_text = message.text or message.caption or ""
     data = await state.get_data()
     image_urls = data.get("image_urls", [])
     
-    await state.clear()
-    await start_generation_wrapper(message.from_user.id, prompt=prompt_text, image_urls=image_urls)
+    await show_confirmation(message.from_user.id, prompt_text, image_urls, state)
 
 # --- SINGLE PHOTO OR TEXT ---
 @user_router.message(F.photo | F.text)
@@ -314,9 +379,9 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         file = await bot.get_file(file_id)
         image_urls = [f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"]
         
-    await start_generation_wrapper(message.from_user.id, prompt=prompt, image_urls=image_urls)
+    await show_confirmation(message.from_user.id, prompt, image_urls, state)
 
-async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list[str] = None):
+async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None):
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
@@ -362,26 +427,30 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 models = get_available_models()
                 human_name = next((n for n, m in models.items() if m == model), model)
                 
+                async with AsyncSessionLocal() as db:
+                    await services.commit_frozen_credits(db, user_id, cost)
+                    user = await services.get_user(db, user_id)
+                    new_balance = int(user.balance)
+
                 # 1. Send as high-res document
-                file_caption = f"Скачать файлом — качество будет лучше, чем при просмотре здесь\n\nТекущая модель: {human_name}"
+                file_caption = f"💾 **Оригинал в высоком качестве**\n💳 Остаток баланса: **{new_balance} ген.**\n\nТекущая модель: {human_name}"
                 await bot.send_document(
                     user_id, 
                     document=URLInputFile(info["image_url"], filename=f"image_{kie_task_id[:8]}.png"),
-                    caption=file_caption
+                    caption=file_caption,
+                    parse_mode="Markdown"
                 )
                 
                 # 2. Send photo preview with inline keyboard
                 await bot.send_photo(
                     user_id, 
                     photo=URLInputFile(info["image_url"]),
-                    caption="Если хотите что-то изменить или добавить напишите в чат ⬇️",
-                    reply_markup=build_after_gen_kb()
+                    caption="🔥 **Готово!** Как вам результат?\nЕсли хотите что-то изменить, напишите в чат ниже. 👇",
+                    reply_markup=build_after_gen_kb(),
+                    parse_mode="Markdown"
                 )
                 
                 await bot.delete_message(user_id, msg_id)
-                
-                async with AsyncSessionLocal() as db:
-                    await services.commit_frozen_credits(db, user_id, cost)
                 return
             elif state in ["failed", "error"]:
                 err_text = info.get("error", "KIE server processing failed")
