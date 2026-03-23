@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.4 (UI FIX) !!!")
+print("!!! BOT MAIN.PY: VERSION 5.5 (DEEP LOGS) !!!")
 print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
@@ -263,8 +263,14 @@ async def process_set_model(callback_query: CallbackQuery):
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
 async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False):
-    logger.info(f"show_confirmation: user={user_id}, prompt={prompt}, imgs={len(image_urls)}, is_refine={is_refinement}")
+    data = await state.get_data()
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, user_id)
+        model = user.model_preference
+    
+    logger.info(f"show_confirmation: user={user_id}, model={model}, prompt={prompt}, imgs={len(image_urls)}, is_refine={is_refinement}")
     # Save for confirmation
+
     prompt_str = str(prompt or "")
     await state.update_data(confirm_prompt=prompt_str, confirm_image_urls=image_urls, is_refinement=is_refinement)
     await state.set_state(GenState.confirming)
@@ -328,12 +334,17 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     
     try:
-        if callback.message.photo:
+        if callback.message.photo or callback.message.caption:
             await callback.message.edit_caption(caption="🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
         else:
             await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
     except Exception as e:
-        logger.warning(f"Could not edit confirmation message: {e}")
+        logger.warning(f"Could not edit confirmation message (using fallback): {e}")
+        try:
+            await callback.message.answer("🚀 Запрос подтвержден! Начинаю генерацию...")
+            await callback.message.delete()
+        except: pass
+
 
     
     # Pre-process image_urls: convert file_ids to URLs before sending to wrapper
