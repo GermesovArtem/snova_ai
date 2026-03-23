@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.1 (POST-GEN FIX) !!!")
+print("!!! BOT MAIN.PY: VERSION 5.2 (REFINE LOGS) !!!")
 print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
@@ -424,6 +424,8 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     data = await state.get_data()
     refinement_url = data.get("refinement_context_url")
     is_refinement = False
+    
+    logger.info(f"Checking refinement for user {message.from_user.id}: {refinement_url}")
 
     if message.photo:
         file_id = message.photo[-1].file_id
@@ -431,10 +433,13 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         image_urls = [f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"]
         # Clear previous context if new photo is sent
         await state.update_data(refinement_context_url=None)
+        logger.info("New photo sent, cleared refinement context.")
     elif message.text and refinement_url:
         # Auto-inject last result as reference
         image_urls = [refinement_url]
         is_refinement = True
+        logger.info(f"Auto-injecting refinement context: {refinement_url}")
+
         
     await show_confirmation(message.from_user.id, prompt, image_urls, state, is_refinement=is_refinement)
 
