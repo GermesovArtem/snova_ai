@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import os
+print("\n" + "!"*50)
+print("!!! BOT MAIN.PY: VERSION 5.0 (ADMIN FIX) !!!")
+print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
