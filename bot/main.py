@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.0 (ADMIN FIX) !!!")
+print("!!! BOT MAIN.PY: VERSION 5.1 (POST-GEN FIX) !!!")
 print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
