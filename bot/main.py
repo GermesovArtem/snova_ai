@@ -250,7 +250,7 @@ async def process_set_model(callback_query: CallbackQuery):
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
 # --- MEDIA GROUP HANDLING ---
-@dp.message(F.media_group_id)
+@user_router.message(F.media_group_id)
 async def handle_media_group(message: types.Message):
     mg_id = message.media_group_id
     if mg_id not in media_groups:
@@ -286,7 +286,7 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     else:
         await start_generation_wrapper(user_id, prompt=caption, image_urls=image_urls)
 
-@dp.message(GenState.waiting_for_prompt)
+@user_router.message(GenState.waiting_for_prompt)
 async def handle_prompt_for_media(message: types.Message, state: FSMContext):
     prompt_text = message.text or ""
     data = await state.get_data()
@@ -296,7 +296,7 @@ async def handle_prompt_for_media(message: types.Message, state: FSMContext):
     await start_generation_wrapper(message.from_user.id, prompt=prompt_text, image_urls=image_urls)
 
 # --- SINGLE PHOTO OR TEXT ---
-@dp.message(F.photo | F.text)
+@user_router.message(F.photo | F.text)
 async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.media_group_id: return
     
