@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.2 (REFINE LOGS) !!!")
+print("!!! BOT MAIN.PY: VERSION 5.3 (STRICT LOGS) !!!")
 print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
@@ -263,6 +263,7 @@ async def process_set_model(callback_query: CallbackQuery):
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
 async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False):
+    logger.info(f"show_confirmation: user={user_id}, prompt={prompt}, imgs={len(image_urls)}, is_refine={is_refinement}")
     # Save for confirmation
     prompt_str = str(prompt or "")
     await state.update_data(confirm_prompt=prompt_str, confirm_image_urls=image_urls, is_refinement=is_refinement)
@@ -376,27 +377,34 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
 
 @user_router.message(GenState.waiting_for_prompt)
 async def handle_prompt_for_media(message: types.Message, state: FSMContext):
-    if message.photo or message.media_group_id:
-        # If user sends a NEW photo/group while we were waiting for a prompt for the OLD one,
-        # we should reset and treat this as a fresh start.
-        await state.clear()
-        if message.media_group_id:
-            return await handle_media_group(message)
-        else:
-            return await handle_single_prompt(message, state)
+    try:
+        logger.info(f"handle_prompt_for_media: user={message.from_user.id}, text={message.text}")
+        if message.photo or message.media_group_id:
+            logger.info("New media detected in waiting_for_prompt, resetting.")
+            await state.clear()
+            if message.media_group_id:
+                return await handle_media_group(message)
+            else:
+                return await handle_single_prompt(message, state)
 
-    prompt_text = (message.text or message.caption or "").strip()
-    data = await state.get_data()
-    image_urls = data.get("image_urls") or []
-    
-    # Also check if we should fallback to refinement context if state urls are missing
-    if not image_urls:
-        refinement_url = data.get("refinement_context_url")
-        if refinement_url:
-            image_urls = [refinement_url]
+        prompt_text = (message.text or message.caption or "").strip()
+        data = await state.get_data()
+        image_urls = data.get("image_urls") or []
+        
+        logger.info(f"Retrieved from state: urls_count={len(image_urls)}")
 
-    
-    await show_confirmation(message.from_user.id, prompt_text, image_urls, state)
+        # Also check if we should fallback to refinement context if state urls are missing
+        if not image_urls:
+            refinement_url = data.get("refinement_context_url")
+            if refinement_url:
+                image_urls = [refinement_url]
+                logger.info("Falling back to refinement_url in state handler.")
+
+        await show_confirmation(message.from_user.id, prompt_text, image_urls, state)
+    except Exception as e:
+        logger.error(f"Error in handle_prompt_for_media: {e}", exc_info=True)
+        await message.answer(f"❌ Произошла ошибка при обработке: {e}")
+
 
 
 # --- SINGLE PHOTO OR TEXT ---
