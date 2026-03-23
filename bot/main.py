@@ -318,14 +318,16 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list[s
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
-        try:
-            # Check and select correct model context
-            actual_model = user.model_preference
-            if image_urls and actual_model == "google/nano-banana":
-                actual_model = "google/nano-banana-edit"
+        # Resolve actual model and cost before try block to avoid UnboundLocalError
+        actual_model = user.model_preference
+        if image_urls and actual_model == "google/nano-banana":
+            actual_model = "google/nano-banana-edit"
+        
+        cost = services.get_model_cost(actual_model)
 
+        try:
             # Pre-charge the user based on the correct model
-            cost = await services.pre_charge_generation(db, user, actual_model)
+            await services.pre_charge_generation(db, user, actual_model)
         except ValueError:
             # Insufficient funds exact replica
             text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
