@@ -5,7 +5,7 @@ print("\n" + "!"*50)
 print("!!! BOT MAIN.PY: VERSION 5.0 (ADMIN FIX) !!!")
 print("!"*50 + "\n")
 import json
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -21,12 +21,14 @@ from backend import services
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-logger = logging.getLogger(__name__)
 
 from bot.admin import admin_router
+user_router = Router()
 dp.include_router(admin_router)
+dp.include_router(user_router)
 
 media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
 
@@ -123,7 +125,7 @@ async def setup_bot_commands(bot: Bot):
     ]
     await bot.set_my_commands(commands)
 
-@dp.message(CommandStart())
+@user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
@@ -146,7 +148,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
 # --- NATIVE MENU COMMANDS ---
-@dp.message(Command("model"))
+@user_router.message(Command("model"))
 async def cmd_model(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
@@ -154,7 +156,7 @@ async def cmd_model(message: types.Message, state: FSMContext):
         text = generate_model_menu_text(user.balance, user.model_preference)
         await message.answer(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
 
-@dp.message(Command("buy"))
+@user_router.message(Command("buy"))
 async def cmd_buy(message: types.Message, state: FSMContext):
     await state.clear()
     packs = get_credit_packs()
@@ -165,38 +167,38 @@ async def cmd_buy(message: types.Message, state: FSMContext):
     kb.adjust(1)
     await message.answer("Выберите пакет кредитов для пополнения (оплата ЮKassa):", reply_markup=kb.as_markup())
 
-@dp.message(Command("gen"))
+@user_router.message(Command("gen"))
 async def cmd_gen(message: types.Message, state: FSMContext):
     await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
-@dp.message(Command("create"))
+@user_router.message(Command("create"))
 async def cmd_create(message: types.Message, state: FSMContext):
     await state.set_state(GenState.waiting_for_prompt)
     await message.answer("Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
 
-@dp.message(Command("help"))
+@user_router.message(Command("help"))
 async def cmd_help(message: types.Message):
     await message.answer("💡 Помощь\nПросто отправьте мне фото или текст, и я сгенерирую результат на основе выбранной вами нейросети!")
 
-@dp.message(Command("bots"))
-@dp.message(Command("example"))
-@dp.message(Command("friend"))
+@user_router.message(Command("bots"))
+@user_router.message(Command("example"))
+@user_router.message(Command("friend"))
 async def cmd_dummies(message: types.Message):
     await message.answer("Этот раздел находится в разработке 🏗")
 
 # --- CALLBACK ROUTERS ---
-@dp.callback_query(F.data == "cancel_fsm")
+@user_router.callback_query(F.data == "cancel_fsm")
 async def process_cancel_fsm(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback_query.message.edit_text("Действие отменено.")
     await callback_query.message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
 
-@dp.callback_query(F.data == "gen_similar")
-@dp.callback_query(F.data == "gen_first")
+@user_router.callback_query(F.data == "gen_similar")
+@user_router.callback_query(F.data == "gen_first")
 async def process_gen_dummies(callback_query: CallbackQuery):
     await callback_query.answer("Эта функция скоро появится!", show_alert=True)
 
-@dp.callback_query(F.data == "main_menu")
+@user_router.callback_query(F.data == "main_menu")
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
@@ -208,7 +210,7 @@ async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
 
-@dp.callback_query(F.data == "profile")
+@user_router.callback_query(F.data == "profile")
 async def process_profile(callback_query: CallbackQuery):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, callback_query.from_user.id)
@@ -220,7 +222,7 @@ async def process_profile(callback_query: CallbackQuery):
         kb.adjust(1)
         await callback_query.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
-@dp.callback_query(F.data == "buy_credits")
+@user_router.callback_query(F.data == "buy_credits")
 async def process_buy_credits_cb(callback_query: CallbackQuery):
     packs = get_credit_packs()
     kb = InlineKeyboardBuilder()
@@ -230,12 +232,12 @@ async def process_buy_credits_cb(callback_query: CallbackQuery):
     kb.adjust(1)
     await callback_query.message.edit_text("Выберите пакет кредитов для пополнения (оплата ЮKassa):", reply_markup=kb.as_markup())
 
-@dp.callback_query(F.data.startswith("buy:"))
+@user_router.callback_query(F.data.startswith("buy:"))
 async def process_buy_packet(callback_query: CallbackQuery):
     _, price, amount = callback_query.data.split(":")
     await callback_query.answer(f"Создан счет на {price} руб. (имитация)", show_alert=True)
 
-@dp.callback_query(F.data.startswith("set_model:"))
+@user_router.callback_query(F.data.startswith("set_model:"))
 async def process_set_model(callback_query: CallbackQuery):
     model = callback_query.data.split(":")[1]
     async with AsyncSessionLocal() as db:
