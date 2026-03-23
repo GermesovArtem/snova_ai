@@ -21,11 +21,26 @@ def get_admin_ids() -> List[int]:
 
 class AdminFilter(BaseFilter):
     async def __call__(self, message: Message) -> bool:
-        return message.from_user.id in get_admin_ids()
+        admin_ids = get_admin_ids()
+        user_id = message.from_user.id
+        is_admin = user_id in admin_ids
+        
+        # Log attempts to use /admin from non-admins
+        if not is_admin and isinstance(message, Message) and message.text and message.text.startswith("/admin"):
+            import logging
+            logging.info(f"🚫 ADMIN ACCESS DENIED: User {user_id} (@{message.from_user.username}) is NOT in {admin_ids}")
+            
+        return is_admin
 
-# Attach filter to router
-admin_router.message.filter(AdminFilter())
-admin_router.callback_query.filter(AdminFilter())
+admin_router = Router()
+protected_admin_router = Router()
+
+# Attach filter ONLY to protected router
+protected_admin_router.message.filter(AdminFilter())
+protected_admin_router.callback_query.filter(AdminFilter())
+
+# Include protected into main admin_router
+admin_router.include_router(protected_admin_router)
 
 class AdminStates(StatesGroup):
     waiting_for_user_query = State()
@@ -46,17 +61,17 @@ def get_back_admin_kb():
     return kb.as_markup()
 
 # --- HANDLERS ---
-@admin_router.message(Command("admin"))
+@protected_admin_router.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("👑 **Панель Администратора**\nВыберите раздел:", reply_markup=get_admin_kb(), parse_mode="Markdown")
 
-@admin_router.callback_query(F.data == "admin_menu")
+@protected_admin_router.callback_query(F.data == "admin_menu")
 async def process_admin_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("👑 **Панель Администратора**\nВыберите раздел:", reply_markup=get_admin_kb(), parse_mode="Markdown")
 
-@admin_router.callback_query(F.data == "admin_stats")
+@protected_admin_router.callback_query(F.data == "admin_stats")
 async def process_admin_stats(callback: CallbackQuery):
     async with AsyncSessionLocal() as db:
         stats = await services.get_admin_stats(db)
@@ -73,12 +88,12 @@ async def process_admin_stats(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_back_admin_kb(), parse_mode="Markdown")
 
 # --- USER MANAGEMENT ---
-@admin_router.callback_query(F.data == "admin_manage_user")
+@protected_admin_router.callback_query(F.data == "admin_manage_user")
 async def process_manage_user(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_user_query)
     await callback.message.edit_text("Введите ID или @username пользователя для поиска:", reply_markup=get_back_admin_kb())
 
-@admin_router.message(AdminStates.waiting_for_user_query)
+@protected_admin_router.message(AdminStates.waiting_for_user_query)
 async def process_user_query(message: Message, state: FSMContext):
     query = message.text.strip()
     async with AsyncSessionLocal() as db:
@@ -106,8 +121,8 @@ async def process_user_query(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
-@admin_router.callback_query(F.data.startswith("admin_add_bal:"))
-@admin_router.callback_query(F.data.startswith("admin_sub_bal:"))
+@protected_admin_router.callback_query(F.data.startswith("admin_add_bal:"))
+@protected_admin_router.callback_query(F.data.startswith("admin_sub_bal:"))
 async def process_balance_action(callback: CallbackQuery, state: FSMContext):
     action, user_id = callback.data.split(":")[0], callback.data.split(":")[1]
     is_add = action == "admin_add_bal"
@@ -118,7 +133,7 @@ async def process_balance_action(callback: CallbackQuery, state: FSMContext):
     verb = "начислить" if is_add else "списать"
     await callback.message.edit_text(f"Введите количество кредитов, которое нужно {verb} пользователю `{user_id}`:", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
 
-@admin_router.message(AdminStates.waiting_for_balance_amount)
+@protected_admin_router.message(AdminStates.waiting_for_balance_amount)
 async def process_balance_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text.strip().replace(",", "."))
@@ -175,3 +190,17 @@ async def process_broadcast_msg(message: Message, state: FSMContext, bot: Bot):
         await asyncio.sleep(0.05) # Telegram API limits ~30 msgs per sec
             
     await msg_wait.edit_text(f"✅ **Рассылка завершена!**\n\n🎯 Успешно доставлено: {success}\n❌ Заблокировали бота: {failed}", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
+
+# --- PUBLIC DEBUG COMMAND (Will be removed later) ---
+@admin_router.message(Command("id"), flags={"allow_any": True}) # We want this to trigger even if not admin for debugging
+async def cmd_id(message: Message):
+    admin_ids = get_admin_ids()
+    is_admin = message.from_user.id in admin_ids
+    status = "✅ АДМИН" if is_admin else "❌ НЕ АДМИН"
+    await message.answer(
+        f"👤 **Ваш профиль:**\n"
+        f"ID: `{message.from_user.id}`\n"
+        f"Статус: {status}\n\n"
+        f"Список админов в конфиге: `{admin_ids}`",
+        parse_mode="Markdown"
+    )
