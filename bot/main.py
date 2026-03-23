@@ -358,7 +358,9 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
             file = await bot.get_file(file_id)
             image_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
             
-    if not caption:
+    has_caption = bool(caption and caption.strip())
+    
+    if not has_caption:
         # Prompt user for text
         await bot.send_message(user_id, "Введите промпт (описание того, что вы хотите сделать):", reply_markup=build_cancel_kb())
         
@@ -371,13 +373,24 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
         state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
         await show_confirmation(user_id, caption, image_urls, state)
 
+
 @user_router.message(GenState.waiting_for_prompt)
 async def handle_prompt_for_media(message: types.Message, state: FSMContext):
+    if message.photo or message.media_group_id:
+        # If user sends a NEW photo/group while we were waiting for a prompt for the OLD one,
+        # we should reset and treat this as a fresh start.
+        await state.clear()
+        if message.media_group_id:
+            return await handle_media_group(message)
+        else:
+            return await handle_single_prompt(message, state)
+
     prompt_text = message.text or message.caption or ""
     data = await state.get_data()
     image_urls = data.get("image_urls", [])
     
     await show_confirmation(message.from_user.id, prompt_text, image_urls, state)
+
 
 # --- SINGLE PHOTO OR TEXT ---
 @user_router.message(F.photo | F.text)
@@ -385,11 +398,13 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.media_group_id: return
     
     # Check if a single photo was sent without text
-    if message.photo and not message.caption:
+    has_caption = message.caption and message.caption.strip()
+    if message.photo and not has_caption:
         await state.update_data(queued_images=1)
         await state.set_state(GenState.waiting_for_prompt)
-        await message.answer("Введите промпт (описание того, что вы хотите изменить):", reply_markup=build_cancel_kb())
+        await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
         return
+
 
     prompt = message.text or message.caption or ""
     image_urls = []
