@@ -358,7 +358,7 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
             file = await bot.get_file(file_id)
             image_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
             
-    has_caption = bool(caption and caption.strip())
+    has_caption = bool(caption and str(caption).strip())
     
     if not has_caption:
         # Prompt user for text
@@ -385,9 +385,16 @@ async def handle_prompt_for_media(message: types.Message, state: FSMContext):
         else:
             return await handle_single_prompt(message, state)
 
-    prompt_text = message.text or message.caption or ""
+    prompt_text = (message.text or message.caption or "").strip()
     data = await state.get_data()
-    image_urls = data.get("image_urls", [])
+    image_urls = data.get("image_urls") or []
+    
+    # Also check if we should fallback to refinement context if state urls are missing
+    if not image_urls:
+        refinement_url = data.get("refinement_context_url")
+        if refinement_url:
+            image_urls = [refinement_url]
+
     
     await show_confirmation(message.from_user.id, prompt_text, image_urls, state)
 
@@ -398,12 +405,17 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     if message.media_group_id: return
     
     # Check if a single photo was sent without text
-    has_caption = message.caption and message.caption.strip()
+    has_caption = bool(message.caption and message.caption.strip())
     if message.photo and not has_caption:
-        await state.update_data(queued_images=1)
+        file_id = message.photo[-1].file_id
+        file = await bot.get_file(file_id)
+        img_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+        
+        await state.update_data(queued_images=1, image_urls=[img_url])
         await state.set_state(GenState.waiting_for_prompt)
         await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
         return
+
 
 
     prompt = message.text or message.caption or ""
