@@ -2,7 +2,8 @@ import os
 import json
 import logging
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, cast, Date
+from . import models
 from . import models
 from .kie_api import create_task, get_task_info
 import uuid
@@ -91,14 +92,14 @@ async def get_admin_stats(db) -> dict:
     total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
     new_users_today = (await db.execute(
         select(func.count(models.User.id))
-        .filter(func.date(models.User.created_at) == today)
+        .filter(cast(models.User.created_at, Date) == today)
     )).scalar() or 0
     
     # Gen stats
     total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
     gens_today = (await db.execute(
         select(func.count(models.GenerationTask.id))
-        .filter(func.date(models.GenerationTask.created_at) == today)
+        .filter(cast(models.GenerationTask.created_at, Date) == today)
     )).scalar() or 0
     
     return {

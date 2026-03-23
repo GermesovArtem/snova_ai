@@ -2,7 +2,7 @@ import os
 import asyncio
 from typing import List
 from aiogram import Router, F, Bot
-from aiogram.filters import Command
+from aiogram.filters import Command, BaseFilter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -10,6 +10,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from backend.database import AsyncSessionLocal
 from backend import services
+from sqlalchemy.future import select
+from backend import models
 
 admin_router = Router()
 
@@ -17,7 +19,7 @@ def get_admin_ids() -> List[int]:
     ids_str = os.getenv("ADMIN_IDS", "")
     return [int(x.strip()) for x in ids_str.split(",") if x.strip().isdigit()]
 
-class AdminFilter:
+class AdminFilter(BaseFilter):
     async def __call__(self, message: Message) -> bool:
         return message.from_user.id in get_admin_ids()
 
@@ -154,9 +156,6 @@ async def process_broadcast_start(callback: CallbackQuery, state: FSMContext):
 async def process_broadcast_msg(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     msg_wait = await message.answer("⏳ Собираю аудиторию для рассылки...")
-    
-    from sqlalchemy.future import select
-    from backend import models
     
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(models.User.id))
