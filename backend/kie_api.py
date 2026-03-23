@@ -25,6 +25,9 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
     }
     if image_urls:
         payload["input"]["image_urls"] = image_urls
+        payload["input"]["image_url"] = image_urls[0]
+        payload["input"]["image"] = image_urls[0]
+
         
     async with httpx.AsyncClient() as client:
         try:
