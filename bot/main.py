@@ -444,7 +444,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 
                 async with AsyncSessionLocal() as db:
                     await services.commit_frozen_credits(db, user_id, cost)
-                    user = await services.get_user(db, user_id)
+                    user = await services.get_or_create_user(db, user_id)
                     new_balance = int(user.balance)
 
                 # 1. Send as high-res document
