@@ -29,8 +29,9 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         payload["input"]["image"] = image_urls[0]
 
         
-    logger.info(f"Kie API createTask: model={model}, prompt='{prompt[:50]}...', payload={json.dumps(payload)}")
+    logger.info(f"Kie API createTask: model={model}, prompt='{prompt[:50]}...'")
     async with httpx.AsyncClient() as client:
+
 
         try:
             resp = await client.post(url, json=payload, headers=get_headers(), timeout=10.0)

@@ -2,8 +2,10 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.5 (DEEP LOGS) !!!")
+print("!!! BOT MAIN.PY: VERSION 6.0 (STABLE) !!!")
 print("!"*50 + "\n")
+
+
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
