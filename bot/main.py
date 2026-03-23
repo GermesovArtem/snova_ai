@@ -262,16 +262,17 @@ async def process_set_model(callback_query: CallbackQuery):
         await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
-async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext):
+async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False):
     # Save for confirmation
     prompt_str = str(prompt or "")
-    await state.update_data(confirm_prompt=prompt_str, confirm_image_urls=image_urls)
+    await state.update_data(confirm_prompt=prompt_str, confirm_image_urls=image_urls, is_refinement=is_refinement)
     await state.set_state(GenState.confirming)
     
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
     
     actual_model = user.model_preference
+    # Google Nano Banana needs a special 'edit' model ID if photos are present
     if image_urls and (actual_model == "google/nano-banana" or actual_model == "nano-banana"):
         actual_model = "google/nano-banana-edit"
     
@@ -280,10 +281,12 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     human_name = next((n for n, m in models_map.items() if m == user.model_preference), user.model_preference)
     
     img_count_text = f"📸 Фото: **{len(image_urls)} шт.**\n" if len(image_urls) > 1 else ""
+    header = "🔄 **Доработка результата**" if is_refinement else "✨ **Ваш промпт почти готов!**"
+    
     safe_prompt = prompt_str[:200] + ("..." if len(prompt_str) > 200 else "")
     
     text = (
-        f"✨ **Ваш промпт почти готов!**\n\n"
+        f"{header}\n\n"
         f"📝 Текст: `{safe_prompt}`\n"
         f"{img_count_text}"
         f"🤖 Модель: **{human_name}**\n"
@@ -291,6 +294,7 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
         f"💳 Ваш баланс: **{int(user.balance)} ген.**\n\n"
         f"Всё верно? Начинаем генерацию?"
     )
+
 
     
     if image_urls:
@@ -320,7 +324,7 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     
     await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...")
-    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=image_urls)
+    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=image_urls, state=state)
 
 @user_router.callback_query(F.data == "edit_gen")
 async def process_edit_gen(callback: CallbackQuery, state: FSMContext):
@@ -389,20 +393,31 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
 
     prompt = message.text or message.caption or ""
     image_urls = []
+    
+    data = await state.get_data()
+    refinement_url = data.get("refinement_context_url")
+    is_refinement = False
+
     if message.photo:
         file_id = message.photo[-1].file_id
         file = await bot.get_file(file_id)
         image_urls = [f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"]
+        # Clear previous context if new photo is sent
+        await state.update_data(refinement_context_url=None)
+    elif message.text and refinement_url:
+        # Auto-inject last result as reference
+        image_urls = [refinement_url]
+        is_refinement = True
         
-    await show_confirmation(message.from_user.id, prompt, image_urls, state)
+    await show_confirmation(message.from_user.id, prompt, image_urls, state, is_refinement=is_refinement)
 
-async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None):
+async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None, state: FSMContext = None):
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
         # Resolve actual model and cost before try block to avoid UnboundLocalError
         actual_model = user.model_preference
-        if image_urls and actual_model == "google/nano-banana":
+        if image_urls and (actual_model == "google/nano-banana" or actual_model == "nano-banana"):
             actual_model = "google/nano-banana-edit"
         
         cost = services.get_model_cost(actual_model)
@@ -423,9 +438,9 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
             return
             
     msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
-    asyncio.create_task(run_generation_task(user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls))
+    asyncio.create_task(run_generation_task(user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state))
 
-async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str]):
+async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None):
     try:
         async with AsyncSessionLocal() as db:
             user = await services.get_or_create_user(db, user_id) # Re-fetch user to ensure latest balance/model
@@ -465,6 +480,9 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     parse_mode="Markdown"
                 )
                 
+                if state:
+                    await state.update_data(refinement_context_url=info["image_url"])
+
                 await bot.delete_message(user_id, msg_id)
                 return
             elif state in ["failed", "error"]:
