@@ -262,9 +262,10 @@ async def process_set_model(callback_query: CallbackQuery):
         await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
-async def show_confirmation(user_id: int, prompt: str, image_urls: list, state: FSMContext):
+async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext):
     # Save for confirmation
-    await state.update_data(confirm_prompt=prompt, confirm_image_urls=image_urls)
+    prompt_str = str(prompt or "")
+    await state.update_data(confirm_prompt=prompt_str, confirm_image_urls=image_urls)
     await state.set_state(GenState.confirming)
     
     async with AsyncSessionLocal() as db:
@@ -278,21 +279,35 @@ async def show_confirmation(user_id: int, prompt: str, image_urls: list, state: 
     models_map = get_available_models()
     human_name = next((n for n, m in models_map.items() if m == user.model_preference), user.model_preference)
     
-    img_count = f"📸 Фото: **{len(image_urls)} шт.**\n" if image_urls else ""
-    p = prompt or ""
-    safe_prompt = p[:100] + ("..." if len(p) > 100 else "")
+    img_count_text = f"📸 Фото: **{len(image_urls)} шт.**\n" if len(image_urls) > 1 else ""
+    safe_prompt = prompt_str[:200] + ("..." if len(prompt_str) > 200 else "")
+    
     text = (
         f"✨ **Ваш промпт почти готов!**\n\n"
         f"📝 Текст: `{safe_prompt}`\n"
-        f"{img_count}"
+        f"{img_count_text}"
         f"🤖 Модель: **{human_name}**\n"
         f"💰 Стоимость: **{int(cost)} ген.**\n\n"
         f"💳 Ваш баланс: **{int(user.balance)} ген.**\n\n"
         f"Всё верно? Начинаем генерацию?"
     )
 
-
-    await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
+    
+    if image_urls:
+        await bot.send_photo(
+            user_id, 
+            photo=image_urls[0], 
+            caption=text, 
+            reply_markup=build_confirm_kb(), 
+            parse_mode="Markdown"
+        )
+    else:
+        await bot.send_message(
+            user_id, 
+            text, 
+            reply_markup=build_confirm_kb(), 
+            parse_mode="Markdown"
+        )
 
 @user_router.callback_query(GenState.confirming, F.data == "confirm_gen")
 async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
