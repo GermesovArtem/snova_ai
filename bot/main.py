@@ -299,6 +299,8 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
 
     
     if image_urls:
+        # Use first image_urls entry as photo. 
+        # Crucial: if it's a file_id, Telegram sends it instantly. if it's a URL, it fetches.
         await bot.send_photo(
             user_id, 
             photo=image_urls[0], 
@@ -306,6 +308,7 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
             reply_markup=build_confirm_kb(), 
             parse_mode="Markdown"
         )
+
     else:
         await bot.send_message(
             user_id, 
@@ -325,7 +328,19 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     await state.set_state(None)
     
     await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...")
-    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=image_urls, state=state)
+    
+    # Pre-process image_urls: convert file_ids to URLs before sending to wrapper
+    final_urls = []
+    for item in image_urls:
+        if not item.startswith("http"):
+            # It's a file_id! Get URL
+            file = await bot.get_file(item)
+            final_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
+        else:
+            final_urls.append(item)
+
+    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=final_urls, state=state)
+
 
 @user_router.callback_query(F.data == "edit_gen")
 async def process_edit_gen(callback: CallbackQuery, state: FSMContext):
@@ -357,7 +372,11 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
         if m.photo:
             file_id = m.photo[-1].file_id
             file = await bot.get_file(file_id)
-            image_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
+            img_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+            # For the UI, we'll store the file_id in image_urls[0] for the confirmation message
+            # and the full URL for the backend in a separate list.
+            image_urls.append(file_id) # Use file_id for UI
+
             
     has_caption = bool(caption and str(caption).strip())
     
@@ -416,13 +435,12 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
     has_caption = bool(message.caption and message.caption.strip())
     if message.photo and not has_caption:
         file_id = message.photo[-1].file_id
-        file = await bot.get_file(file_id)
-        img_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
-        
-        await state.update_data(queued_images=1, image_urls=[img_url])
+        # We need the URL for the backend, but we'll use file_id for the UI
+        await state.update_data(queued_images=1, image_urls=[file_id])
         await state.set_state(GenState.waiting_for_prompt)
         await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
         return
+
 
 
 
@@ -437,11 +455,11 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
 
     if message.photo:
         file_id = message.photo[-1].file_id
-        file = await bot.get_file(file_id)
-        image_urls = [f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"]
+        image_urls = [file_id]
         # Clear previous context if new photo is sent
         await state.update_data(refinement_context_url=None)
         logger.info("New photo sent, cleared refinement context.")
+
     elif message.text and refinement_url:
         # Auto-inject last result as reference
         image_urls = [refinement_url]
