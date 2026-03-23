@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 6.0 (STABLE) !!!")
+print("!!! BOT MAIN.PY: VERSION 6.1 (DB STABLE) !!!")
 print("!"*50 + "\n")
 
 
@@ -520,27 +520,28 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
     asyncio.create_task(run_generation_task(user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state))
 
 async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None):
+    kie_task_id = None
     try:
+        # 1. Start Flow (Short DB session)
         async with AsyncSessionLocal() as db:
-            user = await services.get_or_create_user(db, user_id) # Re-fetch user to ensure latest balance/model
-            
-            # The cost has already been deducted in start_generation_wrapper, so we just start the task
             kie_task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
             
-        for _ in range(30):
-            await asyncio.sleep(2)
+        # 2. Wait Loop (No DB session)
+        for _ in range(60): # 60 * 4s = 240s
+            await asyncio.sleep(4)
             info = await services.check_generation_status(kie_task_id)
-            state = info.get("state")
-            if state in ["success", "completed"] and info.get("image_url"):
-                
-                models = get_available_models()
-                human_name = next((n for n, m in models.items() if m == model), model)
-                
+            kie_status = info.get("state")
+            
+            if kie_status in ["success", "completed"] and info.get("image_url"):
+                # Success Logic (Short DB session for commit)
                 async with AsyncSessionLocal() as db:
                     await services.commit_frozen_credits(db, user_id, cost)
                     user = await services.get_or_create_user(db, user_id)
                     new_balance = int(user.balance)
 
+                models = get_available_models()
+                human_name = next((n for n, m in models.items() if m == model), model)
+                
                 # 1. Send as high-res document
                 file_caption = f"💾 **Оригинал в высоком качестве**\n💳 Остаток баланса: **{new_balance} ген.**\n\nТекущая модель: {human_name}"
                 await bot.send_document(
@@ -559,22 +560,30 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     parse_mode="Markdown"
                 )
                 
+                # Store in refinement context
                 if state:
                     await state.update_data(refinement_context_url=info["image_url"])
 
-                await bot.delete_message(user_id, msg_id)
+                try: await bot.delete_message(user_id, msg_id)
+                except: pass
                 return
-            elif state in ["failed", "error"]:
-                err_text = info.get("error", "KIE server processing failed")
+                
+            elif kie_status in ["failed", "error", "cancelled"]:
+                err_text = info.get("error", f"KIE reported state: {kie_status}")
                 raise Exception(err_text)
                 
-        raise Exception("Timeout limit reached")
+        raise Exception("Превышено время ожидания генерации.")
+        
     except Exception as e:
-        logger.error(f"Gen error: {e}")
-        await bot.edit_message_text(f"❌ Ошибка генерации: {e}", chat_id=user_id, message_id=msg_id)
-        # Rollback
+        logger.error(f"Generation task error: {e}", exc_info=True)
+        # Refund (Short DB session)
         async with AsyncSessionLocal() as db:
             await services.refund_frozen_credits(db, user_id, cost)
+            
+        await bot.send_message(user_id, f"❌ Ошибка генерации: {e}")
+        try: await bot.delete_message(user_id, msg_id)
+        except: pass
+
 
 async def on_startup():
     await setup_bot_commands(bot)
