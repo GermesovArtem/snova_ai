@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from sqlalchemy.future import select
+from sqlalchemy import func
 from . import models
 from .kie_api import create_task, get_task_info
 import uuid
@@ -79,3 +80,48 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
 async def check_generation_status(task_id: str):
     """Wrapper for KIE recordInfo"""
     return await get_task_info(task_id)
+
+# --- Admin API ---
+import datetime
+
+async def get_admin_stats(db) -> dict:
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    
+    # User stats
+    total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
+    new_users_today = (await db.execute(
+        select(func.count(models.User.id))
+        .filter(func.date(models.User.created_at) == today)
+    )).scalar() or 0
+    
+    # Gen stats
+    total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
+    gens_today = (await db.execute(
+        select(func.count(models.GenerationTask.id))
+        .filter(func.date(models.GenerationTask.created_at) == today)
+    )).scalar() or 0
+    
+    return {
+        "total_users": total_users,
+        "new_users_today": new_users_today,
+        "total_gens": total_gens,
+        "gens_today": gens_today
+    }
+
+async def search_user(db, query: str) -> models.User:
+    if query.isdigit():
+        res = await db.execute(select(models.User).filter_by(id=int(query)))
+        return res.scalars().first()
+    else:
+        query = query.replace("@", "")
+        res = await db.execute(select(models.User).filter(models.User.name.ilike(f"%{query}%")))
+        return res.scalars().first()
+
+async def update_user_balance(db, user_id: int, amount: float) -> models.User:
+    res = await db.execute(select(models.User).filter_by(id=user_id))
+    user = res.scalars().first()
+    if user:
+        user.balance += amount
+        await db.commit()
+        await db.refresh(user)
+    return user

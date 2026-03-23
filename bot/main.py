@@ -22,6 +22,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logger = logging.getLogger(__name__)
 
+from bot.admin import admin_router
+dp.include_router(admin_router)
+
 media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
 
 class GenState(StatesGroup):
