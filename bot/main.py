@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 5.3 (STRICT LOGS) !!!")
+print("!!! BOT MAIN.PY: VERSION 5.4 (UI FIX) !!!")
 print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
@@ -327,17 +327,25 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
     await state.set_state(None)
     
-    await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...")
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(caption="🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
+        else:
+            await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
+    except Exception as e:
+        logger.warning(f"Could not edit confirmation message: {e}")
+
     
     # Pre-process image_urls: convert file_ids to URLs before sending to wrapper
     final_urls = []
-    for item in image_urls:
-        if not item.startswith("http"):
+    for item in (image_urls or []):
+        if item and not str(item).startswith("http"):
             # It's a file_id! Get URL
             file = await bot.get_file(item)
             final_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
-        else:
+        elif item:
             final_urls.append(item)
+
 
     await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=final_urls, state=state)
 
