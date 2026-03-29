@@ -241,11 +241,28 @@ async def process_gen_similar(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     prompt = data.get("last_prompt")
     image_urls = data.get("last_image_urls", [])
+    last_settings = data.get("last_settings", {})
+    
     if not prompt:
          await callback_query.answer("Не удалось найти данные для повтора. Попробуйте создать новую!", show_alert=True)
          return
+    
     await callback_query.answer("Запускаю повтор...")
-    await start_generation_wrapper(callback_query.from_user.id, prompt=prompt, image_urls=image_urls, state=state)
+    
+    # Extract saved settings if available
+    ratio = last_settings.get("aspect_ratio", "1:1")
+    res = last_settings.get("resolution", "4K")
+    fmt = last_settings.get("output_format", "png")
+    
+    await start_generation_wrapper(
+        callback_query.from_user.id, 
+        prompt=prompt, 
+        image_urls=image_urls, 
+        state=state,
+        aspect_ratio=ratio,
+        resolution=res,
+        output_format=fmt
+    )
 
 @user_router.callback_query(F.data == "main_menu")
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
@@ -453,7 +470,10 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
         elif item:
             final_urls.append(item)
 
-    await state.update_data(last_prompt=prompt, last_image_urls=final_urls)
+    # Prepare settings BEFORE clearing state/updating data
+    settings = data.get("gen_settings", {})
+    
+    await state.update_data(last_prompt=prompt, last_image_urls=final_urls, last_settings=settings)
     await state.set_state(None)
 
     settings = data.get("gen_settings", {})
