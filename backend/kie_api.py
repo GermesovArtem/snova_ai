@@ -50,19 +50,23 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
             resp = await client.post(url, json=payload, headers=get_headers(), timeout=10.0)
             data = resp.json()
             
-            # 1. Error Handling Check: code 402
-            if resp.status_code == 402 or data.get("code") == 402:
-                logger.error("Kie.ai Error: Credits insufficient (402)")
-                return {"success": False, "error": "insufficient_funds"}
+            # 1. Error Handling Check: code 402 or 422
+            if resp.status_code != 200 or data.get("code") not in [0, 200, 201]:
+                err_msg = data.get("msg") or data.get("error") or str(data)
+                logger.error(f"Kie API Error (Code {data.get('code')}): {err_msg}")
+                if data.get("code") == 402:
+                    return {"success": False, "error": "insufficient_funds"}
+                return {"success": False, "error": err_msg}
             
             # 2. Extract TaskID
             task_data = data.get("data", {})
             if task_data and task_data.get("taskId"):
                 return {"success": True, "taskId": task_data["taskId"]}
             else:
-                return {"success": False, "error": str(data)}
+                logger.error(f"Kie API: No taskId in success response: {data}")
+                return {"success": False, "error": "No taskId returned from API"}
         except Exception as e:
-            logger.error(f"Kie API createTask error: {e}")
+            logger.error(f"Kie API createTask exception: {e}")
             return {"success": False, "error": str(e)}
 
 async def get_task_info(task_id: str):
@@ -73,8 +77,15 @@ async def get_task_info(task_id: str):
             resp = await client.get(url, params={"taskId": task_id}, headers=get_headers(), timeout=10.0)
             data = resp.json()
             
+            # Check for API-level errors (like 422 recordInfo is null)
+            if data.get("code") and data.get("code") != 200:
+                err_msg = data.get("msg") or "Unknown KIE error"
+                logger.warning(f"Kie API recordInfo error (Task {task_id}): {err_msg}")
+                return {"success": False, "state": "failed", "error": err_msg}
+
             # JSON Parsing Check (NoneType)
             if not data or data.get("data") is None:
+                logger.warning(f"Kie API recordInfo: 'data' field is null for task {task_id}")
                 return {"success": False, "state": "failed", "error": "No data in response"}
             
             job_data = data["data"]
@@ -99,5 +110,5 @@ async def get_task_info(task_id: str):
                         
             return {"success": True, "state": state, "image_url": image_url}
         except Exception as e:
-            logger.error(f"Kie API queryTask error: {e}")
+            logger.error(f"Kie API queryTask exception: {e}")
             return {"success": False, "state": "error", "error": str(e)}

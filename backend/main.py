@@ -6,10 +6,11 @@ from . import models
 from . import services
 from pydantic import BaseModel
 from typing import List, Optional
-import os
-
 from aiogram import Bot
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(title="S•NOVA AI Admin & API Engine")
 

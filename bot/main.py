@@ -41,11 +41,11 @@ class GenState(StatesGroup):
     choosing_settings = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "google/nano-banana-2", "NanoBanana PRO": "google/nano-banana-pro"}')
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
     try:
         return json.loads(models_str)
     except:
-        return {"NanoBanana 2": "google/nano-banana-2", "NanoBanana PRO": "google/nano-banana-pro"}
+        return {"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
 
 def get_model_limit(model_id: str) -> int:
     """Returns official limit for image_input: 8 for PRO, 14 for v2"""
@@ -55,19 +55,19 @@ def get_model_limit(model_id: str) -> int:
 
 
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
     try:
         return json.loads(costs_str)
     except:
-        return {"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}
+        return {"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}
 
 
 def get_credit_packs():
-    packs_str = os.getenv("CREDIT_PACKS", '{"149": 10}')
+    packs_str = os.getenv("CREDIT_PACKS", '{"149": 10, "299": 25, "899": 100}')
     try:
         return json.loads(packs_str)
     except:
-        return {"149": 10}
+        return {"149": 10, "299": 25, "899": 100}
 
 def generate_model_menu_text(balance: float, current_mm: str):
     models = get_available_models()
@@ -724,7 +724,11 @@ async def get_safe_preview_photo(url: str) -> types.BufferedInputFile | None:
 async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
                           aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     kie_task_id = None
+    gen_msg = None
     try:
+        # 0. Send "Generating" status message
+        gen_msg = await bot.send_message(user_id, "🎨 **Запрос принят!** Генерирую ваше изображение, пожалуйста, подождите...")
+
         # 1. Start Flow (Short DB session)
         async with AsyncSessionLocal() as db:
             kie_task_id = await services.start_generation_flow(
@@ -733,12 +737,22 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             )
             
         # 2. Wait Loop (No DB session)
-        for _ in range(120): # 120 * 4s = 480s (8 mins)
-            await asyncio.sleep(4)
+        last_log_state = None
+        for i in range(120): # 120 * 5s = 600s (10 mins)
+            await asyncio.sleep(5)
             info = await services.check_generation_status(kie_task_id)
             kie_status = info.get("state")
             
+            if kie_status != last_log_state:
+                logger.info(f"Task {kie_task_id} status change: {last_log_state} -> {kie_status}")
+                last_log_state = kie_status
+
             if kie_status in ["success", "completed"] and info.get("image_url"):
+                # Cleanup gen message
+                if gen_msg:
+                    try: await gen_msg.delete()
+                    except: pass
+
                 # 1. Update state FIRST
                 if state:
                     await state.update_data(refinement_context_url=info.get("image_url"))
@@ -749,36 +763,48 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     user = await services.get_or_create_user(db, user_id)
                     new_balance = int(user.balance)
 
-                models = get_available_models()
-                human_name = next((n for n, m in models.items() if m == model), model)
+                models_map = get_available_models()
+                human_name = next((n for n, m in models_map.items() if m == model), model)
                 
-                # 3. Dynamic Delivery Strategy with Smart Optimization
+                # 3. Delivery Strategy
                 photo_sent = False
                 try:
-                    # Attempt optimized photo delivery (Pillow logic inside)
                     photo_data = await get_safe_preview_photo(info["image_url"])
                     if photo_data:
-                        photo_caption = (
-                            f"🔥 **Готово!**\n\n"
-                            f"💳 Остаток: **{new_balance} кр.**\n"
-                            f"🤖 Модель: **{human_name}**"
-                        )
-                        await bot.send_photo(
-                            user_id, 
-                            photo=photo_data,
-                            caption=photo_caption,
-                            reply_markup=build_after_gen_kb(),
-                            parse_mode="Markdown"
-                        )
+                        caption = f"🔥 **Готово!**\n\n💳 Остаток: **{new_balance} кр.**\n🤖 Модель: **{human_name}**"
+                        await bot.send_photo(user_id, photo=photo_data, caption=caption, reply_markup=build_after_gen_kb(), parse_mode="Markdown")
                         photo_sent = True
                     
-                    # Send high-res document as original (always via direct URL from KIE to avoid local processing of document)
-                    await bot.send_document(
-                        user_id, 
-                        document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
-                        caption="💾 Оригинал в высоком качестве (PNG/4K)"
-                    )
+                    await bot.send_document(user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), caption="💾 Оригинал (PNG/4K)")
                 except Exception as e:
+                    logger.warning(f"Delivery failed: {e}")
+                    if not photo_sent:
+                        await bot.send_document(user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), 
+                                               caption=f"🔥 **Готово!**\n\n💳 Остаток: **{new_balance} кр.**", reply_markup=build_after_gen_kb())
+                
+                try: await bot.delete_message(user_id, msg_id)
+                except: pass
+                return
+                
+            elif kie_status in ["failed", "error", "cancelled"]:
+                err_text = info.get("error", f"KIE reported state: {kie_status}")
+                raise Exception(err_text)
+                
+        raise Exception("Превышено время ожидания генерации.")
+        
+    except Exception as e:
+        logger.error(f"Generation task error: {e}")
+        if gen_msg:
+            try: await gen_msg.delete()
+            except: pass
+
+        async with AsyncSessionLocal() as db:
+            await services.refund_frozen_credits(db, user_id, cost)
+            
+        await bot.send_message(user_id, f"❌ Ошибка: {e}")
+        try: await bot.delete_message(user_id, msg_id)
+        except: pass
+xception as e:
                     logger.warning(f"Smart photo delivery failed: {e}")
                     if not photo_sent:
                         # FALLBACK if photo failed completely

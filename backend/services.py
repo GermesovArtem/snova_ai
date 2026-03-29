@@ -1,12 +1,14 @@
 import os
 import json
 import logging
+from dotenv import load_dotenv
 from sqlalchemy.future import select
 from sqlalchemy import func, cast, Date
 from . import models
-from . import models
 from .kie_api import create_task, get_task_info
 import uuid
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,8 @@ async def fix_all_model_ids(db):
 def get_model_cost(model_id: str) -> float:
     # Auto-normalize to handle old DB values
     model_id = normalize_model_id(model_id)
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}')
+    # Default fallback prices without 'google/' prefix to match normalization
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
 
     try:
         costs = json.loads(costs_str)
