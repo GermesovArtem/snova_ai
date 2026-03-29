@@ -245,7 +245,7 @@ async def process_gen_similar(callback_query: CallbackQuery, state: FSMContext):
          await callback_query.answer("Не удалось найти данные для повтора. Попробуйте создать новую!", show_alert=True)
          return
     await callback_query.answer("Запускаю повтор...")
-    await start_generation_wrapper(callback_query.from_user.id, prompt=prompt, image_urls=image_urls)
+    await start_generation_wrapper(callback_query.from_user.id, prompt=prompt, image_urls=image_urls, state=state)
 
 @user_router.callback_query(F.data == "main_menu")
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
@@ -616,7 +616,8 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
             return
             
     # Save resolved URLs for "Repeat" functionality to avoid 500 errors
-    await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
+    if state:
+        await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
 
     msg_wait = await bot.send_message(user_id, f"🚀 **Запрос подтвержден!** Начинаю генерацию (**{human_model_name(user.model_preference)}**)...", parse_mode="Markdown")
     asyncio.create_task(run_generation_task(
