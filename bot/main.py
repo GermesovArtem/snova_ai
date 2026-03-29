@@ -353,14 +353,11 @@ async def process_confirm_settings(callback: CallbackQuery, state: FSMContext):
     urls = data.get("confirm_image_urls", [])
     is_refine = data.get("is_refinement", False)
     
-    # Return to confirmation message
-    try:
-        await callback.message.delete()
-    except: pass
-    await show_confirmation(callback.from_user.id, prompt, urls, state, is_refine)
+    # Return to confirmation by EDITING current message instead of deleting/re-sending
+    await show_confirmation(callback.from_user.id, prompt, urls, state, is_refine, message=callback.message)
     await callback.answer()
 
-async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False):
+async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False, message: types.Message = None):
     data = await state.get_data()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
@@ -407,13 +404,38 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
         f"Всё верно? Начинаем генерацию?"
     )
 
+    if message:
+        # Smart Edit: Update existing message if possible to avoid clutter
+        if len(image_urls) == 1 and (message.photo or message.caption):
+            try:
+                await message.edit_caption(caption=text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
+                return
+            except: pass
+        elif not image_urls:
+            try:
+                await message.edit_text(text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
+                return
+            except: pass
+        
+        # Cleanup: If it's a media group (multiple photos), we can't easily edit it
+        # to add buttons, so we delete it to avoid duplicates.
+        try: await message.delete()
+        except: pass
+
     if image_urls:
         if len(image_urls) > 1:
             media = [InputMediaPhoto(media=url) for url in image_urls]
             await bot.send_media_group(user_id, media=media)
             await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
         else:
-            await bot.send_photo(user_id, photo=image_urls[0], caption=text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
+            # Single photo case: check if it's a URL (could be heavy 4K to refine)
+            photo_source = image_urls[0]
+            if str(photo_source).startswith("http"):
+                optimized = await get_safe_preview_photo(photo_source)
+                if optimized:
+                    photo_source = optimized
+            
+            await bot.send_photo(user_id, photo=photo_source, caption=text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
     else:
         await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
 
@@ -549,45 +571,46 @@ async def handle_prompt_for_media(message: types.Message, state: FSMContext):
 # --- SINGLE PHOTO OR TEXT ---
 @user_router.message(F.photo | F.text)
 async def handle_single_prompt(message: types.Message, state: FSMContext):
-    if message.media_group_id: return
-    
-    # Check if a single photo was sent without text
-    has_caption = bool(message.caption and message.caption.strip())
-    if message.photo and not has_caption:
-        file_id = message.photo[-1].file_id
-        # We need the URL for the backend, but we'll use file_id for the UI
-        await state.update_data(queued_images=1, image_urls=[file_id])
-        await state.set_state(GenState.waiting_for_prompt)
-        await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
-        return
-
-
-
-
-    prompt = message.text or message.caption or ""
-    image_urls = []
-    
-    data = await state.get_data()
-    refinement_url = data.get("refinement_context_url")
-    is_refinement = False
-    
-    logger.info(f"Checking refinement for user {message.from_user.id}: {refinement_url}")
-
-    if message.photo:
-        file_id = message.photo[-1].file_id
-        image_urls = [file_id]
-        # Clear previous context if new photo is sent
-        await state.update_data(refinement_context_url=None)
-        logger.info("New photo sent, cleared refinement context.")
-
-    elif message.text and refinement_url:
-        # Auto-inject last result as reference
-        image_urls = [refinement_url]
-        is_refinement = True
-        logger.info(f"Auto-injecting refinement context: {refinement_url}")
-
+    try:
+        if message.media_group_id: return
         
-    await show_confirmation(message.from_user.id, prompt, image_urls, state, is_refinement=is_refinement)
+        # Check if a single photo was sent without text
+        has_caption = bool(message.caption and message.caption.strip())
+        if message.photo and not has_caption:
+            file_id = message.photo[-1].file_id
+            # We need the URL for the backend, but we'll use file_id for the UI
+            await state.update_data(queued_images=1, image_urls=[file_id])
+            await state.set_state(GenState.waiting_for_prompt)
+            await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
+            return
+
+        prompt = message.text or message.caption or ""
+        image_urls = []
+        
+        data = await state.get_data()
+        refinement_url = data.get("refinement_context_url")
+        is_refinement = False
+        
+        logger.info(f"Checking refinement for user {message.from_user.id}: {refinement_url}")
+
+        if message.photo:
+            file_id = message.photo[-1].file_id
+            image_urls = [file_id]
+            # Clear previous context if new photo is sent
+            await state.update_data(refinement_context_url=None)
+            logger.info("New photo sent, cleared refinement context.")
+
+        elif message.text and refinement_url:
+            # Auto-inject last result as reference
+            image_urls = [refinement_url]
+            is_refinement = True
+            logger.info(f"Auto-injecting refinement context: {refinement_url}")
+
+            
+        await show_confirmation(message.from_user.id, prompt, image_urls, state, is_refinement=is_refinement)
+    except Exception as e:
+        logger.error(f"Error in handle_single_prompt: {e}", exc_info=True)
+        await message.answer(f"❌ Ошибка: не удалось обработать ваш запрос. Попробуйте ещё раз.")
 
 async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None, state: FSMContext = None,
                                aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
