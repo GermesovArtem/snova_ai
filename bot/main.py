@@ -525,6 +525,10 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
         await bot.send_message(user_id, f"❌ Ошибка: выбраная модель поддерживает максимум **{limit} фото** в одном запросе. Вы прислали {len(messages)}.")
         return
 
+    # Clear refinement context for new media groups
+    state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))
+    await state.update_data(refinement_context_url=None)
+
     # Collect all images from the group
     image_urls = []
     caption = None
@@ -596,13 +600,18 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         
         # Check if a single photo was sent without text
         has_caption = bool(message.caption and message.caption.strip())
-        if message.photo and not has_caption:
-            file_id = message.photo[-1].file_id
-            # We need the URL for the backend, but we'll use file_id for the UI
-            await state.update_data(queued_images=1, image_urls=[file_id])
-            await state.set_state(GenState.waiting_for_prompt)
-            await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
-            return
+        if message.photo:
+            # Clear previous context if new photo is sent
+            await state.update_data(refinement_context_url=None)
+            logger.info("New photo detected, cleared refinement context.")
+            
+            if not has_caption:
+                file_id = message.photo[-1].file_id
+                # We need the URL for the backend, but we'll use file_id for the UI
+                await state.update_data(queued_images=1, image_urls=[file_id])
+                await state.set_state(GenState.waiting_for_prompt)
+                await message.answer("📸 Фото получено! Теперь введите промпт (описание):", reply_markup=build_cancel_kb())
+                return
 
         prompt = message.text or message.caption or ""
         image_urls = []
@@ -616,9 +625,7 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         if message.photo:
             file_id = message.photo[-1].file_id
             image_urls = [file_id]
-            # Clear previous context if new photo is sent
-            await state.update_data(refinement_context_url=None)
-            logger.info("New photo sent, cleared refinement context.")
+            logger.info("Using new photo for generation.")
 
         elif message.text and refinement_url:
             # Auto-inject last result as reference
