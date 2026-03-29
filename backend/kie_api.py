@@ -24,16 +24,26 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         }
     }
     if image_urls:
-        payload["input"]["image_urls"] = image_urls
+        # Standard fields for image-to-image or source
         payload["input"]["image_url"] = image_urls[0]
         payload["input"]["image"] = image_urls[0]
+        payload["input"]["input_image"] = image_urls[0]
+        payload["input"]["image_urls"] = image_urls
         
-        # If there's a second image, treat it as a style/reference image
-        if len(image_urls) > 1:
+        # Scenario 2: Style Transfer or Reference Image
+        if len(image_urls) == 2:
+            # First is source, second is style/ref
             payload["input"]["ref_image"] = image_urls[1]
-            payload["input"]["style_image"] = image_urls[1] # Some models use this field
-            payload["input"]["source_image"] = image_urls[0] # Some models use this
-            
+            payload["input"]["style_image"] = image_urls[1]
+            payload["input"]["reference_image"] = image_urls[1]
+            payload["input"]["source_image"] = image_urls[0]
+
+        # Scenario 3: Multiple Images for Composition/Merge
+        elif len(image_urls) > 2:
+            # Most modern KIE models for "Merge" use the image_urls list 
+            # and ignore image/ref_image if multiple are present, but we keep 
+            # image_url[0] as a fallback for the main subject.
+            pass
 
 
         

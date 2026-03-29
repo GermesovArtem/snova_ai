@@ -9,7 +9,7 @@ print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -306,15 +306,27 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
 
     
     if image_urls:
-        # Use first image_urls entry as photo. 
-        # Crucial: if it's a file_id, Telegram sends it instantly. if it's a URL, it fetches.
-        await bot.send_photo(
-            user_id, 
-            photo=image_urls[0], 
-            caption=text, 
-            reply_markup=build_confirm_kb(), 
-            parse_mode="Markdown"
-        )
+        if len(image_urls) > 1:
+            # 1. Send all photos as an album (Media Group)
+            media = [InputMediaPhoto(media=url) for url in image_urls]
+            await bot.send_media_group(user_id, media=media)
+            
+            # 2. Send the confirmation text with buttons as a separate message
+            await bot.send_message(
+                user_id, 
+                text, 
+                reply_markup=build_confirm_kb(), 
+                parse_mode="Markdown"
+            )
+        else:
+            # Single photo case: use caption as before for a cleaner look
+            await bot.send_photo(
+                user_id, 
+                photo=image_urls[0], 
+                caption=text, 
+                reply_markup=build_confirm_kb(), 
+                parse_mode="Markdown"
+            )
 
     else:
         await bot.send_message(
