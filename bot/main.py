@@ -800,55 +800,19 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
         raise Exception("Превышено время ожидания генерации.")
         
     except Exception as e:
-        logger.error(f"Generation task error: {e}")
-        if gen_msg:
-            try: await gen_msg.delete()
-            except: pass
-
-        async with AsyncSessionLocal() as db:
-            await services.refund_frozen_credits(db, user_id, cost)
-            
-        await bot.send_message(user_id, f"❌ Ошибка: {e}")
-        try: await bot.delete_message(user_id, msg_id)
-        except: pass
-xception as e:
-                    logger.warning(f"Smart photo delivery failed: {e}")
-                    if not photo_sent:
-                        # FALLBACK if photo failed completely
-                        doc_caption = (
-                            f"🔥 **Готово!**\n\n"
-                            f"💳 Остаток: **{new_balance} кр.**\n"
-                            f"🤖 Модель: **{human_name}**\n\n"
-                            f"📎 Оригинал (PNG/4K) прикреплен выше.\n"
-                            f"⚠️ Файл слишком большой для превью, поэтому отправлен как документ."
-                        )
-                        await bot.send_document(
-                            user_id, 
-                            document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
-                            caption=doc_caption,
-                            reply_markup=build_after_gen_kb(),
-                            parse_mode="Markdown"
-                        )
-                
-                try: await bot.delete_message(user_id, msg_id)
-                except: pass
-                return
-                
-            elif kie_status in ["failed", "error", "cancelled"]:
-                err_text = info.get("error", f"KIE reported state: {kie_status}")
-                raise Exception(err_text)
-                
-        raise Exception("Превышено время ожидания генерации.")
-        
-    except Exception as e:
         logger.error(f"Generation task error: {e}", exc_info=True)
         # Refund (Short DB session)
         async with AsyncSessionLocal() as db:
             await services.refund_frozen_credits(db, user_id, cost)
             
+        if gen_msg:
+            try: await gen_msg.delete()
+            except: pass
+            
         await bot.send_message(user_id, f"❌ Ошибка генерации: {e}")
         try: await bot.delete_message(user_id, msg_id)
         except: pass
+
 
 
 async def on_startup():
