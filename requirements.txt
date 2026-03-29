@@ -10,3 +10,4 @@ httpx>=0.26.0
 python-dotenv>=1.0.1
 aiogram>=3.3.0
 python-multipart>=0.0.9
+Pillow>=10.2.0

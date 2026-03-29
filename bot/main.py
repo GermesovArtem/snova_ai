@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import os
+import io
+import httpx
+from PIL import Image
 print("\n" + "!"*50)
 print("!!! BOT MAIN.PY: VERSION 7.0 (PRO OPTIMIZATION) !!!")
 print("!"*50 + "\n")
@@ -430,18 +433,6 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(last_prompt=prompt, last_image_urls=final_urls)
     await state.set_state(None)
-    
-    try:
-        if callback.message.photo or callback.message.caption:
-            await callback.message.edit_caption(caption="🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
-        else:
-            await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
-    except Exception as e:
-        logger.warning(f"Could not edit confirmation message: {e}")
-        try:
-            await callback.message.answer("🚀 Запрос подтвержден! Начинаю генерацию...")
-            await callback.message.delete()
-        except: pass
 
     settings = data.get("gen_settings", {})
     async with AsyncSessionLocal() as db:
@@ -624,7 +615,10 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
             await bot.send_message(user_id, text, reply_markup=kb.as_markup())
             return
             
-    msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию ({human_model_name(user.model_preference)})...")
+    # Save resolved URLs for "Repeat" functionality to avoid 500 errors
+    await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
+
+    msg_wait = await bot.send_message(user_id, f"🚀 **Запрос подтвержден!** Начинаю генерацию (**{human_model_name(user.model_preference)}**)...", parse_mode="Markdown")
     asyncio.create_task(run_generation_task(
         user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state,
         aspect_ratio, resolution, output_format
@@ -633,6 +627,54 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
 def human_model_name(model_id: str) -> str:
     models = get_available_models()
     return next((n for n, m in models.items() if m == model_id), model_id)
+
+async def get_safe_preview_photo(url: str) -> types.BufferedInputFile | None:
+    """Download image and optimize if it exceeds 10MB to ensure Telegram can send it as a photo."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=30.0)
+            if resp.status_code != 200:
+                logger.warning(f"Failed to download image from {url}: {resp.status_code}")
+                return None
+            
+            data = resp.content
+            size_mb = len(data) / (1024 * 1024)
+            
+            # If it's already small enough, no need to process
+            if size_mb < 9.5:
+                return types.BufferedInputFile(data, filename="preview.png")
+
+            logger.info(f"Optimizing large image: {size_mb:.2f} MB")
+            with Image.open(io.BytesIO(data)) as img:
+                # If it's CMYK or similar, convert to RGB for web
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # 1. Try to save with optimization
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", optimize=True)
+                if len(buf.getvalue()) < 10000000:
+                    buf.seek(0)
+                    return types.BufferedInputFile(buf.getvalue(), filename="preview_opt.png")
+
+                # 2. Still too large? Use Quantization (Indexed palette)
+                buf = io.BytesIO()
+                # 256 colors often reduces size by 4x
+                quantized = img.quantize(colors=256).convert('P')
+                quantized.save(buf, format="PNG", optimize=True)
+                if len(buf.getvalue()) < 10000000:
+                    buf.seek(0)
+                    return types.BufferedInputFile(buf.getvalue(), filename="preview_quant.png")
+
+                # 3. Last fallback: High-quality JPEG
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=90, optimize=True)
+                buf.seek(0)
+                return types.BufferedInputFile(buf.getvalue(), filename="preview_fallback.jpg")
+
+    except Exception as e:
+        logger.error(f"Error in get_safe_preview_photo: {e}", exc_info=True)
+        return None
 
 async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
                           aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
@@ -665,45 +707,50 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 models = get_available_models()
                 human_name = next((n for n, m in models.items() if m == model), model)
                 
-                # 3. Dynamic Delivery Strategy
+                # 3. Dynamic Delivery Strategy with Smart Optimization
+                photo_sent = False
                 try:
-                    # Attempt PREFERED method: Photo with buttons (Telegram limit: 10MB for URL)
-                    photo_caption = (
-                        f"🔥 **Готово!**\n\n"
-                        f"💳 Остаток: **{new_balance} ген.**\n"
-                        f"🤖 Модель: **{human_name}**"
-                    )
-                    await bot.send_photo(
-                        user_id, 
-                        photo=URLInputFile(info["image_url"]),
-                        caption=photo_caption,
-                        reply_markup=build_after_gen_kb(),
-                        parse_mode="Markdown"
-                    )
+                    # Attempt optimized photo delivery (Pillow logic inside)
+                    photo_data = await get_safe_preview_photo(info["image_url"])
+                    if photo_data:
+                        photo_caption = (
+                            f"🔥 **Готово!**\n\n"
+                            f"💳 Остаток: **{new_balance} ген.**\n"
+                            f"🤖 Модель: **{human_name}**"
+                        )
+                        await bot.send_photo(
+                            user_id, 
+                            photo=photo_data,
+                            caption=photo_caption,
+                            reply_markup=build_after_gen_kb(),
+                            parse_mode="Markdown"
+                        )
+                        photo_sent = True
                     
-                    # If photo succeeded, send original high-res document as a clean follow-up
+                    # Send high-res document as original (always via direct URL from KIE to avoid local processing of document)
                     await bot.send_document(
                         user_id, 
                         document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
                         caption="💾 Оригинал в высоком качестве (PNG/4K)"
                     )
                 except Exception as e:
-                    logger.warning(f"Could not send photo preview (likely >10MB): {e}")
-                    # FALLBACK: Photo failed, so attach buttons and full text to the document
-                    doc_caption = (
-                        f"🔥 **Готово!**\n\n"
-                        f"💳 Остаток: **{new_balance} ген.**\n"
-                        f"🤖 Модель: **{human_name}**\n\n"
-                        f"📎 Оригинал (PNG/4K) прикреплен выше.\n"
-                        f"⚠️ Файл слишком большой для превью, поэтому отправлен как документ."
-                    )
-                    await bot.send_document(
-                        user_id, 
-                        document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
-                        caption=doc_caption,
-                        reply_markup=build_after_gen_kb(),
-                        parse_mode="Markdown"
-                    )
+                    logger.warning(f"Smart photo delivery failed: {e}")
+                    if not photo_sent:
+                        # FALLBACK if photo failed completely
+                        doc_caption = (
+                            f"🔥 **Готово!**\n\n"
+                            f"💳 Остаток: **{new_balance} ген.**\n"
+                            f"🤖 Модель: **{human_name}**\n\n"
+                            f"📎 Оригинал (PNG/4K) прикреплен выше.\n"
+                            f"⚠️ Файл слишком большой для превью, поэтому отправлен как документ."
+                        )
+                        await bot.send_document(
+                            user_id, 
+                            document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
+                            caption=doc_caption,
+                            reply_markup=build_after_gen_kb(),
+                            parse_mode="Markdown"
+                        )
                 
                 try: await bot.delete_message(user_id, msg_id)
                 except: pass
