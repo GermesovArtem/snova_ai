@@ -14,36 +14,31 @@ def get_headers():
 
 from typing import Optional, List, Any
 
-async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] = None):
+async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] = None, 
+                      aspect_ratio: str = "auto", resolution: str = "1K", 
+                      output_format: str = "jpg"):
     url = f"{KIE_BASE_URL}/api/v1/jobs/createTask"
     payload: dict[str, Any] = {
         "model": model, 
         "input": {
             "prompt": prompt,
-            "aspect_ratio": "1:1"
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+            "output_format": output_format
         }
     }
     if image_urls:
-        # Standard fields for image-to-image or source
-        payload["input"]["image_url"] = image_urls[0]
-        payload["input"]["image"] = image_urls[0]
-        payload["input"]["input_image"] = image_urls[0]
-        payload["input"]["image_urls"] = image_urls
-        
-        # Scenario 2: Style Transfer or Reference Image
-        if len(image_urls) == 2:
-            # First is source, second is style/ref
-            payload["input"]["ref_image"] = image_urls[1]
-            payload["input"]["style_image"] = image_urls[1]
-            payload["input"]["reference_image"] = image_urls[1]
-            payload["input"]["source_image"] = image_urls[0]
-
-        # Scenario 3: Multiple Images for Composition/Merge
-        elif len(image_urls) > 2:
-            # Most modern KIE models for "Merge" use the image_urls list 
-            # and ignore image/ref_image if multiple are present, but we keep 
-            # image_url[0] as a fallback for the main subject.
-            pass
+        # According to official Nano Banana 2 / Pro documentation:
+        # 1. Field name MUST be 'image_input' (array of strings)
+        # 2. It supports up to 14 images
+        if "nano-banana" in model.lower():
+            payload["input"]["image_input"] = image_urls
+        else:
+            # Fallback for legacy or other KIE models
+            payload["input"]["image_url"] = image_urls[0]
+            payload["input"]["image_urls"] = image_urls
+            payload["input"]["image"] = image_urls[0]
+            payload["input"]["input_image"] = image_urls[0]
 
 
         

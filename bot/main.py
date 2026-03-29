@@ -37,6 +37,7 @@ media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
 class GenState(StatesGroup):
     waiting_for_prompt = State()
     confirming = State()
+    choosing_settings = State()
 
 def get_available_models():
     models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
@@ -44,6 +45,12 @@ def get_available_models():
         return json.loads(models_str)
     except:
         return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+
+def get_model_limit(model_id: str) -> int:
+    """Returns official limit for image_input: 8 for PRO, 14 for v2"""
+    if "pro" in str(model_id).lower():
+        return 8
+    return 14
 
 
 def get_model_costs():
@@ -64,23 +71,21 @@ def get_credit_packs():
 def generate_model_menu_text(balance: float, current_mm: str):
     models = get_available_models()
     human_name = next((name for name, mm in models.items() if mm == current_mm), current_mm)
+    limit = get_model_limit(current_mm)
     
     return (
         f"🤖 **Управление нейросетями**\n\n"
-        f"Активная ИИ-модель: **{human_name}**\n\n"
+        f"Активная модель: **{human_name}**\n"
+        f"Лимит фото: **до {limit} шт.**\n\n"
         f"🆕 **Nano Banana 2** (Продвинутая)\n"
-        f"• Стоимость: **3 генерации**\n"
-        f"• Разрешение: Ультра-высокое (4K)\n"
-        f"• Понимает современные тренды и мемы\n"
-        f"• Поддерживает несколько картинок-референсов\n"
-        f"• Идеально для дизайна соцсетей и стильных артов\n\n"
+        f"• Стоимость: **3 кр.**\n"
+        f"• Поддерживает до 14 референсов\n"
+        f"• Идеально для артов и дизайна\n\n"
         f"**Pro** (Профессиональная)\n"
-        f"• Стоимость: **4 генерации**\n"
-        f"• Разрешение: Максимальное (4K+)\n"
-        f"• Безупречная прорисовка мельчайших деталей\n"
-        f"• Идеально ровно пишет текст на картинках\n"
-        f"• Лучший выбор для сложного фотореализма\n\n"
-        f"💰 На вашем счете: **{int(balance)} генераций**"
+        f"• Стоимость: **4 кр.**\n"
+        f"• Максимальная детализация лиц\n"
+        f"• Поддерживает до 8 референсов\n\n"
+        f"💰 На вашем счете: **{int(balance)} кр.**"
     )
 
 
@@ -91,7 +96,7 @@ def build_main_kb(current_model: str):
     for name, mm in models.items():
         cost = int(costs.get(mm, 1))
         prefix = "✅ " if mm == current_model else ("🆕 " if "2" in name else "")
-        kb.button(text=f"{prefix}{name} ({cost} ген)", callback_data=f"set_model:{mm}")
+        kb.button(text=f"{prefix}{name} ({cost} кр)", callback_data=f"set_model:{mm}")
     
     kb.adjust(1)
     return kb.as_markup()
@@ -116,8 +121,40 @@ def build_after_gen_kb():
 def build_confirm_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="🚀 Сгенерировать", callback_data="confirm_gen")
+    kb.button(text="⚙️ Настройки", callback_data="settings_menu")
     kb.button(text="✏️ Изменить", callback_data="edit_gen")
     kb.adjust(1)
+    return kb.as_markup()
+
+def build_settings_kb(model_id: str, settings: dict):
+    kb = InlineKeyboardBuilder()
+    
+    # 1. Aspect Ratio
+    cur_ratio = settings.get("aspect_ratio", "1:1")
+    ratios = ["1:1", "16:9", "9:16", "3:4", "4:3", "21:9"]
+    if "nano-banana-2" in model_id: ratios.insert(0, "auto")
+    
+    kb.button(text="📐 Размер:", callback_data="noop")
+    for r in ratios:
+        prefix = "🔘 " if r == cur_ratio else ""
+        kb.button(text=f"{prefix}{r}", callback_data=f"set_setting:aspect_ratio:{r}")
+    
+    # 2. Resolution
+    cur_res = settings.get("resolution", "1K")
+    kb.button(text="💎 Качество:", callback_data="noop")
+    for res in ["1K", "2K", "4K"]:
+        prefix = "🔘 " if res == cur_res else ""
+        kb.button(text=f"{prefix}{res}", callback_data=f"set_setting:resolution:{res}")
+        
+    # 3. Format
+    cur_fmt = settings.get("output_format", "png" if "pro" in model_id else "jpg")
+    kb.button(text="📁 Формат:", callback_data="noop")
+    for fmt in ["png", "jpg"]:
+        prefix = "🔘 " if fmt == cur_fmt else ""
+        kb.button(text=f"{prefix}{fmt.upper()}", callback_data=f"set_setting:output_format:{fmt}")
+
+    kb.button(text="✅ Готово", callback_data="confirm_settings")
+    kb.adjust(1, 4, 1, 3, 1, 2, 1)
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
@@ -138,22 +175,17 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
+        limit = get_model_limit(user.model_preference)
         
         text = (
-            f"🍌 **Добро пожаловать в S•NOVA AI**\n"
-            f"— Ai фотошоп от Google в удобном телеграм-боте:\n\n"
-            f"🎁 У вас есть **{int(user.balance)} бесплатных генераций**\n\n"
-            f"**Доступные модели:**\n"
-            f"• 🆕 Nano Banana 2 — 3 кредита, 4K\n"
-            f"• Pro — 4 кредита, 4K, максимальное качество\n\n"
-
-            f"Нажмите «Выбрать модель» чтобы начать 👇\n\n"
-            f"Пользуясь ботом, Вы принимаете наше пользовательское соглашение и политику конфиденциальности."
+            f"🍌 **Добро пожаловать в S•NOVA AI**\n\n"
+            f"🎁 Ваш баланс: **{int(user.balance)} кр.**\n\n"
+            f"Нажмите «Выбрать модель» чтобы начать 👇"
         )
         
         await message.answer(text, reply_markup=build_start_kb(), parse_mode="Markdown")
         await asyncio.sleep(0.5)
-        await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
+        await message.answer(f"Пришлите до **{limit}** фотографий которые нужно изменить или объединить")
 
 # --- NATIVE MENU COMMANDS ---
 @user_router.message(Command("model"))
@@ -177,7 +209,10 @@ async def cmd_buy(message: types.Message, state: FSMContext):
 
 @user_router.message(Command("gen"))
 async def cmd_gen(message: types.Message, state: FSMContext):
-    await message.answer("Пришлите 1-4 фотографии которые нужно изменить или объединить")
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, message.from_user.id)
+        limit = get_model_limit(user.model_preference)
+    await message.answer(f"Пришлите до **{limit}** фотографий для обработки.")
 
 @user_router.message(Command("create"))
 async def cmd_create(message: types.Message, state: FSMContext):
@@ -263,6 +298,68 @@ async def process_set_model(callback_query: CallbackQuery):
         await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
         await bot.send_message(callback_query.from_user.id, "Отлично! Теперь пришлите фото или введите текст.")
 
+@user_router.callback_query(GenState.confirming, F.data == "settings_menu")
+async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback.from_user.id)
+    
+    settings = data.get("gen_settings", {})
+    # Set defaults if not present
+    if "aspect_ratio" not in settings:
+        settings["aspect_ratio"] = "1:1" if "pro" in user.model_preference else "auto"
+    if "resolution" not in settings:
+        settings["resolution"] = "1K"
+    if "output_format" not in settings:
+        settings["output_format"] = "png" if "pro" in user.model_preference else "jpg"
+        
+    await state.update_data(gen_settings=settings)
+    
+    try:
+        await callback.message.edit_text(
+            "⚙️ **Настройки генерации**\n\nВыберите нужные параметры:",
+            reply_markup=build_settings_kb(user.model_preference, settings),
+            parse_mode="Markdown"
+        )
+    except:
+        await callback.message.edit_caption(
+            caption="⚙️ **Настройки генерации**\n\nВыберите нужные параметры:",
+            reply_markup=build_settings_kb(user.model_preference, settings),
+            parse_mode="Markdown"
+        )
+    await callback.answer()
+
+@user_router.callback_query(F.data.startswith("set_setting:"))
+async def process_change_setting(callback: CallbackQuery, state: FSMContext):
+    _, key, value = callback.data.split(":")
+    data = await state.get_data()
+    settings = data.get("gen_settings", {})
+    settings[key] = value
+    await state.update_data(gen_settings=settings)
+    
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback.from_user.id)
+    
+    # Update menu to show new selection
+    try:
+        await callback.message.edit_reply_markup(reply_markup=build_settings_kb(user.model_preference, settings))
+    except: pass
+    await callback.answer(f"Выбрано: {value}")
+
+@user_router.callback_query(F.data == "confirm_settings")
+async def process_confirm_settings(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    prompt = data.get("confirm_prompt")
+    urls = data.get("confirm_image_urls", [])
+    is_refine = data.get("is_refinement", False)
+    
+    # Return to confirmation message
+    try:
+        await callback.message.delete()
+    except: pass
+    await show_confirmation(callback.from_user.id, prompt, urls, state, is_refine)
+    await callback.answer()
+
 async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False):
     data = await state.get_data()
     async with AsyncSessionLocal() as db:
@@ -293,13 +390,20 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     
     safe_prompt = prompt_str[:200] + ("..." if len(prompt_str) > 200 else "")
     
+    settings = data.get("gen_settings", {})
+    # Setup defaults for display
+    ratio = settings.get("aspect_ratio", "1:1" if "pro" in user.model_preference else "auto")
+    res = settings.get("resolution", "1K")
+    fmt = settings.get("output_format", "png" if "pro" in user.model_preference else "jpg")
+
     text = (
         f"{header}\n\n"
         f"📝 Текст: `{safe_prompt}`\n"
         f"{img_count_text}"
         f"🤖 Модель: **{human_name}**\n"
-        f"💰 Стоимость: **{int(cost)} ген.**\n\n"
-        f"💳 Ваш баланс: **{int(user.balance)} ген.**\n\n"
+        f"📐 Размер: **{ratio}** | 💎 **{res}** | 📁 **{fmt.upper()}**\n"
+        f"💰 Стоимость: **{int(cost)} кр.**\n\n"
+        f"💳 Ваш баланс: **{int(user.balance)} кр.**\n\n"
         f"Всё верно? Начинаем генерацию?"
     )
 
@@ -371,7 +475,21 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
             final_urls.append(item)
 
 
-    await start_generation_wrapper(callback.from_user.id, prompt=prompt, image_urls=final_urls, state=state)
+    # Get settings from state
+    settings = data.get("gen_settings", {})
+    ratio = settings.get("aspect_ratio", "auto") # Wrapper handles defaults
+    res = settings.get("resolution", "1K")
+    fmt = settings.get("output_format", "jpg")
+
+    await start_generation_wrapper(
+        callback.from_user.id, 
+        prompt=prompt, 
+        image_urls=final_urls, 
+        state=state,
+        aspect_ratio=ratio,
+        resolution=res,
+        output_format=fmt
+    )
 
 
 @user_router.callback_query(F.data == "edit_gen")
@@ -395,6 +513,14 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     if not data: return
     messages = data["messages"]
     
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, user_id)
+    limit = get_model_limit(user.model_preference)
+    
+    if len(messages) > limit:
+        await bot.send_message(user_id, f"❌ Ошибка: выбраная модель поддерживает максимум **{limit} фото** в одном запросе. Вы прислали {len(messages)}.")
+        return
+
     # Collect all images from the group
     image_urls = []
     caption = None
@@ -501,7 +627,8 @@ async def handle_single_prompt(message: types.Message, state: FSMContext):
         
     await show_confirmation(message.from_user.id, prompt, image_urls, state, is_refinement=is_refinement)
 
-async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None, state: FSMContext = None):
+async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list = None, state: FSMContext = None,
+                               aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
@@ -516,25 +643,36 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
 
         except ValueError:
             # Insufficient funds exact replica
-            text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
+            text = f"Недостаточно кр. (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
             
             kb = InlineKeyboardBuilder()
             kb.button(text="💳 Карта РФ(₽)", callback_data="buy_credits")
-            kb.button(text="⭐ Звёзды", callback_data="buy_credits")
+            kb.button(text="⭐ Telegram Stars", callback_data="buy_credits")
             kb.adjust(1)
             
             await bot.send_message(user_id, text, reply_markup=kb.as_markup())
             return
             
-    msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию (Модель: {user.model_preference})...")
-    asyncio.create_task(run_generation_task(user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state))
+    msg_wait = await bot.send_message(user_id, f"⏳ Начинаю генерацию ({human_model_name(user.model_preference)})...")
+    asyncio.create_task(run_generation_task(
+        user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state,
+        aspect_ratio, resolution, output_format
+    ))
 
-async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None):
+def human_model_name(model_id: str) -> str:
+    models = get_available_models()
+    return next((n for n, m in models.items() if m == model_id), model_id)
+
+async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
+                          aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     kie_task_id = None
     try:
         # 1. Start Flow (Short DB session)
         async with AsyncSessionLocal() as db:
-            kie_task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
+            kie_task_id = await services.start_generation_flow(
+                db, user_id, prompt, image_urls, model, cost, 
+                aspect_ratio, resolution, output_format
+            )
             
         # 2. Wait Loop (No DB session)
         for _ in range(60): # 60 * 4s = 240s

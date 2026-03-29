@@ -58,7 +58,10 @@ async def commit_frozen_credits(db, user_id: int, cost: float):
         user.frozen_balance -= cost
         await db.commit()
 
-async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list, model_id: str, cost: float):
+async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list, 
+                                model_id: str, cost: float, 
+                                aspect_ratio: str = "auto", resolution: str = "1K", 
+                                output_format: str = "jpg"):
     """Saves task to DB and sends to KIE API"""
     new_task = models.GenerationTask(
         user_id=user_id,
@@ -73,7 +76,7 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
     await db.refresh(new_task)
     
     # Call KIE
-    res = await create_task(model_id, prompt, image_urls)
+    res = await create_task(model_id, prompt, image_urls, aspect_ratio, resolution, output_format)
     if not res["success"]:
         raise Exception(res.get("error", "Unknown API error from KIE"))
         
