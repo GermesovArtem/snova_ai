@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 6.1 (DB STABLE) !!!")
+print("!!! BOT MAIN.PY: VERSION 7.0 (PRO OPTIMIZATION) !!!")
 print("!"*50 + "\n")
 
 
@@ -39,18 +39,20 @@ class GenState(StatesGroup):
     confirming = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
     try:
         return json.loads(models_str)
     except:
-        return {"NanoBanana": "nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+
 
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
     try:
         return json.loads(costs_str)
     except:
-        return {"nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+        return {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+
 
 def get_credit_packs():
     packs_str = os.getenv("CREDIT_PACKS", '{"149": 10}')
@@ -66,10 +68,6 @@ def generate_model_menu_text(balance: float, current_mm: str):
     return (
         f"🤖 **Управление нейросетями**\n\n"
         f"Активная ИИ-модель: **{human_name}**\n\n"
-        f"**Standard** (Базовая версия)\n"
-        f"• Стоимость: **1 генерация**\n"
-        f"• Качество: Отличное базовое\n"
-        f"• Скорость: Моментальная\n\n"
         f"🆕 **Nano Banana 2** (Продвинутая)\n"
         f"• Стоимость: **3 генерации**\n"
         f"• Разрешение: Ультра-высокое (4K)\n"
@@ -84,6 +82,7 @@ def generate_model_menu_text(balance: float, current_mm: str):
         f"• Лучший выбор для сложного фотореализма\n\n"
         f"💰 На вашем счете: **{int(balance)} генераций**"
     )
+
 
 def build_main_kb(current_model: str):
     kb = InlineKeyboardBuilder()
@@ -145,9 +144,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
             f"— Ai фотошоп от Google в удобном телеграм-боте:\n\n"
             f"🎁 У вас есть **{int(user.balance)} бесплатных генераций**\n\n"
             f"**Доступные модели:**\n"
-            f"• Standard — 1 кредит, быстрая генерация\n"
-            f"• 🆕 Nano Banana 2 — 3 кредита, 4K, знает актуальные события\n"
+            f"• 🆕 Nano Banana 2 — 3 кредита, 4K\n"
             f"• Pro — 4 кредита, 4K, максимальное качество\n\n"
+
             f"Нажмите «Выбрать модель» чтобы начать 👇\n\n"
             f"Пользуясь ботом, Вы принимаете наше пользовательское соглашение и политику конфиденциальности."
         )
@@ -496,14 +495,13 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
         user = await services.get_or_create_user(db, user_id)
         # Resolve actual model and cost before try block to avoid UnboundLocalError
         actual_model = user.model_preference
-        if image_urls and (actual_model == "google/nano-banana" or actual_model == "nano-banana"):
-            actual_model = "google/nano-banana-edit"
         
         cost = services.get_model_cost(actual_model)
 
         try:
             # Pre-charge the user based on the correct model
             await services.pre_charge_generation(db, user, actual_model)
+
         except ValueError:
             # Insufficient funds exact replica
             text = f"Недостаточно генераций (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"

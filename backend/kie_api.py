@@ -27,6 +27,14 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         payload["input"]["image_urls"] = image_urls
         payload["input"]["image_url"] = image_urls[0]
         payload["input"]["image"] = image_urls[0]
+        
+        # If there's a second image, treat it as a style/reference image
+        if len(image_urls) > 1:
+            payload["input"]["ref_image"] = image_urls[1]
+            payload["input"]["style_image"] = image_urls[1] # Some models use this field
+            payload["input"]["source_image"] = image_urls[0] # Some models use this
+            
+
 
         
     logger.info(f"Kie API createTask: model={model}, prompt='{prompt[:50]}...'")
