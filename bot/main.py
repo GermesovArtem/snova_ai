@@ -133,23 +133,24 @@ def build_settings_kb(model_id: str, settings: dict):
     if "nano-banana-2" in model_id: ratios.insert(0, "auto")
     
     kb.button(text="📐 Размер:", callback_data="noop")
+    # Fix: Use | as delimiter to avoid collision with aspect ratio values like 1:1
     for r in ratios:
         prefix = "🔘 " if r == cur_ratio else ""
-        kb.button(text=f"{prefix}{r}", callback_data=f"set_setting:aspect_ratio:{r}")
+        kb.button(text=f"{prefix}{r}", callback_data=f"set_setting|aspect_ratio|{r}")
     
     # 2. Resolution
     cur_res = settings.get("resolution", "1K")
     kb.button(text="💎 Качество:", callback_data="noop")
     for res in ["1K", "2K", "4K"]:
         prefix = "🔘 " if res == cur_res else ""
-        kb.button(text=f"{prefix}{res}", callback_data=f"set_setting:resolution:{res}")
+        kb.button(text=f"{prefix}{res}", callback_data=f"set_setting|resolution|{res}")
         
     # 3. Format
     cur_fmt = settings.get("output_format", "png" if "pro" in model_id else "jpg")
     kb.button(text="📁 Формат:", callback_data="noop")
     for fmt in ["png", "jpg"]:
         prefix = "🔘 " if fmt == cur_fmt else ""
-        kb.button(text=f"{prefix}{fmt.upper()}", callback_data=f"set_setting:output_format:{fmt}")
+        kb.button(text=f"{prefix}{fmt.upper()}", callback_data=f"set_setting|output_format|{fmt}")
 
     kb.button(text="✅ Готово", callback_data="confirm_settings")
     kb.adjust(1, 4, 1, 3, 1, 2, 1)
@@ -305,9 +306,9 @@ async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
     if "aspect_ratio" not in settings:
         settings["aspect_ratio"] = "1:1" if "pro" in user.model_preference else "auto"
     if "resolution" not in settings:
-        settings["resolution"] = "1K"
+        settings["resolution"] = "4K" if "pro" in user.model_preference else "1K"
     if "output_format" not in settings:
-        settings["output_format"] = "png" if "pro" in user.model_preference else "jpg"
+        settings["output_format"] = "jpg" # Forced max defaults as requested
         
     await state.update_data(gen_settings=settings)
     
@@ -325,9 +326,9 @@ async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
         )
     await callback.answer()
 
-@user_router.callback_query(F.data.startswith("set_setting:"))
+@user_router.callback_query(F.data.startswith("set_setting|"))
 async def process_change_setting(callback: CallbackQuery, state: FSMContext):
-    _, key, value = callback.data.split(":")
+    _, key, value = callback.data.split("|")
     data = await state.get_data()
     settings = data.get("gen_settings", {})
     settings[key] = value
@@ -403,38 +404,15 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
         f"Всё верно? Начинаем генерацию?"
     )
 
-
-    
     if image_urls:
         if len(image_urls) > 1:
-            # 1. Send all photos as an album (Media Group)
             media = [InputMediaPhoto(media=url) for url in image_urls]
             await bot.send_media_group(user_id, media=media)
-            
-            # 2. Send the confirmation text with buttons as a separate message
-            await bot.send_message(
-                user_id, 
-                text, 
-                reply_markup=build_confirm_kb(), 
-                parse_mode="Markdown"
-            )
+            await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
         else:
-            # Single photo case: use caption as before for a cleaner look
-            await bot.send_photo(
-                user_id, 
-                photo=image_urls[0], 
-                caption=text, 
-                reply_markup=build_confirm_kb(), 
-                parse_mode="Markdown"
-            )
-
+            await bot.send_photo(user_id, photo=image_urls[0], caption=text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
     else:
-        await bot.send_message(
-            user_id, 
-            text, 
-            reply_markup=build_confirm_kb(), 
-            parse_mode="Markdown"
-        )
+        await bot.send_message(user_id, text, reply_markup=build_confirm_kb(), parse_mode="Markdown")
 
 @user_router.callback_query(GenState.confirming, F.data == "confirm_gen")
 async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
@@ -442,8 +420,15 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     prompt = data.get("confirm_prompt")
     image_urls = data.get("confirm_image_urls", [])
     
-    # Save for "Similar"
-    await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
+    final_urls = []
+    for item in (image_urls or []):
+        if item and not str(item).startswith("http"):
+            file = await bot.get_file(item)
+            final_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
+        elif item:
+            final_urls.append(item)
+
+    await state.update_data(last_prompt=prompt, last_image_urls=final_urls)
     await state.set_state(None)
     
     try:
@@ -452,29 +437,19 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
         else:
             await callback.message.edit_text("🚀 Запрос подтвержден! Начинаю генерацию...", reply_markup=None)
     except Exception as e:
-        logger.warning(f"Could not edit confirmation message (using fallback): {e}")
+        logger.warning(f"Could not edit confirmation message: {e}")
         try:
             await callback.message.answer("🚀 Запрос подтвержден! Начинаю генерацию...")
             await callback.message.delete()
         except: pass
 
-
-    
-    # Pre-process image_urls: convert file_ids to URLs before sending to wrapper
-    final_urls = []
-    for item in (image_urls or []):
-        if item and not str(item).startswith("http"):
-            # It's a file_id! Get URL
-            file = await bot.get_file(item)
-            final_urls.append(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}")
-        elif item:
-            final_urls.append(item)
-
-
-    # Get settings from state
     settings = data.get("gen_settings", {})
-    ratio = settings.get("aspect_ratio", "auto") # Wrapper handles defaults
-    res = settings.get("resolution", "1K")
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, callback.from_user.id)
+    
+    is_pro = "pro" in user.model_preference
+    ratio = settings.get("aspect_ratio", "1:1" if is_pro else "auto")
+    res = settings.get("resolution", "4K" if is_pro else "1K")
     fmt = settings.get("output_format", "jpg")
 
     await start_generation_wrapper(
