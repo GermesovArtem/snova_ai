@@ -42,7 +42,7 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
 
 
         
-    logger.info(f"Kie API createTask: model={model}, prompt='{prompt[:50]}...'")
+    logger.info(f"Kie API createTask: payload={json.dumps(payload, ensure_ascii=False)}")
     async with httpx.AsyncClient() as client:
 
 

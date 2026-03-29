@@ -41,11 +41,11 @@ class GenState(StatesGroup):
     choosing_settings = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "google/nano-banana-2", "NanoBanana PRO": "google/nano-banana-pro"}')
     try:
         return json.loads(models_str)
     except:
-        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+        return {"NanoBanana 2": "google/nano-banana-2", "NanoBanana PRO": "google/nano-banana-pro"}
 
 def get_model_limit(model_id: str) -> int:
     """Returns official limit for image_input: 8 for PRO, 14 for v2"""
@@ -55,11 +55,11 @@ def get_model_limit(model_id: str) -> int:
 
 
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}')
     try:
         return json.loads(costs_str)
     except:
-        return {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+        return {"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}
 
 
 def get_credit_packs():
