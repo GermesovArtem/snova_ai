@@ -302,13 +302,13 @@ async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
         user = await services.get_or_create_user(db, callback.from_user.id)
     
     settings = data.get("gen_settings", {})
-    # Set defaults if not present
+    # Set maximum quality defaults for all models: 1:1, 4K, PNG
     if "aspect_ratio" not in settings:
-        settings["aspect_ratio"] = "1:1" if "pro" in user.model_preference else "auto"
+        settings["aspect_ratio"] = "1:1"
     if "resolution" not in settings:
-        settings["resolution"] = "4K" if "pro" in user.model_preference else "1K"
+        settings["resolution"] = "4K"
     if "output_format" not in settings:
-        settings["output_format"] = "jpg" # Forced max defaults as requested
+        settings["output_format"] = "png"
         
     await state.update_data(gen_settings=settings)
     
@@ -389,9 +389,9 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     
     settings = data.get("gen_settings", {})
     # Setup defaults for display
-    ratio = settings.get("aspect_ratio", "1:1" if "pro" in user.model_preference else "auto")
-    res = settings.get("resolution", "1K")
-    fmt = settings.get("output_format", "png" if "pro" in user.model_preference else "jpg")
+    ratio = settings.get("aspect_ratio", "1:1")
+    res = settings.get("resolution", "4K")
+    fmt = settings.get("output_format", "png")
 
     text = (
         f"{header}\n\n"
@@ -447,10 +447,10 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, callback.from_user.id)
     
-    is_pro = "pro" in user.model_preference
-    ratio = settings.get("aspect_ratio", "1:1" if is_pro else "auto")
-    res = settings.get("resolution", "4K" if is_pro else "1K")
-    fmt = settings.get("output_format", "jpg")
+    # Global max defaults: 4K, PNG, 1:1
+    ratio = settings.get("aspect_ratio", "1:1")
+    res = settings.get("resolution", "4K")
+    fmt = settings.get("output_format", "png")
 
     await start_generation_wrapper(
         callback.from_user.id, 
