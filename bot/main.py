@@ -652,7 +652,11 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             kie_status = info.get("state")
             
             if kie_status in ["success", "completed"] and info.get("image_url"):
-                # Success Logic (Short DB session for commit)
+                # 1. Update state FIRST
+                if state:
+                    await state.update_data(refinement_context_url=info.get("image_url"))
+
+                # 2. Finalize credits
                 async with AsyncSessionLocal() as db:
                     await services.commit_frozen_credits(db, user_id, cost)
                     user = await services.get_or_create_user(db, user_id)
@@ -661,28 +665,46 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 models = get_available_models()
                 human_name = next((n for n, m in models.items() if m == model), model)
                 
-                # 1. Send as high-res document
-                file_caption = f"💾 **Оригинал в высоком качестве**\n💳 Остаток баланса: **{new_balance} ген.**\n\nТекущая модель: {human_name}"
-                await bot.send_document(
-                    user_id, 
-                    document=URLInputFile(info["image_url"], filename=f"image_{kie_task_id[:8]}.png"),
-                    caption=file_caption,
-                    parse_mode="Markdown"
-                )
+                # 3. Dynamic Delivery Strategy
+                try:
+                    # Attempt PREFERED method: Photo with buttons (Telegram limit: 10MB for URL)
+                    photo_caption = (
+                        f"🔥 **Готово!**\n\n"
+                        f"💳 Остаток: **{new_balance} ген.**\n"
+                        f"🤖 Модель: **{human_name}**"
+                    )
+                    await bot.send_photo(
+                        user_id, 
+                        photo=URLInputFile(info["image_url"]),
+                        caption=photo_caption,
+                        reply_markup=build_after_gen_kb(),
+                        parse_mode="Markdown"
+                    )
+                    
+                    # If photo succeeded, send original high-res document as a clean follow-up
+                    await bot.send_document(
+                        user_id, 
+                        document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
+                        caption="💾 Оригинал в высоком качестве (PNG/4K)"
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not send photo preview (likely >10MB): {e}")
+                    # FALLBACK: Photo failed, so attach buttons and full text to the document
+                    doc_caption = (
+                        f"🔥 **Готово!**\n\n"
+                        f"💳 Остаток: **{new_balance} ген.**\n"
+                        f"🤖 Модель: **{human_name}**\n\n"
+                        f"📎 Оригинал (PNG/4K) прикреплен выше.\n"
+                        f"⚠️ Файл слишком большой для превью, поэтому отправлен как документ."
+                    )
+                    await bot.send_document(
+                        user_id, 
+                        document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"),
+                        caption=doc_caption,
+                        reply_markup=build_after_gen_kb(),
+                        parse_mode="Markdown"
+                    )
                 
-                # 2. Send photo preview with inline keyboard
-                await bot.send_photo(
-                    user_id, 
-                    photo=URLInputFile(info["image_url"]),
-                    caption="🔥 **Готово!** Как вам результат?\nЕсли хотите что-то изменить, напишите в чат ниже. 👇",
-                    reply_markup=build_after_gen_kb(),
-                    parse_mode="Markdown"
-                )
-                
-                # Store in refinement context
-                if state:
-                    await state.update_data(refinement_context_url=info["image_url"])
-
                 try: await bot.delete_message(user_id, msg_id)
                 except: pass
                 return
