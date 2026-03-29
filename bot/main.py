@@ -732,7 +732,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
             )
             
         # 2. Wait Loop (No DB session)
-        for _ in range(60): # 60 * 4s = 240s
+        for _ in range(120): # 120 * 4s = 480s (8 mins)
             await asyncio.sleep(4)
             info = await services.check_generation_status(kie_task_id)
             kie_status = info.get("state")
@@ -759,7 +759,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     if photo_data:
                         photo_caption = (
                             f"🔥 **Готово!**\n\n"
-                            f"💳 Остаток: **{new_balance} ген.**\n"
+                            f"💳 Остаток: **{new_balance} кр.**\n"
                             f"🤖 Модель: **{human_name}**"
                         )
                         await bot.send_photo(
@@ -783,7 +783,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                         # FALLBACK if photo failed completely
                         doc_caption = (
                             f"🔥 **Готово!**\n\n"
-                            f"💳 Остаток: **{new_balance} ген.**\n"
+                            f"💳 Остаток: **{new_balance} кр.**\n"
                             f"🤖 Модель: **{human_name}**\n\n"
                             f"📎 Оригинал (PNG/4K) прикреплен выше.\n"
                             f"⚠️ Файл слишком большой для превью, поэтому отправлен как документ."
