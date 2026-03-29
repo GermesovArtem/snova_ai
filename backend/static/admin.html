@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S•NOVA AI Admin | Premium Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0d12;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-color: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        body {
+            background: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.15) 0px, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+        }
+
+        /* Layout */
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        aside {
+            width: 260px;
+            padding: 24px;
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo i { color: var(--accent-color); }
+
+        nav ul { list-style: none; }
+
+        nav li {
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        nav li:hover, nav li.active {
+            background: var(--glass-border);
+            color: var(--text-primary);
+        }
+
+        nav li.active {
+            background: var(--accent-color);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            margin-left: 260px;
+            padding: 32px;
+        }
+
+        header {
+            margin-bottom: 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .stat-card .icon-blob {
+            position: absolute;
+            right: -10px;
+            bottom: -10px;
+            font-size: 60px;
+            opacity: 0.1;
+            color: var(--accent-color);
+            transform: rotate(-15deg);
+        }
+
+        /* Table Section */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .search-container {
+            position: relative;
+            width: 300px;
+        }
+
+        .search-container input {
+            width: 100%;
+            padding: 10px 16px 10px 40px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            color: white;
+            outline: none;
+        }
+
+        .search-container i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-bottom: 32px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            padding: 16px;
+            font-size: 13px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 1px solid var(--glass-border);
+            font-size: 14px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            background: var(--glass-border);
+        }
+
+        /* Modals & Forms */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal {
+            max-width: 500px;
+            width: 100%;
+            padding: 32px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        /* Mobile specific */
+        @media (max-width: 900px) {
+            aside {
+                width: 100%;
+                height: 70px;
+                bottom: 0;
+                top: auto;
+                left: 0;
+                padding: 10px;
+                background: rgba(13, 13, 18, 0.95);
+            }
+
+            .logo { display: none; }
+
+            nav ul {
+                display: flex;
+                justify-content: space-around;
+            }
+
+            nav li {
+                flex-direction: column;
+                gap: 4px;
+                font-size: 10px;
+                padding: 8px;
+                margin: 0;
+            }
+
+            nav li i { font-size: 18px; }
+
+            main {
+                margin-left: 0;
+                padding-bottom: 100px;
+            }
+
+            .search-container { width: 100%; margin-top: 10px; }
+            header { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="glass">
+            <div class="logo">
+                <i class="fas fa-bolt"></i>
+                S•NOVA AI
+            </div>
+            <nav>
+                <ul>
+                    <li class="active" onclick="showSection('dashboard')">
+                        <i class="fas fa-home"></i>
+                        Дашборд
+                    </li>
+                    <li onclick="showSection('users')">
+                        <i class="fas fa-user-group"></i>
+                        Пользователи
+                    </li>
+                    <li onclick="showSection('broadcast')">
+                        <i class="fas fa-bullhorn"></i>
+                        Рассылка
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main -->
+        <main>
+            <header>
+                <div>
+                    <h1>Панель управления</h1>
+                    <p style="color: var(--text-secondary)">Добро пожаловать в админ-центр S•NOVA AI</p>
+                </div>
+                <div id="path-debug" style="font-size: 12px; opacity: 0.5;"></div>
+            </header>
+
+            <!-- Section: Dashboard -->
+            <div id="section-dashboard" class="fade-in">
+                <div class="stats-grid">
+                    <div class="stat-card glass">
+                        <h3>Всего пользователей</h3>
+                        <div class="value" id="stats-total-users">...</div>
+                        <div class="icon-blob"><i class="fas fa-users"></i></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <h3>Новых сегодня</h3>
+                        <div class="value" id="stats-new-today">...</div>
+                        <div class="icon-blob"><i class="fas fa-user-plus"></i></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <h3>Генераций всего</h3>
+                        <div class="value" id="stats-total-gens">...</div>
+                        <div class="icon-blob"><i class="fas fa-wand-magic-sparkles"></i></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <h3>Генераций сегодня</h3>
+                        <div class="value" id="stats-gens-today">...</div>
+                        <div class="icon-blob"><i class="fas fa-bolt"></i></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section: Users -->
+            <div id="section-users" style="display: none;" class="fade-in">
+                <div class="section-header">
+                    <h2>Управление юзерами</h2>
+                    <div class="search-container">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="user-search" placeholder="Поиск по ID или имени..." oninput="searchUsers()">
+                    </div>
+                </div>
+                <div class="table-container glass">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Пользователь</th>
+                                <th>ID</th>
+                                <th>Баланс</th>
+                                <th>Модель</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <!-- JS populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Section: Broadcast -->
+            <div id="section-broadcast" style="display: none;" class="fade-in">
+                <div class="glass" style="padding: 32px; max-width: 800px;">
+                    <h2 style="margin-bottom: 20px;"><i class="fas fa-bullhorn"></i> Массовая рассылка</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 24px;">Ваше сообщение придет каждому пользователю бота. Можно использовать Markdown-разметку.</p>
+                    <textarea id="broadcast-msg" style="width: 100%; height: 200px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 12px; color: white; padding: 16px; margin-bottom: 20px; outline: none;"></textarea>
+                    <button class="btn btn-primary" onclick="startBroadcast()">🚀 Запустить рассылку</button>
+                    <div id="broadcast-status" style="margin-top: 16px;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Update Balance -->
+    <div class="modal-overlay" id="balance-modal">
+        <div class="modal glass">
+            <h3 style="margin-bottom: 20px;">Изменить баланс</h3>
+            <p id="target-user-name" style="margin-bottom: 16px; color: var(--text-secondary)"></p>
+            <input type="number" id="balance-amount" placeholder="Количество кредитов (+ или -)" style="width: 100%; padding: 12px; background: black; border: 1px solid var(--glass-border); color: white; border-radius: 8px; margin-bottom: 24px;">
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="confirmBalanceUpdate()">Обновить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ADMIN_PATH = window.location.pathname.replace(/\/$/, "");
+        let targetUserId = null;
+
+        function showSection(id) {
+            const sections = ['dashboard', 'users', 'broadcast'];
+            sections.forEach(s => {
+                const el = document.getElementById(`section-${s}`);
+                if (el) el.style.display = (s === id) ? 'block' : 'none';
+            });
+            document.querySelectorAll('nav li').forEach(li => {
+                li.classList.remove('active');
+                if (li.innerText.toLowerCase().includes(id === 'dashboard' ? 'дашборд' : id === 'users' ? 'пользователи' : 'рассылка')) {
+                    li.classList.add('active');
+                }
+            });
+            if (id === 'dashboard') loadStats();
+            if (id === 'users') loadUsers();
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch(`${ADMIN_PATH}/api/stats`);
+                const data = await res.json();
+                if (data.success) {
+                    const s = data.data;
+                    document.getElementById('stats-total-users').innerText = s.total_users;
+                    document.getElementById('stats-new-today').innerText = s.new_users_today;
+                    document.getElementById('stats-total-gens').innerText = s.total_gens;
+                    document.getElementById('stats-gens-today').innerText = s.gens_today;
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function loadUsers(query = '') {
+            try {
+                const url = new URL(`${window.location.origin}${ADMIN_PATH}/api/users`);
+                if (query) url.searchParams.append('query', query);
+                const res = await fetch(url);
+                const data = await res.json();
+                const tbody = document.getElementById('users-tbody');
+                tbody.innerHTML = '';
+                
+                data.data.forEach(u => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${u.name || 'Anonymous'}</td>
+                        <td><code>${u.id}</code></td>
+                        <td style="font-weight: 700;">${Math.round(u.balance)} k</td>
+                        <td><span class="badge">${u.model_preference}</span></td>
+                        <td>
+                            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="openBalanceModal(${u.id}, '${u.name}')">
+                                <i class="fas fa-plus-minus"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        function searchUsers() {
+            const val = document.getElementById('user-search').value;
+            loadUsers(val);
+        }
+
+        function openBalanceModal(id, name) {
+            targetUserId = id;
+            document.getElementById('target-user-name').innerText = `Пользователь: ${name || 'ID ' + id}`;
+            document.getElementById('balance-modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('balance-modal').style.display = 'none';
+        }
+
+        async function confirmBalanceUpdate() {
+            const amount = document.getElementById('balance-amount').value;
+            if (!amount) return;
+            try {
+                const res = await fetch(`${ADMIN_PATH}/api/update_balance?user_id=${targetUserId}&amount=${amount}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Баланс обновлен!');
+                    closeModal();
+                    loadUsers();
+                }
+            } catch(e) { alert('Ошибка: ' + e); }
+        }
+
+        async function startBroadcast() {
+            const text = document.getElementById('broadcast-msg').value;
+            if (!text) return;
+            if (!confirm('Отправить сообщение ВСЕМ пользователям?')) return;
+            
+            const btn = document.querySelector('#section-broadcast button');
+            btn.disabled = true;
+            btn.innerText = '⏳ Рассылка идет...';
+            
+            const formData = new FormData();
+            formData.append('text', text);
+            
+            try {
+                const res = await fetch(`${ADMIN_PATH}/api/broadcast`, { method: 'POST', body: formData });
+                const data = await res.json();
+                document.getElementById('broadcast-status').innerText = `✅ Успешно отправлено ${data.data.sent} пользователям.`;
+            } catch(e) { alert('Ошибка: ' + e); }
+            
+            btn.disabled = false;
+            btn.innerText = '🚀 Запустить рассылку';
+        }
+
+        // Init
+        loadStats();
+    </script>
+</body>
+</html>

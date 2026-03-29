@@ -8,7 +8,18 @@ from pydantic import BaseModel
 from typing import List, Optional
 import os
 
-app = FastAPI(title="Bananix Clone API Engine")
+from aiogram import Bot
+import json
+
+app = FastAPI(title="S•NOVA AI Admin & API Engine")
+
+# Admin Config
+ADMIN_PATH = os.getenv("ADMIN_PATH", "/admin_panel").strip("/")
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASS = os.getenv("ADMIN_PASS", "changeme")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 
 @app.on_event("startup")
 async def startup():
@@ -26,6 +37,23 @@ class GenerateEditUrl(BaseModel):
 
 class CreditPack(BaseModel):
     rub: int
+
+# --- Admin Auth ---
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
+
+security = HTTPBasic()
+
+def admin_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    is_user_ok = secrets.compare_digest(credentials.username, ADMIN_USER)
+    is_pass_ok = secrets.compare_digest(credentials.password, ADMIN_PASS)
+    if not (is_user_ok and is_pass_ok):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect login or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # --- Auth Dependency ---
 async def get_current_user(db: AsyncSession = Depends(get_db)):
@@ -91,12 +119,57 @@ async def get_generation(task_uuid: str, user: models.User = Depends(get_current
         "data": info
     }
 
-@app.post("/api/v1/payments/credit-pack")
-async def buy_credit_pack(data: CreditPack, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return {
-        "success": True, 
-        "data": {
-            "payment_id": "test_dummy_payment_id", 
-            "payment_url": "https://yoomoney.ru/checkout"
-        }
-    }
+# --- Admin Endpoints ---
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+@app.get(f"/{ADMIN_PATH}", response_class=HTMLResponse)
+async def get_admin_ui(admin: str = Depends(admin_auth)):
+    # Create static directory if not exists
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if not os.path.exists(static_dir):
+        os.makedirs(static_dir)
+    return FileResponse(os.path.join(static_dir, "admin.html"))
+
+@app.get(f"/{ADMIN_PATH}/api/stats")
+async def get_admin_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
+    stats = await services.get_admin_stats(db)
+    return {"success": True, "data": stats}
+
+@app.get(f"/{ADMIN_PATH}/api/users")
+async def list_users(page: int = 1, query: Optional[str] = None, db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
+    # Simple user listing with limit
+    limit = 50
+    offset = (page - 1) * limit
+    if query:
+        res = await db.execute(select(models.User).filter(
+            (models.User.id.cast(models.String).ilike(f"%{query}%")) | 
+            (models.User.name.ilike(f"%{query}%"))
+        ).limit(limit).offset(offset))
+    else:
+        res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(limit).offset(offset))
+    
+    users = res.scalars().all()
+    return {"success": True, "data": users}
+
+@app.post(f"/{ADMIN_PATH}/api/update_balance")
+async def admin_update_balance(user_id: int, amount: float, db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
+    user = await services.update_user_balance(db, user_id, amount)
+    return {"success": True, "data": {"new_balance": user.balance}}
+
+@app.post(f"/{ADMIN_PATH}/api/broadcast")
+async def admin_broadcast(text: str = Form(...), db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
+    if not bot:
+        return {"success": False, "error": "Bot not initialized"}
+        
+    res = await db.execute(select(models.User.id))
+    user_ids = [row[0] for row in res.fetchall()]
+    
+    success_count = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(uid, text, parse_mode="Markdown")
+            success_count += 1
+        except: pass
+    
+    return {"success": True, "data": {"sent": success_count}}

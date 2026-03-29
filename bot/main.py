@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-from bot.admin import admin_router, get_admin_ids
 user_router = Router()
-dp.include_router(admin_router)
 dp.include_router(user_router)
 
 media_groups = {} # media_group_id -> { "messages": [], "timer": asyncio.Task }
@@ -158,7 +156,7 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # 1. Default commands for all users
+    # Default commands for all users
     default_commands = [
         BotCommand(command="gen", description="✨ Создать или Изменить"),
         BotCommand(command="model", description="🤖 Выбор модели"),
@@ -166,19 +164,6 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="help", description="❓ Помощь"),
     ]
     await bot.set_my_commands(default_commands)
-    
-    # 2. Custom commands for administrators
-    admin_ids = get_admin_ids()
-    if admin_ids:
-        from aiogram.types import BotCommandScopeChat
-        admin_commands = default_commands + [
-            BotCommand(command="admin", description="👑 Админ-панель")
-        ]
-        for aid in admin_ids:
-            try:
-                await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=aid))
-            except Exception as e:
-                logger.warning(f"Could not set admin commands for user {aid}: {e}")
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
