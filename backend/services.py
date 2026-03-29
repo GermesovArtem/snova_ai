@@ -11,14 +11,29 @@ import uuid
 logger = logging.getLogger(__name__)
 
 def normalize_model_id(model_id: str) -> str:
+    """Corrects model names for KIE API compatibility.
+    New models (2, Pro) must NOT have 'google/' prefix.
+    Legacy models must HAVE 'google/' prefix.
+    """
     if not model_id or not isinstance(model_id, str): return model_id
-    if model_id.startswith("google/"): return model_id
     
-    bananas = ["nano-banana", "nano-banana-2", "nano-banana-pro", "nano-banana-edit"]
-    if model_id in bananas:
-        normalized = f"google/{model_id}"
-        logger.info(f"Model ID normalized: {model_id} -> {normalized}")
-        return normalized
+    # 1. Lowercase and strip whitespace
+    model_id = model_id.lower().strip()
+    
+    # 2. Direct models (MUST NOT have prefix)
+    direct_models = ["nano-banana-2", "nano-banana-pro"]
+    for dm in direct_models:
+        if model_id == dm or model_id == f"google/{dm}":
+            return dm
+            
+    # 3. Legacy/Pre-prefixed models (MUST have 'google/' prefix)
+    legacy_models = ["nano-banana", "nano-banana-edit"]
+    for lm in legacy_models:
+        if model_id == lm:
+            return f"google/{lm}"
+        if model_id == f"google/{lm}":
+            return model_id
+            
     return model_id
 
 async def fix_all_model_ids(db):
