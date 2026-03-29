@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-from bot.admin import admin_router
+from bot.admin import admin_router, get_admin_ids
 user_router = Router()
 dp.include_router(admin_router)
 dp.include_router(user_router)
@@ -158,17 +158,27 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    commands = [
-        BotCommand(command="gen", description="🎨 Редактировать фото"),
-        BotCommand(command="create", description="✨ Создать изображение"),
+    # 1. Default commands for all users
+    default_commands = [
+        BotCommand(command="gen", description="✨ Создать или Изменить"),
         BotCommand(command="model", description="🤖 Выбор модели"),
-        BotCommand(command="buy", description="💳 Пополнить баланс"),
-        BotCommand(command="example", description="💡 Примеры промптов"),
-        BotCommand(command="bots", description="🤖 Наши боты"),
-        BotCommand(command="friend", description="👥 Реферальная программа"),
+        BotCommand(command="buy", description="💳 Баланс / Купить"),
         BotCommand(command="help", description="❓ Помощь"),
     ]
-    await bot.set_my_commands(commands)
+    await bot.set_my_commands(default_commands)
+    
+    # 2. Custom commands for administrators
+    admin_ids = get_admin_ids()
+    if admin_ids:
+        from aiogram.types import BotCommandScopeChat
+        admin_commands = default_commands + [
+            BotCommand(command="admin", description="👑 Админ-панель")
+        ]
+        for aid in admin_ids:
+            try:
+                await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=aid))
+            except Exception as e:
+                logger.warning(f"Could not set admin commands for user {aid}: {e}")
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -212,12 +222,13 @@ async def cmd_gen(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id)
         limit = get_model_limit(user.model_preference)
-    await message.answer(f"Пришлите до **{limit}** фотографий для обработки.")
-
-@user_router.message(Command("create"))
-async def cmd_create(message: types.Message, state: FSMContext):
-    await state.set_state(GenState.waiting_for_prompt)
-    await message.answer("Введите промпт (что изменить) или продиктуйте голосом:", reply_markup=build_cancel_kb())
+    await state.clear()
+    await message.answer(
+        f"📸 Пришлите до **{limit} фото** для редактирования\n"
+        f"⌨️ Либо введите **текст**, чтобы сгенерировать новое изображение 👇",
+        reply_markup=build_cancel_kb(),
+        parse_mode="Markdown"
+    )
 
 @user_router.message(Command("help"))
 async def cmd_help(message: types.Message):
@@ -227,7 +238,7 @@ async def cmd_help(message: types.Message):
 @user_router.message(Command("example"))
 @user_router.message(Command("friend"))
 async def cmd_dummies(message: types.Message):
-    await message.answer("Этот раздел находится в разработке 🏗")
+    await message.answer("Этот раздел временно недоступен 🏗")
 
 # --- CALLBACK ROUTERS ---
 @user_router.callback_query(F.data == "cancel_fsm")
