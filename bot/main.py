@@ -174,7 +174,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
-        limit = get_model_limit(user.model_preference)
+        limit = get_model_limit(services.normalize_model_id(user.model_preference))
         
         text = (
             f"🍌 **Добро пожаловать в S•NOVA AI**\n\n"
@@ -378,7 +378,7 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     data = await state.get_data()
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
-        model = user.model_preference
+        model = services.normalize_model_id(user.model_preference)
     
     logger.info(f"show_confirmation: user={user_id}, model={model}, prompt={prompt}, imgs={len(image_urls)}, is_refine={is_refinement}")
     # Save for confirmation
@@ -637,8 +637,8 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
-        # Resolve actual model and cost before try block to avoid UnboundLocalError
-        actual_model = user.model_preference
+        # Resolve actual model and cost before try block
+        actual_model = services.normalize_model_id(user.model_preference)
         
         cost = services.get_model_cost(actual_model)
 
@@ -669,6 +669,7 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
     ))
 
 def human_model_name(model_id: str) -> str:
+    model_id = services.normalize_model_id(model_id)
     models = get_available_models()
     return next((n for n, m in models.items() if m == model_id), model_id)
 
@@ -821,6 +822,9 @@ async def on_startup():
     await setup_bot_commands(bot)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    async with AsyncSessionLocal() as db:
+        await services.fix_all_model_ids(db)
 
 async def main():
     await on_startup()

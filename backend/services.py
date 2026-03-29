@@ -10,8 +10,34 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+def normalize_model_id(model_id: str) -> str:
+    if not model_id or not isinstance(model_id, str): return model_id
+    if model_id.startswith("google/"): return model_id
+    
+    bananas = ["nano-banana", "nano-banana-2", "nano-banana-pro", "nano-banana-edit"]
+    if model_id in bananas:
+        normalized = f"google/{model_id}"
+        logger.info(f"Model ID normalized: {model_id} -> {normalized}")
+        return normalized
+    return model_id
+
+async def fix_all_model_ids(db):
+    res = await db.execute(select(models.User))
+    users = res.scalars().all()
+    any_changed = False
+    for user in users:
+        norm = normalize_model_id(user.model_preference)
+        if norm != user.model_preference:
+            user.model_preference = norm
+            any_changed = True
+    if any_changed:
+        await db.commit()
+        logger.info("Fixed model IDs for existing users in database.")
+
 def get_model_cost(model_id: str) -> float:
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    # Auto-normalize to handle old DB values
+    model_id = normalize_model_id(model_id)
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana-2": 3.0, "google/nano-banana-pro": 4.0}')
 
     try:
         costs = json.loads(costs_str)
@@ -63,6 +89,8 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
                                 aspect_ratio: str = "auto", resolution: str = "1K", 
                                 output_format: str = "jpg"):
     """Saves task to DB and sends to KIE API"""
+    # Final safety normalization
+    model_id = normalize_model_id(model_id)
     new_task = models.GenerationTask(
         user_id=user_id,
         tool="image",
