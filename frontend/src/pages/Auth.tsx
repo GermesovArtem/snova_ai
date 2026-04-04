@@ -1,12 +1,13 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Cloud, User as UserIcon } from 'lucide-react';
+import { ChevronLeft, Cloud, User as UserIcon, MessageCircle } from 'lucide-react';
 import { api } from '../api';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function Auth({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate();
   const telegramWrapperRef = useRef<HTMLDivElement>(null);
+  const [showFallback, setShowFallback] = useState(false);
 
   // Обработчик входа через Telegram
   (window as any).onTelegramAuth = async (user: any) => {
@@ -25,11 +26,16 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
   };
 
   useEffect(() => {
-    // Внедряем виджет Telegram
+    const timer = setTimeout(() => {
+        if (telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
+            setShowFallback(true);
+        }
+    }, 3000);
+
     if (telegramWrapperRef.current) {
         const script = document.createElement('script');
         script.src = "https://telegram.org/js/telegram-widget.js?22";
-        script.setAttribute('data-telegram-login', "snova_ai_bot"); // ЗАМЕНИТЕ НА ВАШЕГО БОТА
+        script.setAttribute('data-telegram-login', "snovananobananabot");
         script.setAttribute('data-size', 'large');
         script.setAttribute('data-radius', '12');
         script.setAttribute('data-onauth', 'onTelegramAuth(user)');
@@ -37,10 +43,16 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
         script.async = true;
         telegramWrapperRef.current.appendChild(script);
     }
+
+    return () => clearTimeout(timer);
   }, []);
 
   const handleOAuthPlaceholder = (provider: string) => {
     alert(`Вход через ${provider} будет доступен в следующем обновлении!`);
+  };
+
+  const handleFallbackLogin = () => {
+    alert("Официальный виджет Telegram не загрузился. Убедитесь, что домен/IP разрешен в настройках @BotFather.");
   };
 
   return (
@@ -73,7 +85,13 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
           style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}
         >
           {/* Контейнер для виджета Telegram */}
-          <div ref={telegramWrapperRef} style={{ minHeight: '40px' }}></div>
+          <div ref={telegramWrapperRef} style={{ minHeight: '40px', display: showFallback ? 'none' : 'block' }}></div>
+          
+          {showFallback && (
+            <button className="btn btn-primary" onClick={handleFallbackLogin} style={{ width: '100%', maxWidth: '300px', background: '#0088cc' }}>
+              <MessageCircle size={20} fill="#fff" /> Войти через Telegram
+            </button>
+          )}
           
           <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '10px 0' }}></div>
 
