@@ -66,17 +66,17 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
           transition={{ delay: 0.2 }}
           style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}
         >
-          <button className="btn btn-primary" onClick={handleTelegramLogin} style={{ width: '100%', maxWidth: '300px', background: '#0088cc', color: '#fff' }}>
-            <MessageCircle size={20} fill="#fff" /> Войти через Telegram
+          <button className="btn btn-primary" onClick={handleTelegramLogin} style={{ width: '100%', maxWidth: '300px', background: '#0088cc', color: '#fff', borderRadius: '30px' }}>
+            <MessageCircle size={22} fill="#fff" /> Войти через Telegram
           </button>
 
-          <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '10px 0' }}></div>
+          <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '15px 0' }}></div>
 
-          <button className="btn btn-glass" onClick={() => handleOAuthPlaceholder('Yandex')} style={{ width: '100%', maxWidth: '300px' }}>
+          <button className="btn btn-secondary glass" onClick={() => handleOAuthPlaceholder('Yandex')} style={{ width: '100%', maxWidth: '300px', borderRadius: '30px' }}>
             <Cloud size={20} /> Yandex ID
           </button>
 
-          <button className="btn btn-glass" onClick={() => handleOAuthPlaceholder('VK')} style={{ width: '100%', maxWidth: '300px' }}>
+          <button className="btn btn-secondary glass" onClick={() => handleOAuthPlaceholder('VK')} style={{ width: '100%', maxWidth: '300px', borderRadius: '30px' }}>
             <UserIcon size={20} /> VK ID
           </button>
         </motion.div>

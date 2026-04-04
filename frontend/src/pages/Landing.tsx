@@ -48,20 +48,20 @@ export default function Landing() {
           transition={{ delay: 0.3 }}
           style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '60px' }}
         >
-          <button className="btn btn-primary" onClick={() => navigate('/login')}>
-            Войти <ArrowRight size={20} />
+          <button className="btn btn-primary" onClick={() => navigate('/login')} style={{ fontSize: '18px', padding: '16px 40px' }}>
+            Войти <ArrowRight size={22} />
           </button>
         </motion.div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', textAlign: 'left' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', textAlign: 'left', padding: '0 10px' }}>
           <FeatureCard 
-            icon={<Sparkles size={24} />} 
+            icon={<Sparkles size={24} color="#fff" />} 
             title="Фото → Фото" 
             desc="Меняй объекты, стиль и детали на своих снимках."
             delay={0.4}
           />
           <FeatureCard 
-            icon={<Palette size={24} />} 
+            icon={<Palette size={24} color="#fff" />} 
             title="Текст → Фото" 
             desc="Воплощай любые идеи в высочайшем 4K качестве."
             delay={0.5}
