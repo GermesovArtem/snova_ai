@@ -88,7 +88,17 @@ MSG_ERR_FUNDS = (
 
 MSG_GEN_STARTING = "🚀 **Запрос подтвержден!** Начинаю генерацию (**{model_name}**)..."
 
-MSG_GEN_SUCCESS_WITH_BALANCE = "🔥 **Готово!**\n\n💳 Остаток: **{balance} кр.**\n🤖 Модель: **{model_name}**"
-MSG_GEN_SUCCESS_FALLBACK = "🔥 **Готово!**\n\n💳 Остаток: **{balance} кр.**"
+MSG_GEN_SUCCESS_WITH_BALANCE = (
+    "🔥 **Готово!**\n\n"
+    "💳 Остаток: **{balance} кр.**\n"
+    "🤖 Модель: **{model_name}**\n\n"
+    "✏️ *Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!*"
+)
+
+MSG_GEN_SUCCESS_FALLBACK = (
+    "🔥 **Готово!**\n\n"
+    "💳 Остаток: **{balance} кр.**\n\n"
+    "✏️ *Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!*"
+)
 
 MSG_ERR_GEN_FAILED = "❌ Ошибка генерации: {err_text}"
