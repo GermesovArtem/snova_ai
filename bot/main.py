@@ -752,7 +752,7 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
 def human_model_name(model_id: str) -> str:
     model_id = services.normalize_model_id(model_id)
     models = get_available_models()
-    return next((n for n, m in models.items() if m == model_id), model_id)
+    return next((n for n, m in models.items() if services.normalize_model_id(m) == model_id), model_id)
 
 async def get_safe_preview_photo(url: str) -> types.BufferedInputFile | None:
     """Download image and optimize if it exceeds 10MB to ensure Telegram can send it as a photo."""
