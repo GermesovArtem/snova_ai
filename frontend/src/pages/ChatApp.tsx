@@ -67,15 +67,14 @@ export default function ChatApp() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-color)' }}>
       {/* Header */}
-      <header className="glass" style={{
-        padding: '20px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        paddingTop: 'calc(20px + var(--safe-area-top))'
+      <header style={{ 
+        padding: '20px', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        borderBottom: '1px solid rgba(255,255,255,0.1)', 
+        position: 'relative', 
+        zIndex: 1000 
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -134,13 +133,12 @@ export default function ChatApp() {
       </main>
 
       {/* Input Area */}
-      <footer style={{
-        padding: '20px',
-        paddingBottom: 'calc(20px + var(--safe-area-bottom))',
-        background: 'rgba(5, 5, 5, 0.95)',
-        backdropFilter: 'blur(20px)',
-        borderTop: '1px solid var(--glass-border)',
-        zIndex: 20,
+      <footer style={{ 
+        padding: '16px 20px', 
+        background: 'rgba(20,20,20,0.8)', 
+        backdropFilter: 'blur(10px)',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        zIndex: 1000,
         position: 'relative'
       }}>
         {/* Model Selector Bar */}
