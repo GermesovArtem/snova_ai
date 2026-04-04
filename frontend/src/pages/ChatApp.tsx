@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, Image as ImageIcon, 
-  X, ChevronDown, Loader2, CheckCircle2 
+  X, ChevronDown, Loader2, CheckCircle2, User, CreditCard, HelpCircle, Sparkles
 } from 'lucide-react';
 import { api } from '../api';
 
 interface Message {
   id: string;
-  type: 'user' | 'bot';
+  type: 'user' | 'bot' | 'bot-confirm';
   text?: string;
   image?: string;
   isGenerating?: boolean;
+  meta?: any; // For confirmation data
 }
 
 interface UserData {
@@ -18,6 +19,7 @@ interface UserData {
   name: string;
   balance: number;
   model_preference: string;
+  frozen_balance?: number;
 }
 
 export default function ChatApp() {
@@ -28,18 +30,17 @@ export default function ChatApp() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Settings (Synced with bot defaults)
-  const [model, setModel] = useState('nano-banana-2');
-  const [settings, setSettings] = useState({
+  // Generation Settings (State for the draft)
+  const [currentModel, setCurrentModel] = useState('nano-banana-2');
+  const [genSettings, setGenSettings] = useState({
     aspect_ratio: '1:1',
     resolution: '4K',
     output_format: 'png'
   });
 
-  // UI States
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // UI Overlays
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -57,14 +58,14 @@ export default function ChatApp() {
       const res = await api.getMe();
       if (res.success) {
         setUser(res.data);
-        setModel(res.data.model_preference || 'nano-banana-2');
+        setCurrentModel(res.data.model_preference || 'nano-banana-2');
         
         if (messages.length === 0) {
           const limit = (res.data.model_preference || '').includes('pro') ? 8 : 14;
           setMessages([{
             id: 'welcome',
             type: 'bot',
-            text: `✨ **Добро пожаловать в S•NOVA AI!**\n\nЗдесь ты можешь сгенерировать невероятный контент 🚀\n\n🖼 **Фото → Фото:** Отправь фотографию и напиши, что поменять.\n\n📝 **Текст → Фото:** Опиши идею — и я создам её с нуля!\n\n🤖 **Твоя текущая нейросеть:** ${res.data.model_preference}\n🎁 **Баланс:** ${res.data.balance} кр.\n\n👇 **Просто отправь мне текст или фото (до ${limit} шт.) прямо сейчас!**`
+            text: `✨ **Добро пожаловать в S•NOVA AI!**\n\nЗдесь ты можешь сгенерировать невероятный контент 🚀\n\n🖼 **Фото → Фото:** Отправь фотографию и напиши, что поменять (работает как магия!).\n\n📝 **Текст → Фото:** Просто опиши текстом любую безумную идею — и я создам её с нуля!\n\n🤖 **Твоя текущая нейросеть:** ${res.data.model_preference}\n🎁 **Баланс:** ${res.data.balance} кр.\n\n👇 **Просто отправь мне текст или фото (до ${limit} шт.) прямо сейчас!**`
           }]);
         }
       }
@@ -90,67 +91,87 @@ export default function ChatApp() {
     setPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
-  const getCost = () => model.includes('pro') ? 4 : 3;
+  const getModelHumanName = (m: string) => m.includes('pro') ? 'Nano PRO' : 'NanoBanana 2';
+  const getCost = (m: string) => m.includes('pro') ? 4 : 3;
 
-  const initiateSend = () => {
+  // STEP 1: PREPARE (Like sending images to bot)
+  const handleInitiate = () => {
     if (!input.trim() && selectedFiles.length === 0) return;
-    setShowConfirm(true);
-  };
 
-  const cancelSend = () => {
-    setShowConfirm(false);
-  };
-
-  const confirmAndSend = async () => {
-    setShowConfirm(false);
-    setIsLoading(true);
-
-    const userMsgId = Date.now().toString();
+    // 1. Add confirmation message to chat
+    const confirmMsgId = Date.now().toString();
+    const safePrompt = input.trim() || "Без текста";
+    
     setMessages(prev => [...prev, {
-      id: userMsgId,
-      type: 'user',
-      text: input,
-      image: previews[0]
+      id: confirmMsgId,
+      type: 'bot-confirm',
+      text: `✨ **Ваш промпт почти готов!**\n\n📝 Текст: \`${safePrompt}\`\n📸 Фото: **${selectedFiles.length} шт.**\n🤖 Модель: **${getModelHumanName(currentModel)}**\n📐 Размер: **${genSettings.aspect_ratio}** | 💎 **${genSettings.resolution}** | 📁 **${genSettings.output_format.toUpperCase()}**\n💰 Стоимость: **${getCost(currentModel)} кр.**\n\n💳 Ваш баланс: **${user?.balance} кр.**\n\nВсё верно? Начинаем генерацию?`,
+      image: previews[0], // Show one preview
+      meta: { 
+        prompt: input, 
+        files: [...selectedFiles], 
+        previews: [...previews],
+        model: currentModel,
+        settings: {...genSettings}
+      }
     }]);
 
-    const botMsgId = (Date.now() + 1).toString();
+    // 2. CLEAR INPUT (Like bot)
+    setInput('');
+    setSelectedFiles([]);
+    setPreviews([]);
+  };
+
+  // STEP 2: CONFIRM
+  const handleConfirmGen = async (msgId: string) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (!msg || !msg.meta) return;
+
+    // Remove confirmation message, replace with "Generating"
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    
+    const botMsgId = Date.now().toString();
     setMessages(prev => [...prev, {
       id: botMsgId,
       type: 'bot',
-      text: `🚀 **Запрос подтвержден!** Начинаю генерацию (${model.includes('pro') ? 'PRO' : 'v2'})...`,
+      text: `🚀 **Запрос подтвержден!** Начинаю генерацию (**${getModelHumanName(msg.meta.model)}**)...`,
       isGenerating: true
     }]);
 
     try {
-      const res = await api.generateEdit(input, selectedFiles);
+      const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
       if (res.success && res.data.task_uuid) {
-        pollStatus(res.data.task_uuid, botMsgId);
+        pollStatus(res.data.task_uuid, botMsgId, msg.meta.model);
       } else {
         updateBotMessage(botMsgId, "❌ Ошибка: " + (res.error || "Неизвестная ошибка"));
       }
     } catch (e: any) {
       updateBotMessage(botMsgId, "❌ Ошибка связи: " + e.message);
-    } finally {
-      setInput('');
-      setSelectedFiles([]);
-      setPreviews([]);
-      setIsLoading(false);
     }
+  };
+
+  const handleEditGen = (msgId: string) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (!msg || !msg.meta) return;
+
+    // Restore data to input
+    setInput(msg.meta.prompt);
+    setSelectedFiles(msg.meta.files);
+    setPreviews(msg.meta.previews);
+    
+    // Remove confirm message
+    setMessages(prev => prev.filter(m => m.id !== msgId));
   };
 
   const updateBotMessage = (id: string, text: string, imageUrl?: string) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, text, image: imageUrl, isGenerating: false } : m));
   };
 
-  const pollStatus = async (uuid: string, msgId: string) => {
+  const pollStatus = async (uuid: string, msgId: string, modelUsed: string) => {
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
-      if (attempts > 60) {
-        clearInterval(interval);
-        updateBotMessage(msgId, "❌ Превышено время ожидания.");
-        return;
-      }
+      if (attempts > 60) { clearInterval(interval); updateBotMessage(msgId, "❌ Время истекло."); return; }
 
       try {
         const res = await api.checkStatus(uuid);
@@ -160,67 +181,71 @@ export default function ChatApp() {
 
           if (state === 'success' || state === 'completed') {
             clearInterval(interval);
-            updateBotMessage(msgId, `🔥 **Готово!**\n\n🤖 Модель: ${model.includes('pro') ? 'Nano PRO' : 'Nano v2'}\n\n✏️ *Чтобы изменить это фото, просто отправь новый текст!*`, imageUrl);
+            updateBotMessage(msgId, `🔥 **Готово!**\n\n🤖 Модель: **${getModelHumanName(modelUsed)}**\n\n✏️ *Чтобы изменить это фото, просто отправь новый текст!*`, imageUrl);
             fetchUserData();
           } else if (state === 'failed' || state === 'error') {
             clearInterval(interval);
-            updateBotMessage(msgId, "❌ Ошибка генерации: " + (res.data.error || "Unknown error"));
+            updateBotMessage(msgId, "❌ Ошибка генерации: " + (res.data.error || "Unknown"));
           }
         }
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) { console.error(e); }
     }, 3000);
   };
 
   const updateModel = async (newModel: string) => {
-    setModel(newModel);
+    setCurrentModel(newModel);
     setIsModelMenuOpen(false);
     try {
       await api.updateModel(newModel);
       fetchUserData();
-    } catch (e) {
-      console.error(e);
-    }
+      setMessages(prev => [...prev, { id: Date.now().toString(), type: 'bot', text: `✅ **Модель успешно обновлена!**\n\n✨ Отлично! Теперь пришлите фото и/или введите текст 👇` }]);
+    } catch (e) { console.error(e); }
   };
 
   const toggleSetting = (key: string, val: string) => {
-    setSettings(prev => ({ ...prev, [key]: val }));
+    setGenSettings(prev => ({ ...prev, [key]: val }));
   };
 
   return (
-    <div className="chat-container" style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', background: '#000', color: '#fff', overflow: 'hidden' }}>
-      <header className="glass" style={{ height: '70px', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 1000 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="logo-glow" style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff' }}></div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '18px' }}>S•NOVA AI</div>
-            <div style={{ fontSize: '12px', color: '#44ff44', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#44ff44' }}></div> Online
-            </div>
-          </div>
+    <div className="chat-app" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#000', color: '#fff', overflow: 'hidden' }}>
+      
+      {/* HEADER (Sync with Bot) */}
+      <header className="glass" style={{ height: '60px', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 1000 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="logo-glow" style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#fff' }}></div>
+          <div style={{ fontWeight: 700, fontSize: '18px' }}>S•NOVA AI</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <div className="glass" style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 700 }}>
-            {user?.balance || 0} кр.
-          </div>
-          <button onClick={() => setIsSettingsOpen(true)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><Settings size={20} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="glass" style={{ padding: '4px 10px', borderRadius: '10px', fontSize: '13px' }}>{user?.balance || 0} кр.</div>
         </div>
       </header>
 
+      {/* CHAT AREA */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {messages.map((msg) => (
-          <div key={msg.id} style={{ alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-            <div className={msg.type === 'bot' ? 'glass' : ''} style={{ padding: '12px 16px', borderRadius: '20px', background: msg.type === 'user' ? 'rgba(255,255,255,0.1)' : 'rgba(20,20,20,0.6)', border: msg.type === 'bot' ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
-              {msg.image && <img src={msg.image} alt="result" style={{ width: '100%', borderRadius: '12px', marginBottom: '8px', display: 'block' }} />}
-              {msg.text && (
-                <div style={{ whiteSpace: 'pre-wrap', fontSize: '15px', color: '#fff' }}>
-                  {msg.text.split('**').map((part, i) => i % 2 === 1 ? <b key={i}>{part}</b> : part)}
+          <div key={msg.id} style={{ alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start', maxWidth: '90%' }}>
+            <div className={msg.type.startsWith('bot') ? 'glass' : ''} style={{ 
+              padding: '12px 16px', borderRadius: '18px', 
+              background: msg.type === 'user' ? 'rgba(255,255,255,0.1)' : 'rgba(25,25,25,0.8)',
+              border: msg.type.startsWith('bot') ? '1px solid rgba(255,255,255,0.1)' : 'none'
+            }}>
+              {msg.image && <img src={msg.image} alt="p" style={{ width: '100%', borderRadius: '12px', marginBottom: '10px' }} />}
+              {msg.text && <div style={{ whiteSpace: 'pre-wrap', fontSize: '15px' }}>{msg.text.split('**').map((p,i)=> i%2?<b>{p}</b>:p)}</div>}
+              
+              {msg.isGenerating && (
+                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.5)' }}>
+                  <Loader2 size={16} className="animate-spin" /> Думаю...
                 </div>
               )}
-              {msg.isGenerating && (
-                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>
-                  <Loader2 size={16} className="animate-spin" /> Думаю...
+
+              {/* Bot Confirmation Inline Buttons */}
+              {msg.type === 'bot-confirm' && (
+                <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button onClick={() => handleConfirmGen(msg.id)} style={{ padding: '12px', borderRadius: '10px', background: '#fff', color: '#000', border: 'none', fontWeight: 700 }}>🚀 Сгенерировать</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => setIsSettingsMenuOpen(true)} style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }}>⚙️ Настройки</button>
+                    <button onClick={() => handleEditGen(msg.id)} style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }}>✏️ Изменить</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -229,73 +254,81 @@ export default function ChatApp() {
         <div ref={chatEndRef} />
       </main>
 
-      <footer style={{ padding: '10px 20px', background: 'linear-gradient(to top, #000 80%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* INPUT AREA + REPLY KEYBOARD */}
+      <footer style={{ padding: '10px', background: '#000', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        
+        {/* Previews (Attachments area) */}
         {previews.length > 0 && (
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', padding: '0 10px', overflowX: 'auto' }}>
             {previews.map((src, i) => (
               <div key={i} style={{ position: 'relative', flexShrink: 0 }}>
-                <img src={src} alt="p" style={{ width: '60px', height: '60px', borderRadius: '10px', objectFit: 'cover' }} />
-                <button onClick={() => removeFile(i)} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f44', borderRadius: '50%', color: '#fff', border: 'none', padding: '2px' }}><X size={10} /></button>
+                <img src={src} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
+                <button onClick={() => removeFile(i)} style={{ position: 'absolute', top: -5, right: -5, background: '#f44', borderRadius: '50%', color: '#fff', border: 'none' }}><X size={10} /></button>
               </div>
             ))}
           </div>
         )}
-        <button onClick={() => setIsModelMenuOpen(!isModelMenuOpen)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: '100px', fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          {model.includes('pro') ? 'Nano PRO' : 'Nano v2'} <ChevronDown size={14} />
-        </button>
-        <div className="glass" style={{ borderRadius: '30px', display: 'flex', alignItems: 'center', padding: '6px 12px', gap: '10px' }}>
-          <button onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}><ImageIcon size={24} /></button>
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && initiateSend()} placeholder="Опиши идею..." style={{ flex: 1, background: 'none', border: 'none', color: '#fff', outline: 'none' }} />
-          <button onClick={initiateSend} disabled={isLoading} style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={20} color="#000" /></button>
+
+        {/* Real Input Bar */}
+        <div className="glass" style={{ margin: '0 10px', borderRadius: '25px', display: 'flex', alignItems: 'center', padding: '5px 15px', gap: '10px', background: 'rgba(255,255,255,0.05)' }}>
+          <button onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)' }}><ImageIcon size={22} /></button>
+          <input type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyPress={e=>e.key==='Enter'&&handleInitiate()} placeholder="Опиши идею..." style={{ flex: 1, background: 'none', border: 'none', color: '#fff', outline: 'none', height: '40px' }} />
+          <button onClick={handleInitiate} style={{ background: '#fff', borderRadius: '50%', width: '36px', height: '36px', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={18} color="#000" /></button>
         </div>
         <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} accept="image/*" onChange={handleFileSelect} />
+
+        {/* BOTTOM MENU (Reply Keyboard 2x2) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '0 10px 10px' }}>
+          <button onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), type: 'bot', text: `📸 Пришлите до **${currentModel.includes('pro') ? '8' : '14'} фото** для редактирования\n⌨️ Либо введите **текст**, чтобы сгенерировать новое изображение 👇` }])} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Sparkles size={16} /> Создать</button>
+          <button onClick={() => setIsModelMenuOpen(true)} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Settings size={16} /> Модель</button>
+          <button onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), type: 'bot', text: `👤 **Профиль**\n\n💳 Баланс: **${user?.balance} кр.**\n🤖 Модель: **${getModelHumanName(currentModel)}**\n❄️ Заморожено: **${user?.frozen_balance || 0} кр.**` }])} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><User size={16} /> Баланс</button>
+          <button onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), type: 'bot', text: `📬 **Контакты**\n\nВозникла проблема или есть предложение? Напишите нам:\n\n🛠 **Техподдержка**: @artemgavr1lov\n👔 **Менеджер**: @doloreees_s` }])} style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><HelpCircle size={16} /> Контакты</button>
+        </div>
       </footer>
 
-      {showConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="glass" style={{ width: '100%', maxWidth: '400px', borderRadius: '24px', padding: '24px', background: '#111' }}>
-            <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 color="#44ff44" /> Всё верно?</h3>
-            <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
-              <p>💰 Стоимость: <b>{getCost()} кр.</b></p>
-              <p>💳 Баланс: <b>{user?.balance} кр.</b></p>
-            </div>
-            <div style={{ marginTop: '24px', display: 'flex', gap: '10px' }}>
-              <button onClick={cancelSend} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff' }}>Назад</button>
-              <button onClick={confirmAndSend} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: '#fff', color: '#000', border: 'none', fontWeight: 600 }}>🚀 Создать</button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* OVERLAY: MODEL MENU */}
       {isModelMenuOpen && (
-        <div onClick={() => setIsModelMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1500 }}>
-          <div onClick={e => e.stopPropagation()} className="glass" style={{ position: 'absolute', bottom: '130px', left: '20px', width: '220px', borderRadius: '16px', padding: '10px', background: '#111' }}>
-            <div onClick={() => updateModel('nano-banana-2')} style={{ padding: '12px', borderRadius: '8px', cursor: 'pointer', background: model === 'nano-banana-2' ? 'rgba(255,255,255,0.1)' : '' }}> Nano v2 (3 кр.) </div>
-            <div onClick={() => updateModel('nano-banana-pro')} style={{ padding: '12px', borderRadius: '8px', cursor: 'pointer', background: model === 'nano-banana-pro' ? 'rgba(255,255,255,0.1)' : '' }}> Nano PRO (4 кр.) </div>
+        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '400px', padding: '24px', borderRadius: '24px' }}>
+            <h3 style={{ marginBottom: '20px' }}>🤖 Управление нейросетями</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button onClick={() => updateModel('nano-banana-2')} style={{ padding: '15px', textAlign: 'left', borderRadius: '14px', background: currentModel === 'nano-banana-2' ? '#fff' : 'rgba(255,255,255,0.1)', color: currentModel === 'nano-banana-2' ? '#000' : '#fff', border: 'none' }}>
+                <b>Nano Banana 2</b><br /><small>3 кр. | До 14 фото | Дизайн</small>
+              </button>
+              <button onClick={() => updateModel('nano-banana-pro')} style={{ padding: '15px', textAlign: 'left', borderRadius: '14px', background: currentModel === 'nano-banana-pro' ? '#fff' : 'rgba(255,255,255,0.1)', color: currentModel === 'nano-banana-pro' ? '#000' : '#fff', border: 'none' }}>
+                <b>Nano PRO</b><br /><small>4 кр. | До 8 фото | Детализация лиц</small>
+              </button>
+              <button onClick={() => setIsModelMenuOpen(false)} style={{ marginTop: '10px', padding: '12px', color: 'rgba(255,255,255,0.5)', border: 'none', background: 'none' }}>Назад</button>
+            </div>
           </div>
         </div>
       )}
 
-      {isSettingsOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="glass" style={{ width: '100%', maxWidth: '400px', borderRadius: '24px', padding: '24px', background: '#111' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2>Настройки</h2>
-              <button onClick={() => setIsSettingsOpen(false)} style={{ background: 'none', border: 'none', color: '#fff' }}><X size={24} /></button>
+      {/* OVERLAY: SETTINGS */}
+      {isSettingsMenuOpen && (
+        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '400px', padding: '24px', borderRadius: '24px' }}>
+            <h3 style={{ marginBottom: '20px' }}>⚙️ Настройки генерации</h3>
+            
+            <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>РАЗМЕР</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '20px' }}>
+              {['1:1', '16:9', '9:16', '3:4', '4:3', '21:9'].map(r => (
+                <button onClick={() => toggleSetting('aspect_ratio', r)} style={{ padding: '8px', borderRadius: '8px', border: 'none', background: genSettings.aspect_ratio === r ? '#fff' : 'rgba(255,255,255,0.1)', color: genSettings.aspect_ratio === r ? '#000' : '#fff' }}>{r}</button>
+              ))}
             </div>
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>ФОРМАТ</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                {['1:1', '16:9', '9:16'].map(r => (
-                  <button key={r} onClick={() => toggleSetting('aspect_ratio', r)} style={{ padding: '8px', borderRadius: '8px', background: settings.aspect_ratio === r ? '#fff' : 'rgba(255,255,255,0.1)', color: settings.aspect_ratio === r ? '#000' : '#fff', border: 'none' }}>{r}</button>
-                ))}
-              </div>
+
+            <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>КАЧЕСТВО</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {['1K', '2K', '4K'].map(res => (
+                <button onClick={() => toggleSetting('resolution', res)} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: genSettings.resolution === res ? '#fff' : 'rgba(255,255,255,0.1)', color: genSettings.resolution === res ? '#000' : '#fff' }}>{res}</button>
+              ))}
             </div>
-            <button onClick={() => setIsSettingsOpen(false)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: '#fff', color: '#000', fontWeight: 600, border: 'none' }}>Сохранить</button>
-            <div style={{ marginTop: '20px', fontSize: '11px', color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>S•NOVA AI v3.3 Parity Status: ACTIVE</div>
+
+            <button onClick={() => setIsSettingsMenuOpen(false)} style={{ width: '100%', padding: '14px', borderRadius: '14px', background: '#fff', color: '#000', border: 'none', fontWeight: 700 }}>✅ Готово</button>
           </div>
         </div>
       )}
+
     </div>
   );
 }
