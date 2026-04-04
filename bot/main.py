@@ -167,15 +167,8 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # Default commands for all users
-    default_commands = [
-        BotCommand(command="gen", description="✨ Создать или Изменить"),
-        BotCommand(command="model", description="🤖 Выбор модели"),
-        BotCommand(command="buy", description="💳 Баланс / Купить"),
-        BotCommand(command="contacts", description="📬 Контакты"),
-    ]
+    # Remove the blue menu button entirely
     await bot.delete_my_commands()
-    await bot.set_my_commands(default_commands)
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
