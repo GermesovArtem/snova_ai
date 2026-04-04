@@ -32,6 +32,7 @@ export default function ChatApp() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyTasks, setHistoryTasks] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyDetailsTask, setHistoryDetailsTask] = useState<any>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null); 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
@@ -190,18 +191,20 @@ export default function ChatApp() {
     <div className="chat-app" style={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-color)' }}>
       
       {/* HEADER */}
-      <header className="glass" style={{ height: '70px', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', borderRadius: '0 0 20px 20px' }}>
-        <button onClick={toggleTheme} style={{ position: 'absolute', left: '20px', background: 'none', border: 'none', color: 'inherit' }} className="clickable">
-          {theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}
+      <header className="glass" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 15px', borderRadius: '0 0 20px 20px' }}>
+        <button onClick={toggleTheme} style={{ background: 'none', border: 'none', color: 'inherit', padding: 0 }} className="clickable">
+          {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
         </button>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontWeight: 900, fontSize: '20px', letterSpacing: '-0.8px' }}>S•NOVA AI</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+        
+        <div style={{ textAlign: 'center', flex: 1, margin: '0 10px', overflow: 'hidden' }}>
+          <div style={{ fontWeight: 900, fontSize: '18px', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>S•NOVA AI</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>
              <div className="status-dot"></div>
-             Текущая модель: {getModelName(currentModel)}
+             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Текущая модель: {getModelName(currentModel)}</span>
           </div>
         </div>
-        <div className="glass" style={{ position: 'absolute', right: '15px', padding: '6px 12px', borderRadius: '14px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.08)', border: 'none' }}>
+        
+        <div className="glass" style={{ padding: '6px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.08)', border: 'none', whiteSpace: 'nowrap' }}>
           <Wallet size={14} />
           {user ? `${user.balance} ${getCreditsLabel(user.balance)}` : '...'}
         </div>
@@ -317,22 +320,49 @@ export default function ChatApp() {
                  <div>Здесь будут ваши шедевры</div>
               </div>
             ) : historyTasks.map(task => (
-              <div key={task.id} className="glass" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ fontSize: '13px', opacity: 0.8, background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '12px' }}>
-                   <b>Промпт:</b> {task.prompt || 'Без описания'}
-                </div>
-                {task.image_url && (
+              <div key={task.id} className="glass" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {task.image_url ? (
                   <div style={{ position: 'relative' }}>
-                    <img src={fixUrl(task.image_url)} onClick={() => setActiveImage(fixUrl(task.image_url))} className="clickable" style={{ width: '100%', borderRadius: '16px', border: '1px solid var(--glass-border)' }} />
-                    <button onClick={() => downloadImage(task.image_url)} style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', padding: '10px', borderRadius: '50%', color: '#fff', border: 'none' }} className="clickable"><Download size={16} /></button>
+                    <img src={fixUrl(task.image_url)} onClick={() => setActiveImage(fixUrl(task.image_url))} className="clickable" style={{ width: '100%', borderRadius: '14px', border: '1px solid var(--glass-border)', objectFit: 'cover' }} />
+                    <button onClick={() => downloadImage(task.image_url)} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', padding: '8px', borderRadius: '50%', color: '#fff', border: 'none' }} className="clickable"><Download size={16} /></button>
                   </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.4, fontSize: '10px' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={12} /> {task.status}</div>
-                   <div>{new Date(task.created_at).toLocaleDateString('ru-RU')}</div>
+                ) : (task.status === 'failed' && (
+                  <div style={{ padding: '30px', textAlign: 'center', opacity: 0.5, borderRadius: '14px', background: 'rgba(255,255,255,0.05)' }}>
+                     ❌ Ошибка генерации
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <div style={{ fontSize: '11px', opacity: 0.5 }}>
+                     {new Date(task.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                   </div>
+                   <button onClick={() => setHistoryDetailsTask(task)} className="clickable" style={{ padding: '8px 14px', background: 'var(--text-color)', color: 'var(--bg-color)', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: 800 }}>
+                     Детали генерации
+                   </button>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HISTORY DETAILS */}
+      {historyDetailsTask && (
+        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '400px', padding: '24px', borderRadius: '24px', background: 'var(--bg-color)', position: 'relative' }}>
+            <X onClick={() => setHistoryDetailsTask(null)} size={24} style={{ position: 'absolute', top: 20, right: 20 }} className="clickable" />
+            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Детали генерации</h3>
+            <div style={{ fontSize: '14px', marginBottom: '15px' }}>
+               <div style={{ opacity: 0.6, marginBottom: '6px' }}>📝 Промпт:</div>
+               <div style={{ background: 'rgba(255,255,255,0.08)', padding: '14px', borderRadius: '14px', lineHeight: 1.5 }}>
+                 {historyDetailsTask.prompt || 'Без описания'}
+               </div>
+            </div>
+            {historyDetailsTask.prompt_image_url && (
+               <div style={{ fontSize: '14px' }}>
+                  <div style={{ opacity: 0.6, marginBottom: '6px' }}>🖼 Добавленные фото ({1}):</div>
+                  <img src={fixUrl(historyDetailsTask.prompt_image_url)} onClick={() => setActiveImage(fixUrl(historyDetailsTask.prompt_image_url))} className="clickable" style={{ width: '100%', borderRadius: '14px', maxHeight: '200px', objectFit: 'cover' }} />
+               </div>
+            )}
           </div>
         </div>
       )}
