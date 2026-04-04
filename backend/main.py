@@ -38,9 +38,8 @@ async def startup():
 @app.post("/api/v1/auth/telegram")
 async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(get_db)):
     if not auth.verify_telegram_auth(data.dict()):
-        # For development/testing, we might allow it, but let's be strict
         logger.warning(f"Telegram auth failed for user {data.id}")
-        # return {"success": False, "error": "Invalid hash"}
+        # return {"success": False, "error": "Invalid auth token"}
     
     user = await services.get_or_create_user(db, data.id, data.first_name, data.username)
     token = auth.create_access_token({"sub": str(user.id)})
@@ -48,7 +47,7 @@ async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(g
 
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startsWith("Bearer "):
+    if not auth_header or not auth_header.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     token = auth_header.split(" ")[1]
     user_id = auth.verify_access_token(token)
@@ -87,7 +86,6 @@ async def generate_edit(
     # Determine public URL for images
     env_public = os.getenv("PUBLIC_URL")
     if not env_public:
-        # Fallback: get current base URL (e.g. http://77.221.140.206:8000)
         env_public = str(request.base_url).rstrip("/")
         
     filenames = []
@@ -108,7 +106,6 @@ async def generate_edit(
         return {"success": False, "error": str(e)}
 
     try:
-        # PWA-Bot Parity: Check if this is a refinement (context not fully implemented but placeholders are here)
         task_id = await services.start_generation_flow(
             db, user.id, prompt, image_urls, user.model_preference, cost
         )
