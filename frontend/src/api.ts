@@ -36,11 +36,17 @@ export const api = {
         return handleResponse(res);
     },
 
-    async generateEdit(prompt: string, imageUrls: string[] = []) {
-        const res = await fetch(`${API_BASE}/generate/edit-url`, {
+    async generateEdit(prompt: string, images: File[] = []) {
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        images.forEach(img => formData.append('images', img));
+
+        const res = await fetch(`${API_BASE}/generate/edit`, {
             method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify({ prompt, image_urls: imageUrls })
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: formData
         });
         return handleResponse(res);
     },

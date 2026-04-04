@@ -13,6 +13,8 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 from . import auth
 
+from fastapi.staticfiles import StaticFiles
+import uuid
 load_dotenv()
 
 app = FastAPI(title="S•NOVA AI Admin & API Engine")
@@ -24,6 +26,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Создаем папку для загрузок, если её нет
+UPLOAD_DIR = "backend/static/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
 # Admin Config
 ADMIN_PATH = os.getenv("ADMIN_PATH", "/admin_panel").strip("/")
@@ -126,17 +133,33 @@ async def update_model_preference(config: UserModelConfig, user: models.User = D
 @app.post("/api/v1/generate/edit")
 async def generate_edit(
     prompt: str = Form(...), 
-    image: UploadFile = File(None),
+    images: List[UploadFile] = File(None),
     user: models.User = Depends(get_current_user), 
     db: AsyncSession = Depends(get_db)):
     
+    # Get current host for static URLs
+    # In production with Nginx, we might need a public URL from env
+    PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000")
+    
+    saved_urls = []
+    if images:
+        for img in images:
+            file_ext = os.path.splitext(img.filename)[1]
+            file_name = f"{uuid.uuid4()}{file_ext}"
+            file_path = os.path.join(UPLOAD_DIR, file_name)
+            with open(file_path, "wb") as buffer:
+                buffer.write(await img.read())
+            saved_urls.append(f"{PUBLIC_URL}/static/uploads/{file_name}")
+
     try:
         cost = await services.pre_charge_generation(db, user, user.model_preference)
-        kie_task_id = await services.start_generation_flow(db, user.id, prompt, [], user.model_preference, cost)
+        # Using the backend's start_generation_flow with local URLs
+        kie_task_id = await services.start_generation_flow(db, user.id, prompt, saved_urls, user.model_preference, cost)
         return {"success": True, "data": {"task_uuid": kie_task_id}}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        # Note: In real app, cleanup saved_urls here if failed
         await services.refund_frozen_credits(db, user.id, cost)
         raise HTTPException(status_code=500, detail=str(e))
 
