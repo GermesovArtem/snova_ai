@@ -55,13 +55,13 @@ def get_model_cost(model_id: str) -> float:
     # Auto-normalize to handle old DB values
     model_id = normalize_model_id(model_id)
     # Default fallback prices without 'google/' prefix to match normalization
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
 
     try:
         costs = json.loads(costs_str)
-        return float(costs.get(model_id, 1.0))
+        return float(costs.get(model_id, 3.0)) # Fallback to 3.0 for V2
     except:
-        return 1.0
+        return 3.0
 
 async def get_or_create_user(db, tg_id: int, username: str = None) -> models.User:
     res = await db.execute(select(models.User).filter_by(id=tg_id))

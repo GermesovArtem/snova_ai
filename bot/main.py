@@ -22,9 +22,14 @@ from dotenv import load_dotenv
 
 from backend.database import get_db, AsyncSessionLocal, engine, Base
 from backend import services
+from bot import messages
+from yookassa import Configuration, Payment
+import uuid
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+Configuration.account_id = os.getenv("YOOKASSA_SHOP_ID")
+Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 bot = Bot(token=BOT_TOKEN)
@@ -41,11 +46,11 @@ class GenState(StatesGroup):
     choosing_settings = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
     try:
         return json.loads(models_str)
     except:
-        return {"NanoBanana": "google/nano-banana", "NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
 
 def get_model_limit(model_id: str) -> int:
     """Returns official limit for image_input: 8 for PRO, 14 for v2"""
@@ -55,11 +60,11 @@ def get_model_limit(model_id: str) -> int:
 
 
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
     try:
         return json.loads(costs_str)
     except:
-        return {"google/nano-banana": 1.0, "nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+        return {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
 
 
 def get_credit_packs():
@@ -74,19 +79,10 @@ def generate_model_menu_text(balance: float, current_mm: str):
     human_name = next((name for name, mm in models.items() if mm == current_mm), current_mm)
     limit = get_model_limit(current_mm)
     
-    return (
-        f"🤖 **Управление нейросетями**\n\n"
-        f"Активная модель: **{human_name}**\n"
-        f"Лимит фото: **до {limit} шт.**\n\n"
-        f"🆕 **Nano Banana 2** (Продвинутая)\n"
-        f"• Стоимость: **3 кр.**\n"
-        f"• Поддерживает до 14 референсов\n"
-        f"• Идеально для артов и дизайна\n\n"
-        f"**Pro** (Профессиональная)\n"
-        f"• Стоимость: **4 кр.**\n"
-        f"• Максимальная детализация лиц\n"
-        f"• Поддерживает до 8 референсов\n\n"
-        f"💰 На вашем счете: **{int(balance)} кр.**"
+    return messages.MSG_MODEL_MENU.format(
+        human_name=human_name,
+        limit=limit,
+        balance=int(balance)
     )
 
 
@@ -165,7 +161,7 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="gen", description="✨ Создать или Изменить"),
         BotCommand(command="model", description="🤖 Выбор модели"),
         BotCommand(command="buy", description="💳 Баланс / Купить"),
-        BotCommand(command="help", description="❓ Помощь"),
+        BotCommand(command="contacts", description="📬 Контакты"),
     ]
     await bot.set_my_commands(default_commands)
 
@@ -176,15 +172,11 @@ async def cmd_start(message: types.Message, state: FSMContext):
         user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
         limit = get_model_limit(services.normalize_model_id(user.model_preference))
         
-        text = (
-            f"🍌 **Добро пожаловать в S•NOVA AI**\n\n"
-            f"🎁 Ваш баланс: **{int(user.balance)} кр.**\n\n"
-            f"Нажмите «Выбрать модель» чтобы начать 👇"
-        )
+        text = messages.MSG_START.format(balance=int(user.balance))
         
         await message.answer(text, reply_markup=build_start_kb(), parse_mode="Markdown")
         await asyncio.sleep(0.5)
-        await message.answer(f"Пришлите до **{limit}** фотографий которые нужно изменить или объединить")
+        await message.answer(messages.MSG_START_LIMIT.format(limit=limit), parse_mode="Markdown")
 
 # --- NATIVE MENU COMMANDS ---
 @user_router.message(Command("model"))
@@ -204,7 +196,7 @@ async def cmd_buy(message: types.Message, state: FSMContext):
         kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
     kb.button(text="⬅️ Назад", callback_data="main_menu")
     kb.adjust(1)
-    await message.answer("Выберите пакет кредитов для пополнения (оплата ЮKassa):", reply_markup=kb.as_markup())
+    await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
 
 @user_router.message(Command("gen"))
 async def cmd_gen(message: types.Message, state: FSMContext):
@@ -213,27 +205,26 @@ async def cmd_gen(message: types.Message, state: FSMContext):
         limit = get_model_limit(user.model_preference)
     await state.clear()
     await message.answer(
-        f"📸 Пришлите до **{limit} фото** для редактирования\n"
-        f"⌨️ Либо введите **текст**, чтобы сгенерировать новое изображение 👇",
+        messages.MSG_GEN_PROMPT.format(limit=limit),
         reply_markup=build_cancel_kb(),
         parse_mode="Markdown"
     )
 
-@user_router.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.answer("💡 Помощь\nПросто отправьте мне фото или текст, и я сгенерирую результат на основе выбранной вами нейросети!")
+@user_router.message(Command("contacts"))
+async def cmd_contacts(message: types.Message):
+    await message.answer(messages.MSG_CONTACTS, parse_mode="Markdown")
 
 @user_router.message(Command("bots"))
 @user_router.message(Command("example"))
 @user_router.message(Command("friend"))
 async def cmd_dummies(message: types.Message):
-    await message.answer("Этот раздел временно недоступен 🏗")
+    await message.answer(messages.MSG_NOT_AVAILABLE)
 
 # --- CALLBACK ROUTERS ---
 @user_router.callback_query(F.data == "cancel_fsm")
 async def process_cancel_fsm(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback_query.message.answer("Ок! Жду ваши фото или текст для новой идеи. 😉")
+    await callback_query.message.answer(messages.MSG_CANCEL_FSM)
     await callback_query.answer()
 
 @user_router.callback_query(F.data == "gen_similar")
@@ -296,12 +287,78 @@ async def process_buy_credits_cb(callback_query: CallbackQuery):
         kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
     kb.button(text="⬅️ Назад", callback_data="profile")
     kb.adjust(1)
-    await callback_query.message.edit_text("Выберите пакет кредитов для пополнения (оплата ЮKassa):", reply_markup=kb.as_markup())
+    await callback_query.message.edit_text(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
+
+async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_id: int, price: int):
+    # Poll for 15 minutes max (90 checks * 10 seconds)
+    for _ in range(90):
+        await asyncio.sleep(10)
+        try:
+            payment_info = Payment.find_one(payment_id)
+            if payment_info.status == 'succeeded':
+                async with AsyncSessionLocal() as db:
+                    await services.update_user_balance(db, user_id, amount)
+                try:
+                    await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} кр.**", parse_mode="Markdown")
+                except: pass
+                await bot.send_message(user_id, f"🎉 Баланс пополнен на **{amount} кр.**! Можете приступать к генерации!")
+                return
+            elif payment_info.status == 'canceled':
+                break
+        except Exception as e:
+            logger.error(f"Error checking Yookassa payment: {e}")
+            break
 
 @user_router.callback_query(F.data.startswith("buy:"))
 async def process_buy_packet(callback_query: CallbackQuery):
     _, price, amount = callback_query.data.split(":")
-    await callback_query.answer(f"Создан счет на {price} руб. (имитация)", show_alert=True)
+    
+    bot_info = await bot.me()
+    payment = Payment.create({
+        "amount": {"value": str(price), "currency": "RUB"},
+        "confirmation": {"type": "redirect", "return_url": f"https://t.me/{bot_info.username}"},
+        "capture": True,
+        "description": f"Покупка {amount} кредитов S•NOVA AI"
+    }, str(uuid.uuid4()))
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💳 Оплатить", url=payment.confirmation.confirmation_url)
+    kb.button(text="🔄 Проверить оплату", callback_data=f"check_pay:{payment.id}:{amount}:{price}")
+    kb.adjust(1)
+    
+    msg = await callback_query.message.edit_text(
+        f"⏳ Создан счет на **{price} руб.** для оплаты **{amount} кр.**\n\n"
+        f"Оплата подтвердится автоматически, либо нажмите кнопку проверки ниже.",
+        reply_markup=kb.as_markup(), parse_mode="Markdown"
+    )
+    await callback_query.answer()
+    
+    asyncio.create_task(auto_check_payment(callback_query.from_user.id, payment.id, float(amount), msg.message_id, int(price)))
+
+@user_router.callback_query(F.data.startswith("check_pay:"))
+async def process_check_payment(callback_query: CallbackQuery):
+    parts = callback_query.data.split(":")
+    payment_id = parts[1]
+    amount = float(parts[2])
+    price = int(parts[3]) if len(parts) > 3 else 0
+    
+    try:
+        payment_info = Payment.find_one(payment_id)
+        if payment_info.status == 'succeeded':
+            async with AsyncSessionLocal() as db:
+                await services.update_user_balance(db, callback_query.from_user.id, amount)
+            await callback_query.message.edit_text(f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} кр.**", parse_mode="Markdown")
+            await callback_query.answer("Оплата подтверждена!", show_alert=True)
+        elif payment_info.status == 'canceled':
+            kb = InlineKeyboardBuilder()
+            kb.button(text="💬 Написать в тех.поддержку", url="https://t.me/artemgavr1lov")
+            await callback_query.message.edit_text(f"❌ Оплата была отменена или не прошла.", reply_markup=kb.as_markup(), parse_mode="Markdown")
+            await callback_query.answer("Оплата не прошла", show_alert=True)
+        else:
+            await callback_query.answer("⏳ Оплата еще не поступила. Подождите немного и попробуйте снова.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Check payment error: {e}")
+        await callback_query.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
 
 @user_router.callback_query(F.data.startswith("set_model:"))
 async def process_set_model(callback_query: CallbackQuery):
@@ -731,11 +788,7 @@ async def get_safe_preview_photo(url: str) -> types.BufferedInputFile | None:
 async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
                           aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     kie_task_id = None
-    gen_msg = None
     try:
-        # 0. Send "Generating" status message
-        gen_msg = await bot.send_message(user_id, "🎨 **Запрос принят!** Генерирую ваше изображение, пожалуйста, подождите...")
-
         # 1. Start Flow (Short DB session)
         async with AsyncSessionLocal() as db:
             kie_task_id = await services.start_generation_flow(
@@ -755,11 +808,6 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 last_log_state = kie_status
 
             if kie_status in ["success", "completed"] and info.get("image_url"):
-                # Cleanup gen message
-                if gen_msg:
-                    try: await gen_msg.delete()
-                    except: pass
-
                 # 1. Update state FIRST
                 if state:
                     await state.update_data(refinement_context_url=info.get("image_url"))
@@ -804,10 +852,6 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
         # Refund (Short DB session)
         async with AsyncSessionLocal() as db:
             await services.refund_frozen_credits(db, user_id, cost)
-            
-        if gen_msg:
-            try: await gen_msg.delete()
-            except: pass
             
         await bot.send_message(user_id, f"❌ Ошибка генерации: {e}")
         try: await bot.delete_message(user_id, msg_id)
