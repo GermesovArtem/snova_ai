@@ -28,10 +28,10 @@ export const api = {
     },
 
     async updateModel(model: string) {
-        const res = await fetch(`${API_BASE}/user/me/model`, {
-            method: 'PUT',
+        const res = await fetch(`${API_BASE}/user/model`, {
+            method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify({ model })
+            body: JSON.stringify({ model_id: model })
         });
         return handleResponse(res);
     },
