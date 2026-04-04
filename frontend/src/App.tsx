@@ -7,6 +7,17 @@ import ChatApp from './pages/ChatApp';
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
 
+  useEffect(() => {
+    // Инициализация Telegram WebApp
+    if ((window as any).Telegram?.WebApp) {
+      const tg = (window as any).Telegram.WebApp;
+      tg.ready();
+      tg.expand(); // Разворачиваем на весь экран
+      tg.enableClosingConfirmation(); // Подтверждение при закрытии
+      console.log("DEBUG: Telegram WebApp initialized and expanded");
+    }
+  }, []);
+
   return (
     <Router>
       <Routes>
