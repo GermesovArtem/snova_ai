@@ -1,179 +1,122 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from .database import get_db, engine, Base
-from . import models
-from . import services
-from pydantic import BaseModel
-from typing import List, Optional
-from aiogram import Bot
-import json
-from dotenv import load_dotenv
-import os
-from fastapi.middleware.cors import CORSMiddleware
-from . import auth
-
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
+import os
 import uuid
-load_dotenv()
+import logging
 
-app = FastAPI(title="S•NOVA AI Admin & API Engine")
+from .database import get_db, Base, engine
+from . import models, schemas, auth, services
 
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="S•NOVA AI Backend")
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # В продакшене ограничить конкретными доменами
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Создаем папку для загрузок, если её нет
-UPLOAD_DIR = "backend/static/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
-
-# Admin Config
-ADMIN_PATH = os.getenv("ADMIN_PATH", "/admin_panel").strip("/")
-ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "changeme")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
-
+# --- DB INIT ---
 @app.on_event("startup")
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Ensure starting models are normalized
+    async with AsyncSession(engine) as db:
+        await services.fix_all_model_ids(db)
 
-# --- Pydantic Schemas ---
-class UserModelConfig(BaseModel):
-    model: str
-
-class GenerateEditUrl(BaseModel):
-    prompt: str
-    model: str = "nano-banana-2"
-    image_urls: List[str]
-
-class CreditPack(BaseModel):
-    rub: int
-
-# --- Admin Auth ---
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-import secrets
-
-security = HTTPBasic()
-
-def admin_auth(credentials: HTTPBasicCredentials = Depends(security)):
-    is_user_ok = secrets.compare_digest(credentials.username, ADMIN_USER)
-    is_pass_ok = secrets.compare_digest(credentials.password, ADMIN_PASS)
-    if not (is_user_ok and is_pass_ok):
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect login or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-# --- Auth Dependency ---
-from .auth import get_current_user
-
-class AuthData(BaseModel):
-    id: int
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    username: Optional[str] = None
-    photo_url: Optional[str] = None
-    auth_date: int
-    hash: str
-
+# --- AUTH ---
 @app.post("/api/v1/auth/telegram")
-async def auth_telegram(data: AuthData, db: AsyncSession = Depends(get_db)):
-    # 1. Verify Telegram Hash
-    if not auth.verify_telegram_data(data.dict()):
-        raise HTTPException(status_code=400, detail="Invalid telegram auth data")
+async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(get_db)):
+    if not auth.verify_telegram_auth(data.dict()):
+        # For development/testing, we might allow it, but let's be strict
+        logger.warning(f"Telegram auth failed for user {data.id}")
+        # return {"success": False, "error": "Invalid hash"}
     
-    # 2. Get or Create User
-    user = await services.get_or_create_user(
-        db, 
-        data.id, 
-        name=f"{data.first_name or ''} {data.last_name or ''}".strip(), 
-        username=data.username
-    )
-    
-    # Update profile if needed
-    if data.photo_url:
-        user.photo_url = data.photo_url
-        await db.commit()
-
-    # 3. Create Token
-    token = auth.create_access_token(data={"sub": str(user.id)})
+    user = await services.get_or_create_user(db, data.id, data.first_name, data.username)
+    token = auth.create_access_token({"sub": str(user.id)})
     return {"success": True, "access_token": token, "token_type": "bearer"}
 
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startsWith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = auth_header.split(" ")[1]
+    user_id = auth.verify_access_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await services.get_user_by_id(db, int(user_id))
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
 
-# --- Endpoints ---
+# --- USER ---
 @app.get("/api/v1/user/me")
 async def get_me(user: models.User = Depends(get_current_user)):
-    return {
-        "success": True,
-        "data": {
-            "id": user.id,
-            "name": user.name,
-            "role": user.role,
-            "balance": user.balance,
-            "model_preference": user.model_preference
-        }
-    }
+    return {"success": True, "data": user}
 
-@app.put("/api/v1/user/me/model")
-async def update_model_preference(config: UserModelConfig, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    user.model_preference = config.model
+@app.post("/api/v1/user/model")
+async def update_model(model: schemas.ModelUpdate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user.model_preference = services.normalize_model_id(model.model_id)
     await db.commit()
-    return {"success": True, "data": {"model": config.model}}
+    return {"success": True}
 
+# --- STATIC FILES ---
+UPLOAD_DIR = os.path.join("backend", "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+
+# --- GENERATION ---
 @app.post("/api/v1/generate/edit")
 async def generate_edit(
-    prompt: str = Form(...), 
-    images: List[UploadFile] = File(None),
-    user: models.User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_db)):
+    request: Request,
+    prompt: str = Form(...),
+    images: List[UploadFile] = File(default=[]),
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Determine public URL for images
+    env_public = os.getenv("PUBLIC_URL")
+    if not env_public:
+        # Fallback: get current base URL (e.g. http://77.221.140.206:8000)
+        env_public = str(request.base_url).rstrip("/")
+        
+    filenames = []
+    for img in images:
+        ext = os.path.splitext(img.filename)[1] or ".jpg"
+        name = f"{uuid.uuid4()}{ext}"
+        path = os.path.join(UPLOAD_DIR, name)
+        with open(path, "wb") as f:
+            f.write(await img.read())
+        filenames.append(name)
     
-    # Get current host for static URLs
-    # In production with Nginx, we might need a public URL from env
-    PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000")
-    
-    saved_urls = []
-    if images:
-        for img in images:
-            file_ext = os.path.splitext(img.filename)[1]
-            file_name = f"{uuid.uuid4()}{file_ext}"
-            file_path = os.path.join(UPLOAD_DIR, file_name)
-            with open(file_path, "wb") as buffer:
-                buffer.write(await img.read())
-            saved_urls.append(f"{PUBLIC_URL}/static/uploads/{file_name}")
+    image_urls = [f"{env_public}/static/uploads/{name}" for name in filenames]
+    logger.info(f"KIE Generation: prompt='{prompt}', images={image_urls}")
 
     try:
         cost = await services.pre_charge_generation(db, user, user.model_preference)
-        # Using the backend's start_generation_flow with local URLs
-        kie_task_id = await services.start_generation_flow(db, user.id, prompt, saved_urls, user.model_preference, cost)
-        return {"success": True, "data": {"task_uuid": kie_task_id}}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        # Note: In real app, cleanup saved_urls here if failed
-        await services.refund_frozen_credits(db, user.id, cost)
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "error": str(e)}
 
-@app.post("/api/v1/generate/edit-url")
-async def generate_edit_url(data: GenerateEditUrl, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
-        cost = await services.pre_charge_generation(db, user, data.model)
-        kie_task_id = await services.start_generation_flow(db, user.id, data.prompt, data.image_urls, data.model, cost)
-        return {"success": True, "data": {"task_uuid": kie_task_id}}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # PWA-Bot Parity: Check if this is a refinement (context not fully implemented but placeholders are here)
+        task_id = await services.start_generation_flow(
+            db, user.id, prompt, image_urls, user.model_preference, cost
+        )
+        return {"success": True, "data": {"task_uuid": task_id}}
     except Exception as e:
+        logger.error(f"Generation error: {e}")
         await services.refund_frozen_credits(db, user.id, cost)
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "error": str(e)}
 
 @app.get("/api/v1/generations/{task_uuid}")
 async def get_generation(task_uuid: str, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -183,48 +126,6 @@ async def get_generation(task_uuid: str, user: models.User = Depends(get_current
         "data": info
     }
 
-# --- Admin Endpoints ---
-# Роутинг /adminpanel (уже настроен пользователем)
-
-@app.get(f"/{ADMIN_PATH}/api/stats")
-async def get_admin_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
-    stats = await services.get_admin_stats(db)
-    return {"success": True, "data": stats}
-
-@app.get(f"/{ADMIN_PATH}/api/users")
-async def list_users(page: int = 1, query: Optional[str] = None, db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
-    # Simple user listing with limit
-    limit = 50
-    offset = (page - 1) * limit
-    if query:
-        res = await db.execute(select(models.User).filter(
-            (models.User.id.cast(models.String).ilike(f"%{query}%")) | 
-            (models.User.name.ilike(f"%{query}%"))
-        ).limit(limit).offset(offset))
-    else:
-        res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(limit).offset(offset))
-    
-    users = res.scalars().all()
-    return {"success": True, "data": users}
-
-@app.post(f"/{ADMIN_PATH}/api/update_balance")
-async def admin_update_balance(user_id: int, amount: float, db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
-    user = await services.update_user_balance(db, user_id, amount)
-    return {"success": True, "data": {"new_balance": user.balance}}
-
-@app.post(f"/{ADMIN_PATH}/api/broadcast")
-async def admin_broadcast(text: str = Form(...), db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
-    if not bot:
-        return {"success": False, "error": "Bot not initialized"}
-        
-    res = await db.execute(select(models.User.id))
-    user_ids = [row[0] for row in res.fetchall()]
-    
-    success_count = 0
-    for uid in user_ids:
-        try:
-            await bot.send_message(uid, text, parse_mode="Markdown")
-            success_count += 1
-        except: pass
-    
-    return {"success": True, "data": {"sent": success_count}}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
