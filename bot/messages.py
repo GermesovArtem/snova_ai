@@ -1,9 +1,13 @@
 # bot/messages.py
 
 MSG_START = (
-    "🍌 **Добро пожаловать в S•NOVA AI**\n\n"
-    "🎁 Ваш баланс: **{balance} кр.**\n\n"
-    "Нажмите «Выбрать модель» чтобы начать 👇"
+    "✨ **Добро пожаловать в S•NOVA AI — мощный нейро-редактор в удобном телеграм-боте!**\n\n"
+    "🎁 Текущий баланс: **{balance} кр.**\n\n"
+    "Доступные в боте сети:\n"
+    "• 🆕 **Nano Banana 2** — 3 кредита, высочайшая детализация, 4K\n"
+    "• 👑 **PRO версия** — 4 кредита, максимальное качество генерации\n\n"
+    "Нажмите «👉 Выбрать модель» ниже, чтобы начать 👇\n\n"
+    "Пользуясь ботом, Вы принимаете наше [пользовательское соглашение](https://docs.google.com/document/d/139A-rEgNeA6CrcOaOsOergVVx4bUq8NFlTLx4eD4MfE/edit?usp=drivesdk) и [политику конфиденциальности](https://docs.google.com/document/d/11zwBLkxUQH0bRcXwTOeYqBmAS4nMAWMcy-e0Ab00vTw/edit?usp=drivesdk)."
 )
 
 MSG_START_LIMIT = "Пришлите до **{limit}** фотографий которые нужно изменить или объединить"
