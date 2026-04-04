@@ -8,6 +8,19 @@ const getHeaders = () => {
     };
 };
 
+export const handleResponse = async (res: Response) => {
+    const text = await res.text();
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error("JSON Parse Error. Body was:", text);
+        throw new Error("Server returned non-JSON response (likely HTML error page)");
+    }
+};
+
 export const api = {
     async getMe() {
         const res = await fetch(`${API_BASE}/user/me`, { headers: getHeaders() });
