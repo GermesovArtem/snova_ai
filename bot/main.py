@@ -12,8 +12,8 @@ print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -92,7 +92,8 @@ def build_main_kb(current_model: str):
     models = get_available_models()
     costs = get_model_costs()
     for name, mm in models.items():
-        cost = int(costs.get(mm, 1))
+        norm_mm = services.normalize_model_id(mm)
+        cost = int(costs.get(norm_mm, 3))
         prefix = "✅ " if mm == current_model else ("🆕 " if "2" in name else "")
         kb.button(text=f"{prefix}{name} ({cost} кр)", callback_data=f"set_model:{mm}")
     
@@ -103,6 +104,15 @@ def build_start_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="👉 Выбрать модель", callback_data="main_menu")
     return kb.as_markup()
+
+def build_reply_kb():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="✨ Создать")
+    kb.button(text="🤖 Модель")
+    kb.button(text="💳 Баланс")
+    kb.button(text="📬 Контакты")
+    kb.adjust(2)
+    return kb.as_markup(resize_keyboard=True)
 
 def build_cancel_kb():
     kb = InlineKeyboardBuilder()
@@ -178,7 +188,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         
         await message.answer(text, reply_markup=build_start_kb(), parse_mode="Markdown")
         await asyncio.sleep(0.5)
-        await message.answer(messages.MSG_START_LIMIT.format(limit=limit), parse_mode="Markdown")
+        await message.answer(messages.MSG_START_LIMIT.format(limit=limit), parse_mode="Markdown", reply_markup=build_reply_kb())
 
 # --- NATIVE MENU COMMANDS ---
 @user_router.message(Command("model"))
@@ -213,6 +223,7 @@ async def cmd_gen(message: types.Message, state: FSMContext):
     )
 
 @user_router.message(Command("contacts"))
+@user_router.message(F.text == "📬 Контакты")
 async def cmd_contacts(message: types.Message):
     await message.answer(messages.MSG_CONTACTS, parse_mode="Markdown")
 
@@ -221,6 +232,18 @@ async def cmd_contacts(message: types.Message):
 @user_router.message(Command("friend"))
 async def cmd_dummies(message: types.Message):
     await message.answer(messages.MSG_NOT_AVAILABLE)
+
+@user_router.message(F.text == "✨ Создать")
+async def handle_reply_gen(message: types.Message, state: FSMContext):
+    await cmd_gen(message, state)
+
+@user_router.message(F.text == "🤖 Модель")
+async def handle_reply_model(message: types.Message, state: FSMContext):
+    await cmd_model(message, state)
+
+@user_router.message(F.text == "💳 Баланс")
+async def handle_reply_buy(message: types.Message, state: FSMContext):
+    await cmd_buy(message, state)
 
 # --- CALLBACK ROUTERS ---
 @user_router.callback_query(F.data == "cancel_fsm")
