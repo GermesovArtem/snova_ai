@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Image as ImageIcon, Settings, User, CreditCard, ChevronDown, Sparkles } from 'lucide-react';
+import { Send, Image as ImageIcon, Settings, ChevronDown, X, User } from 'lucide-react';
 import { api } from '../api';
 
 interface Message {
   id: string;
   type: 'user' | 'bot';
   text: string;
-  image?: string;
+  sender?: 'user' | 'bot';
 }
 
 export default function ChatApp() {
@@ -18,26 +17,26 @@ export default function ChatApp() {
   const [user, setUser] = useState<any>(null);
   const [model, setModel] = useState('nano-banana-2');
   const [isLoading, setIsLoading] = useState(false);
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.getMe().then(res => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const res = await api.getMe();
       if (res.success) {
         setUser(res.data);
         if (res.data.model_preference) setModel(res.data.model_preference);
       }
-    });
-  }, []);
-
-  const handleSettingsClick = () => {
-    console.log("Settings clicked");
-    alert("Настройки: выбор модели по умолчанию и параметры профиля будут доступны в следующем обновлении!");
-  };
-
-  const handleBalanceClick = () => {
-    console.log("Balance clicked");
-    alert(`Ваш баланс: ${user?.balance || 0} кр. Пополнить можно через бота @snovananobananabot`);
+    } catch (e) {
+      console.error("Failed to fetch user data", e);
+    }
   };
 
   const scrollToBottom = () => {
@@ -64,7 +63,6 @@ export default function ChatApp() {
           type: 'bot', 
           text: 'Запрос принят! Начинаю генерацию... 🚀' 
         }]);
-        // Here we could start polling for the result if task_uuid is returned
       } else {
         setMessages(prev => [...prev, { 
           id: (Date.now() + 1).toString(), 
@@ -79,31 +77,31 @@ export default function ChatApp() {
     }
   };
 
+  const updateModel = async (newModel: string) => {
+    setModel(newModel);
+    setIsModelMenuOpen(false);
+    try {
+      await api.updateModel(newModel);
+      fetchUserData();
+    } catch (e) {
+      console.error("Failed to update model", e);
+    }
+  };
+
   return (
     <div className="chat-container" style={{ 
-      height: '100vh', 
-      display: 'flex', 
-      flexDirection: 'column', 
-      background: '#000',
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      overflow: 'hidden'
+      height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', 
+      background: '#000', position: 'fixed', top: 0, left: 0, overflow: 'hidden', color: '#fff' 
     }}>
-      {/* HEADER: Форсируем положение сверху */}
+      
+      {/* HEADER */}
       <header className="header glass" style={{ 
-        height: '70px',
-        padding: '0 20px', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        position: 'absolute',
-        top: 0, left: 0, right: 0,
-        zIndex: 9999,
-        pointerEvents: 'auto'
+        height: '70px', padding: '0 20px', display: 'flex', alignItems: 'center', 
+        justifyContent: 'space-between', position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            <img src="/vite.svg" alt="Logo" style={{ width: '100%' }} />
+          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/vite.svg" alt="S" style={{ width: '24px' }} />
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: '18px' }}>S•NOVA AI</div>
@@ -111,100 +109,53 @@ export default function ChatApp() {
           </div>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-           <button onClick={() => { console.log('LOG: Settings clicked'); handleSettingsClick(); }} className="glass" style={{
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button onClick={() => setIsSettingsOpen(true)} className="glass" style={{
             width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
           }}>
             <Settings size={20} />
           </button>
           
-          <div onClick={() => { console.log('LOG: Balance clicked'); handleBalanceClick(); }} className="glass" style={{
-            padding: '8px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: 'pointer'
-          }}>
+          <div className="glass" style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 700 }}>
             {user?.balance || 0} кр.
           </div>
         </div>
       </header>
-      <main style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-        {/* Logo centerpiece when chat is empty-ish */}
-        {messages.length < 5 && (
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.05, pointerEvents: 'none' }}>
-            <Sparkles size={200} />
-          </div>
-        )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <AnimatePresence>
-            {messages.map((msg) => (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                style={{
-                  alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '85%',
-                  padding: '12px 16px',
-                  borderRadius: msg.type === 'user' ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-                  background: msg.type === 'user' ? '#fff' : 'var(--surface)',
-                  color: msg.type === 'user' ? '#000' : '#fff',
-                  fontSize: '15px',
-                  lineHeight: '1.4',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                }}
-              >
-                {msg.text}
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          <div ref={chatEndRef} />
-        </div>
+      {/* CHAT AREA */}
+      <main style={{ 
+        position: 'absolute', top: '70px', bottom: '110px', left: 0, right: 0,
+        overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px'
+      }}>
+        {messages.map((m) => (
+          <div key={m.id} style={{
+            alignSelf: m.type === 'user' ? 'flex-end' : 'flex-start',
+            maxWidth: '85%', padding: '12px 16px', borderRadius: '16px',
+            background: m.type === 'user' ? '#fff' : 'rgba(255,255,255,0.05)',
+            color: m.type === 'user' ? '#000' : '#fff',
+            border: m.type === 'user' ? 'none' : '1px solid rgba(255,255,255,0.1)',
+            fontSize: '15px'
+          }}>
+            {m.text}
+          </div>
+        ))}
+        {isLoading && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}>Думаю... ⚡️</div>}
+        <div ref={chatEndRef} />
       </main>
 
-      {/* Input Area */}
+      {/* FOOTER */}
       <footer style={{ 
-        padding: '16px 20px', 
-        background: 'rgba(20,20,20,0.8)', 
-        backdropFilter: 'blur(10px)',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
-        zIndex: 1000,
-        position: 'relative'
+        height: '110px', position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000,
+        padding: '10px 20px', background: 'linear-gradient(to top, #000 80%, transparent)',
+        display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center'
       }}>
-        {/* Model Selector Bar */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-           <button className="btn-glass" style={{ fontSize: '12px', padding: '6px 12px', borderRadius: '100px', display: 'flex', gap: '6px' }}>
-             <Sparkles size={14} /> {model} <ChevronDown size={14} />
-           </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <button className="btn-glass" style={{ padding: '12px', borderRadius: '16px' }}>
-            <ImageIcon size={24} />
-          </button>
-          
-          <div style={{ flex: 1, position: 'relative' }}>
-            <input 
-              type="text" 
-              placeholder="Опиши свою идею..." 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              style={{
-                width: '100%',
-                background: 'var(--surface)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: '16px',
-                padding: '14px 16px',
-                color: '#fff',
-                fontSize: '15px',
-                outline: 'none'
-              }}
-            />
-          </div>
-
+        
+        {/* Model Selector Button */}
+        <div style={{ position: 'relative' }}>
           <button 
-            className="btn-primary" 
-            onClick={handleSend}
-            style={{ padding: '14px', borderRadius: '16px' }}
+            onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
+            className="btn-glass" 
+            style={{ padding: '6px 12px', borderRadius: '100px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.7)' }}
           >
             <Send size={24} />
           </button>

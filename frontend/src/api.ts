@@ -24,7 +24,7 @@ export const handleResponse = async (res: Response) => {
 export const api = {
     async getMe() {
         const res = await fetch(`${API_BASE}/user/me`, { headers: getHeaders() });
-        return res.json();
+        return handleResponse(res);
     },
 
     async updateModel(model: string) {
@@ -33,7 +33,7 @@ export const api = {
             headers: getHeaders(),
             body: JSON.stringify({ model })
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async generateEdit(prompt: string, imageUrls: string[] = []) {
@@ -42,12 +42,12 @@ export const api = {
             headers: getHeaders(),
             body: JSON.stringify({ prompt, image_urls: imageUrls })
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async checkStatus(uuid: string) {
         const res = await fetch(`${API_BASE}/generations/${uuid}`, { headers: getHeaders() });
-        return res.json();
+        return handleResponse(res);
     },
 
     async loginTelegram(data: any) {
@@ -56,6 +56,6 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        return res.json();
+        return handleResponse(res);
     }
 };
