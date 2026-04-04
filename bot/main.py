@@ -5,7 +5,7 @@ import io
 import httpx
 from PIL import Image
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 7.0 (PRO OPTIMIZATION) !!!")
+print("!!! BOT MAIN.PY: VERSION 8.0 (YOOKASSA) !!!")
 print("!"*50 + "\n")
 
 
@@ -62,7 +62,8 @@ def get_model_limit(model_id: str) -> int:
 def get_model_costs():
     costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
     try:
-        return json.loads(costs_str)
+        costs = json.loads(costs_str)
+        return {services.normalize_model_id(k): v for k, v in costs.items()}
     except:
         return {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
 

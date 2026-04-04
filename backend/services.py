@@ -59,7 +59,8 @@ def get_model_cost(model_id: str) -> float:
 
     try:
         costs = json.loads(costs_str)
-        return float(costs.get(model_id, 3.0))
+        normalized_costs = {normalize_model_id(k): v for k, v in costs.items()}
+        return float(normalized_costs.get(model_id, 3.0))
     except (json.JSONDecodeError, TypeError, ValueError):
         fallback = {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
         return float(fallback.get(model_id, 3.0))
