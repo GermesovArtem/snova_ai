@@ -7,8 +7,8 @@ import os
 import uuid
 import logging
 
-from .database import get_db, Base, engine
-from . import models, schemas, auth, services
+from backend.database import get_db, Base, engine
+from backend import models, schemas, auth, services
 
 # Logging
 logging.basicConfig(level=logging.INFO)
