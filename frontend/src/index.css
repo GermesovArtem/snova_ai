@@ -1,92 +1,105 @@
 :root {
-  --bg-color: #050505;
-  --surface: #121212;
-  --glass: rgba(255, 255, 255, 0.05);
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
-  --accent: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.7);
-  --danger: #ff3b30;
-  --success: #34c759;
-  --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --safe-area-top: env(safe-area-inset-top);
-  --safe-area-bottom: env(safe-area-inset-bottom);
+  --accent-color: #ffffff;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
+[data-theme='light'] {
+  --bg-color: #f5f5f7;
+  --text-color: #000000;
+  --glass-bg: rgba(0, 0, 0, 0.05);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --accent-color: #000000;
 }
 
 body {
-  background: var(--bg-color);
-  color: var(--accent);
-  font-family: var(--font-main);
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  height: 100vh;
-  width: 100vw;
-}
-
-#root {
-  height: 100%;
 }
 
 .glass {
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(180%);
   border: 1px solid var(--glass-border);
-  pointer-events: auto !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
-.btn {
-  padding: 12px 24px;
-  border-radius: 100px;
-  border: none;
-  font-weight: 600;
+.glass:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+
+[data-theme='light'] .glass:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.clickable {
   cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  transition: opacity 0.2s ease, transform 0.1s active;
 }
 
-.btn:active {
-  transform: scale(0.95);
+.clickable:hover {
   opacity: 0.8;
 }
 
-.btn-primary {
-  background: var(--accent);
-  color: #000;
+.clickable:active {
+  transform: scale(0.96);
 }
 
-.btn-glass {
-  background: var(--glass);
-  color: var(--accent);
-  border: 1px solid var(--glass-border);
+/* Skeleton Loading Animation */
+@keyframes skeleton-loading {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.skeleton {
+  background: linear-gradient(90deg, var(--glass-bg) 25%, var(--glass-border) 50%, var(--glass-bg) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 12px;
 }
 
-.animate-fade {
-  animation: fadeIn 0.5s ease forwards;
+/* Micro-animations */
+.msg-appear {
+  animation: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 0px;
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pwa-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.pwa-shine::after {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.1) 50%, transparent 60%);
+  animation: shine 4s infinite;
+}
+
+@keyframes shine {
+  from { transform: translateX(-100%) translateY(-100%); }
+  to { transform: translateX(100%) translateY(100%); }
+}
+
+.logo-text {
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--text-color) 0%, rgba(255,255,255,0.5) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
