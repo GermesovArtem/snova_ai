@@ -17,7 +17,9 @@ export default function ChatApp() {
   const [input, setInput] = useState('');
   const [user, setUser] = useState<any>(null);
   const [model, setModel] = useState('nano-banana-2');
+  const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.getMe().then(res => {
@@ -47,8 +49,9 @@ export default function ChatApp() {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
     
+    setIsLoading(true);
     const newUserMsg: Message = { id: Date.now().toString(), type: 'user', text: input };
     setMessages(prev => [...prev, newUserMsg]);
     setInput('');
@@ -71,7 +74,6 @@ export default function ChatApp() {
       }
     } catch (e) {
       setMessages(prev => [...prev, { id: 'err', type: 'bot', text: 'Ошибка связи с сервером.' }]);
-      setMessages(prev => [...prev, { id: 'err', type: 'bot', sender: 'bot', text: 'Ошибка связи с сервером.' }]);
     } finally {
       setIsLoading(false);
     }
