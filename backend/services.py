@@ -59,9 +59,10 @@ def get_model_cost(model_id: str) -> float:
 
     try:
         costs = json.loads(costs_str)
-        return float(costs.get(model_id, 3.0)) # Fallback to 3.0 for V2
-    except:
-        return 3.0
+        return float(costs.get(model_id, 3.0))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        fallback = {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+        return float(fallback.get(model_id, 3.0))
 
 async def get_or_create_user(db, tg_id: int, username: str = None) -> models.User:
     res = await db.execute(select(models.User).filter_by(id=tg_id))

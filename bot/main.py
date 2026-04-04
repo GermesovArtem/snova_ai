@@ -163,6 +163,7 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="buy", description="💳 Баланс / Купить"),
         BotCommand(command="contacts", description="📬 Контакты"),
     ]
+    await bot.delete_my_commands()
     await bot.set_my_commands(default_commands)
 
 @user_router.message(CommandStart())
@@ -301,7 +302,6 @@ async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_i
                 try:
                     await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} кр.**", parse_mode="Markdown")
                 except: pass
-                await bot.send_message(user_id, f"🎉 Баланс пополнен на **{amount} кр.**! Можете приступать к генерации!")
                 return
             elif payment_info.status == 'canceled':
                 break
