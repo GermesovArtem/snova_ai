@@ -28,6 +28,16 @@ export default function ChatApp() {
     });
   }, []);
 
+  const handleSettingsClick = () => {
+    console.log("Settings clicked");
+    alert("Настройки: выбор модели по умолчанию и параметры профиля будут доступны в следующем обновлении!");
+  };
+
+  const handleBalanceClick = () => {
+    console.log("Balance clicked");
+    alert(`Ваш баланс: ${user?.balance || 0} кр. Пополнить можно через бота @snovananobananabot`);
+  };
+
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };

@@ -44,7 +44,7 @@ class UserModelConfig(BaseModel):
 
 class GenerateEditUrl(BaseModel):
     prompt: str
-    model: str = "nanobanana"
+    model: str = "nano-banana-2"
     image_urls: List[str]
 
 class CreditPack(BaseModel):
@@ -164,13 +164,16 @@ async def get_generation(task_uuid: str, user: models.User = Depends(get_current
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-@app.get(f"/{ADMIN_PATH}", response_class=HTMLResponse)
+@app.get("/admin_panel", response_class=HTMLResponse)
 async def get_admin_ui(admin: str = Depends(admin_auth)):
-    # Create static directory if not exists
     static_dir = os.path.join(os.path.dirname(__file__), "static")
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
-    return FileResponse(os.path.join(static_dir, "admin.html"))
+    admin_file = os.path.join(static_dir, "admin.html")
+    if not os.path.exists(admin_file):
+        # Create a basic admin.html if missing for safety
+        os.makedirs(static_dir, exist_ok=True)
+        with open(admin_file, "w", encoding="utf-8") as f:
+            f.write("<h1>Admin Panel Placeholder</h1>")
+    return FileResponse(admin_file)
 
 @app.get(f"/{ADMIN_PATH}/api/stats")
 async def get_admin_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
