@@ -112,7 +112,7 @@ def build_reply_kb():
     kb.button(text="💳 Баланс")
     kb.button(text="📬 Контакты")
     kb.adjust(2)
-    return kb.as_markup(resize_keyboard=True)
+    return kb.as_markup(resize_keyboard=True, is_persistent=True)
 
 def build_cancel_kb():
     kb = InlineKeyboardBuilder()
@@ -836,7 +836,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     new_balance = int(user.balance)
 
                 models_map = get_available_models()
-                human_name = next((n for n, m in models_map.items() if m == model), model)
+                human_name = next((n for n, m in models_map.items() if services.normalize_model_id(m) == model), model)
                 
                 # 3. Delivery Strategy
                 photo_sent = False
