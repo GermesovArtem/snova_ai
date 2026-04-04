@@ -12,6 +12,32 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+def normalize_model_id(model_id: str) -> str:
+    """Corrects model names for KIE API compatibility.
+    New models (2, Pro) must NOT have 'google/' prefix.
+    Legacy models must HAVE 'google/' prefix.
+    """
+    if not model_id or not isinstance(model_id, str): return model_id
+    
+    # 1. Lowercase and strip whitespace
+    model_id = model_id.lower().strip()
+    
+    # 2. Direct models (MUST NOT have prefix)
+    direct_models = ["nano-banana-2", "nano-banana-pro"]
+    for dm in direct_models:
+        if model_id == dm or model_id == f"google/{dm}":
+            return dm
+            
+    # 3. Legacy/Pre-prefixed models (MUST have 'google/' prefix)
+    legacy_models = ["nano-banana", "nano-banana-edit"]
+    for lm in legacy_models:
+        if model_id == lm:
+            return f"google/{lm}"
+        if model_id == f"google/{lm}":
+            return model_id
+            
+    return model_id
+
 def get_model_limit(model_id: str) -> int:
     """Returns official limit for image_input: 8 for PRO, 14 for v2"""
     if "pro" in str(model_id).lower():
