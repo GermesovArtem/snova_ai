@@ -42,10 +42,15 @@ export default function ChatApp() {
   useEffect(() => {
     initApp();
     document.documentElement.setAttribute('data-theme', theme);
+    
+    const pwaClosed = localStorage.getItem('pwa_closed');
+    if (!pwaClosed) {
+      setTimeout(() => setShowPwaPrompt(true), 3000);
+    }
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setTimeout(() => setShowPwaPrompt(true), 3000);
     });
   }, [theme]);
 
@@ -87,6 +92,8 @@ export default function ChatApp() {
     return titles[(n % 100 > 4 && n % 100 < 20) ? 2 : cases[(n % 10 < 5) ? n % 10 : 5]];
   };
 
+  const getModelName = (id: string) => id.includes('pro') ? 'Nano Banana PRO' : 'Nano Banana 2';
+
   const fixUrl = (url?: string) => {
     if (!url) return '';
     // If url is internal (localhost/api/backend), replace with current window domain:8000
@@ -124,7 +131,6 @@ export default function ChatApp() {
     const confirmMsgId = Date.now().toString();
     setMessages(prev => [...prev, {
       id: confirmMsgId, type: 'bot-confirm', 
-      text: `✨ **Готовы начать генерацию?**\n\n📝 Текст: \`${input.trim() || 'Без текста'}\`\n💰 Стоимость: **${currentModel.includes('pro') ? 4 : 3} кр.**`,
       image: previews[0], timestamp: new Date(),
       meta: { prompt: input, files: [...selectedFiles], previews: [...previews], model: currentModel }
     }]);
@@ -190,13 +196,14 @@ export default function ChatApp() {
         </button>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontWeight: 900, fontSize: '20px', letterSpacing: '-0.8px' }}>S•NOVA AI</div>
-          <div style={{ fontSize: '10px', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '1px' }}>
-             {currentModel.includes('pro') ? 'Nano PRO' : 'NanoBanana 2'}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+             <div className="status-dot"></div>
+             Текущая модель: {getModelName(currentModel)}
           </div>
         </div>
         <div className="glass" style={{ position: 'absolute', right: '15px', padding: '6px 12px', borderRadius: '14px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.08)', border: 'none' }}>
           <Wallet size={14} />
-          {user ? `${user.balance}` : '...'}
+          {user ? `${user.balance} ${getCreditsLabel(user.balance)}` : '...'}
         </div>
       </header>
 
@@ -215,7 +222,22 @@ export default function ChatApp() {
                   )}
                 </div>
               )}
-              {msg.text && <div style={{ fontSize: '15px', lineHeight: 1.5 }}>{msg.text.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}</div>}
+              {msg.type === 'bot-confirm' && msg.meta ? (
+                <>
+                  <div style={{ marginBottom: '12px' }}>✨ <b>Готовы начать генерацию?</b></div>
+                  <div 
+                    onClick={() => { haptic(); navigator.clipboard.writeText(msg.meta.prompt || ''); alert('Промпт скопирован!'); }}
+                    className="clickable"
+                    style={{ background: 'rgba(255,255,255,0.1)', padding: '12px', borderRadius: '12px', marginBottom: '12px', fontSize: '14px', border: '1px solid var(--glass-border)' }}
+                    title="Нажмите, чтобы скопировать"
+                  >
+                     📝 {msg.meta.prompt || 'Без описания'}
+                  </div>
+                  <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{msg.meta.model.includes('pro') ? 4 : 3} {getCreditsLabel(msg.meta.model.includes('pro') ? 4 : 3)}</b></div>
+                </>
+              ) : msg.text && (
+                <div style={{ fontSize: '15px', lineHeight: 1.5 }}>{msg.text.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}</div>
+              )}
               <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.4, marginTop: '6px' }}>{new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(msg.timestamp)}</div>
 
               {msg.type === 'bot-confirm' && (
@@ -326,7 +348,7 @@ export default function ChatApp() {
                 <div style={{ fontSize: '12px', opacity: 0.6 }}>3 кр. | Скетчи и дизайн</div>
               </button>
               <button onClick={() => updateModel('nano-banana-pro')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '17px', fontWeight: 800 }}>Nano PRO</div>
+                <div style={{ fontSize: '17px', fontWeight: 800 }}>Nano Banana PRO</div>
                 <div style={{ fontSize: '12px', opacity: 0.6 }}>4 кр. | Фотореализм 4K</div>
               </button>
               <button onClick={() => setIsModelMenuOpen(false)} style={{ marginTop: '10px', padding: '10px', border: 'none', background: 'none', color: 'inherit', opacity: 0.5 }} className="clickable">Отмена</button>
@@ -365,7 +387,7 @@ export default function ChatApp() {
             <div style={{ fontSize: '11px', opacity: 0.8 }}>Установите приложение для работы в 1 клик</div>
           </div>
           <button onClick={handleInstallPwa} className="btn-primary" style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '13px' }}>Установить</button>
-          <X onClick={() => setShowPwaPrompt(false)} size={18} style={{ opacity: 0.5 }} className="clickable" />
+          <X onClick={() => { setShowPwaPrompt(false); localStorage.setItem('pwa_closed', 'true'); }} size={18} style={{ opacity: 0.5 }} className="clickable" />
         </div>
       )}
 
@@ -374,6 +396,8 @@ export default function ChatApp() {
         .btn-bot:active { opacity: 1; transform: scale(0.9); }
         .chat-app b { font-weight: 800; color: #fff; }
         [data-theme='light'] .chat-app b { color: #000; }
+        .status-dot { width: 6px; height: 6px; background-color: #00e676; border-radius: 50%; animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
       `}</style>
     </div>
   );
