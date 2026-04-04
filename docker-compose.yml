@@ -42,5 +42,12 @@ services:
       - .env
     command: sh -c "sleep 5 && python -m bot.main"
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --url http://frontend:80
+    depends_on:
+      - frontend
+
 volumes:
   pgdata:

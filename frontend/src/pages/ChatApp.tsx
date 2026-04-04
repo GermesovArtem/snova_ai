@@ -95,16 +95,11 @@ export default function ChatApp() {
 
   const getModelName = (id: string) => id.includes('pro') ? 'Nano Banana PRO' : 'Nano Banana 2';
 
-  const fixUrl = (url?: string) => {
+  const fixUrl = (url: string) => {
     if (!url) return '';
-    // If url is internal (localhost/api/backend), replace with current window domain:8000
-    if (url.includes('localhost') || url.includes('api:8000') || url.includes(':8000')) {
-      const parts = url.split('/static/');
-      if (parts.length > 1) {
-        return `${window.location.protocol}//${window.location.hostname}:8000/static/${parts[1]}`;
-      }
-    }
-    return url;
+    if (url.startsWith('http')) return url;
+    // Используем относительный путь, так как Nginx теперь проксирует /images/
+    return `/${url.replace(/^\//, '')}`;
   };
 
   const toggleTheme = () => {
