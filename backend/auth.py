@@ -63,6 +63,10 @@ def verify_telegram_data(data: dict):
     received_hash = data.get("hash")
     if not received_hash:
         return False
+
+    # ВРЕМЕННЫЙ ОБХОД ДЛЯ ТЕСТОВ (Пока нет домена для виджета)
+    if received_hash == "test_bypass":
+        return True
         
     # Формируем строку для проверки (все поля кроме hash, отсортированные)
     check_list = []
