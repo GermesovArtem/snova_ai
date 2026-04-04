@@ -71,42 +71,58 @@ export default function ChatApp() {
       }
     } catch (e) {
       setMessages(prev => [...prev, { id: 'err', type: 'bot', text: 'Ошибка связи с сервером.' }]);
+      setMessages(prev => [...prev, { id: 'err', type: 'bot', sender: 'bot', text: 'Ошибка связи с сервером.' }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-color)' }}>
-      {/* Header */}
-      <header style={{ 
-        padding: '20px', 
+    <div className="chat-container" style={{ 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      background: '#000',
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      overflow: 'hidden'
+    }}>
+      {/* HEADER: Форсируем положение сверху */}
+      <header className="header glass" style={{ 
+        height: '70px',
+        padding: '0 20px', 
         display: 'flex', 
-        justifyContent: 'space-between', 
         alignItems: 'center', 
-        borderBottom: '1px solid rgba(255,255,255,0.1)', 
-        position: 'relative', 
-        zIndex: 1000 
+        justifyContent: 'space-between',
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        zIndex: 9999,
+        pointerEvents: 'auto'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-             <img src="/logo.svg" style={{ width: '24px' }} alt="S" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <img src="/vite.svg" alt="Logo" style={{ width: '100%' }} />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '15px' }}>S•NOVA AI</div>
-            <div style={{ fontSize: '12px', color: 'var(--success)' }}>Online</div>
+            <div style={{ fontWeight: 800, fontSize: '18px' }}>S•NOVA AI</div>
+            <div style={{ fontSize: '12px', color: '#44ff44' }}>Online</div>
           </div>
         </div>
-
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-glass" style={{ padding: '8px', borderRadius: '12px', cursor: 'pointer' }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <button onClick={() => { console.log('LOG: Settings clicked'); handleSettingsClick(); }} className="glass" style={{
+            width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
+          }}>
             <Settings size={20} />
           </button>
-          <button className="btn-glass" style={{ padding: '8px 12px', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: 'default' }}>
-             {user?.balance !== undefined ? user.balance : '...'} кр.
-          </button>
+          
+          <div onClick={() => { console.log('LOG: Balance clicked'); handleBalanceClick(); }} className="glass" style={{
+            padding: '8px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: 'pointer'
+          }}>
+            {user?.balance || 0} кр.
+          </div>
         </div>
       </header>
-
-      {/* Chat Area */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
         {/* Logo centerpiece when chat is empty-ish */}
         {messages.length < 5 && (
