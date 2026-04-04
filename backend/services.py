@@ -12,31 +12,18 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-def normalize_model_id(model_id: str) -> str:
-    """Corrects model names for KIE API compatibility.
-    New models (2, Pro) must NOT have 'google/' prefix.
-    Legacy models must HAVE 'google/' prefix.
-    """
-    if not model_id or not isinstance(model_id, str): return model_id
-    
-    # 1. Lowercase and strip whitespace
-    model_id = model_id.lower().strip()
-    
-    # 2. Direct models (MUST NOT have prefix)
-    direct_models = ["nano-banana-2", "nano-banana-pro"]
-    for dm in direct_models:
-        if model_id == dm or model_id == f"google/{dm}":
-            return dm
-            
-    # 3. Legacy/Pre-prefixed models (MUST have 'google/' prefix)
-    legacy_models = ["nano-banana", "nano-banana-edit"]
-    for lm in legacy_models:
-        if model_id == lm:
-            return f"google/{lm}"
-        if model_id == f"google/{lm}":
-            return model_id
-            
-    return model_id
+def get_model_limit(model_id: str) -> int:
+    """Returns official limit for image_input: 8 for PRO, 14 for v2"""
+    if "pro" in str(model_id).lower():
+        return 8
+    return 14
+
+def get_available_models():
+    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
+    try:
+        return json.loads(models_str)
+    except:
+        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
 
 async def fix_all_model_ids(db):
     res = await db.execute(select(models.User))
@@ -65,15 +52,30 @@ def get_model_cost(model_id: str) -> float:
         fallback = {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
         return float(fallback.get(model_id, 3.0))
 
-async def get_or_create_user(db, tg_id: int, username: str = None) -> models.User:
-    res = await db.execute(select(models.User).filter_by(id=tg_id))
-    user = res.scalars().first()
+async def get_user_by_id(db, user_id: int):
+    res = await db.execute(select(models.User).filter(models.User.id == user_id))
+    return res.scalar_one_or_none()
+
+async def get_user_by_yandex_id(db, yandex_id: str):
+    res = await db.execute(select(models.User).filter(models.User.yandex_id == yandex_id))
+    return res.scalar_one_or_none()
+
+async def get_user_by_vk_id(db, vk_id: str):
+    res = await db.execute(select(models.User).filter(models.User.vk_id == vk_id))
+    return res.scalar_one_or_none()
+
+async def get_or_create_user(db, user_id: int, name: str = None, username: str = None):
+    # Try by internal/telegram ID first
+    user = await get_user_by_id(db, user_id)
     if not user:
-        starting_balance = float(os.getenv("STARTING_BALANCE", "5.0"))
-        user = models.User(id=tg_id, name=username, balance=starting_balance, frozen_balance=0.0)
+        # Initial balance for new users
+        starting_balance = float(os.getenv("STARTING_BALANCE", 5.0))
+        user = models.User(id=user_id, name=name or username, balance=starting_balance)
         db.add(user)
+        # Handle referral case if needed (not implemented here for web yet)
         await db.commit()
         await db.refresh(user)
+        logger.info(f"Created new user: {user_id} ({name}) with {starting_balance} cr.")
     return user
 
 async def pre_charge_generation(db, user: models.User, model_id: str) -> float:

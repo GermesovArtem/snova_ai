@@ -46,17 +46,10 @@ class GenState(StatesGroup):
     choosing_settings = State()
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
-    try:
-        return json.loads(models_str)
-    except:
-        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+    return services.get_available_models()
 
 def get_model_limit(model_id: str) -> int:
-    """Returns official limit for image_input: 8 for PRO, 14 for v2"""
-    if "pro" in str(model_id).lower():
-        return 8
-    return 14
+    return services.get_model_limit(model_id)
 
 
 def get_model_costs():

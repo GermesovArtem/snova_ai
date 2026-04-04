@@ -9,10 +9,21 @@ from typing import List, Optional
 from aiogram import Bot
 import json
 from dotenv import load_dotenv
+import os
+from fastapi.middleware.cors import CORSMiddleware
+from . import auth
 
 load_dotenv()
 
 app = FastAPI(title="S•NOVA AI Admin & API Engine")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # В продакшене ограничить конкретными доменами
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Admin Config
 ADMIN_PATH = os.getenv("ADMIN_PATH", "/admin_panel").strip("/")
@@ -57,10 +68,39 @@ def admin_auth(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 # --- Auth Dependency ---
-async def get_current_user(db: AsyncSession = Depends(get_db)):
-    # Simple mock user
-    user = await services.get_or_create_user(db, 209, "WebUserMock")
-    return user
+from .auth import get_current_user
+
+class AuthData(BaseModel):
+    id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    photo_url: Optional[str] = None
+    auth_date: int
+    hash: str
+
+@app.post("/api/v1/auth/telegram")
+async def auth_telegram(data: AuthData, db: AsyncSession = Depends(get_db)):
+    # 1. Verify Telegram Hash
+    if not auth.verify_telegram_data(data.dict()):
+        raise HTTPException(status_code=400, detail="Invalid telegram auth data")
+    
+    # 2. Get or Create User
+    user = await services.get_or_create_user(
+        db, 
+        data.id, 
+        name=f"{data.first_name or ''} {data.last_name or ''}".strip(), 
+        username=data.username
+    )
+    
+    # Update profile if needed
+    if data.photo_url:
+        user.photo_url = data.photo_url
+        await db.commit()
+
+    # 3. Create Token
+    token = auth.create_access_token(data={"sub": str(user.id)})
+    return {"success": True, "access_token": token, "token_type": "bearer"}
 
 
 # --- Endpoints ---

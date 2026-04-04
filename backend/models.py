@@ -7,9 +7,13 @@ import uuid
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(BigInteger, primary_key=True, index=True) # Telegram User ID
+    id = Column(BigInteger, primary_key=True, index=True) # Telegram User ID or Internal ID
+    yandex_id = Column(String, unique=True, index=True, nullable=True)
+    vk_id = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=True)
+    photo_url = Column(String, nullable=True)
     role = Column(String, default="user")
+    is_active = Column(Boolean, default=True)
     balance = Column(Float, default=10.0) # Default balance
     frozen_balance = Column(Float, default=0.0)
     model_preference = Column(String, default="nanobanana")
