@@ -206,3 +206,48 @@ async def update_user_balance(db, user_id: int, amount: float) -> models.User:
         await db.commit()
         await db.refresh(user)
     return user
+
+async def get_user_history(db, user_id: int):
+    # Fetch last 50 tasks for this user
+    res = await db.execute(
+        select(models.GenerationTask)
+        .filter(models.GenerationTask.user_id == user_id)
+        .order_by(models.GenerationTask.created_at.desc())
+        .limit(50)
+    )
+    return res.scalars().all()
+
+async def create_yookassa_payment(user_id: int, amount: float, description: str):
+    import aiohttp
+    import uuid
+    
+    shop_id = os.getenv("YOOKASSA_SHOP_ID")
+    secret_key = os.getenv("YOOKASSA_SECRET_KEY")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    
+    if not shop_id or not secret_key:
+        raise Exception("YooKassa credentials are not set in .env")
+
+    url = "https://api.yookassa.ru/v3/payments"
+    headers = {
+        "Idempotence-Key": str(uuid.uuid4()),
+        "Content-Type": "application/json"
+    }
+    auth = aiohttp.BasicAuth(shop_id, secret_key)
+    
+    payload = {
+        "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+        "confirmation": {"type": "redirect", "return_url": frontend_url},
+        "description": description,
+        "capture": True,
+        "metadata": {"user_id": str(user_id)}
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers, auth=auth) as resp:
+            data = await resp.json()
+            if resp.status == 200:
+                return data["confirmation"]["confirmation_url"]
+            else:
+                logger.error(f"YooKassa API Error: {data}")
+                raise Exception(data.get("description", "YooKassa error"))

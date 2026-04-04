@@ -63,5 +63,18 @@ export const api = {
             body: JSON.stringify(data)
         });
         return handleResponse(res);
+    },
+
+    async getHistory() {
+        const res = await fetch(`${API_BASE}/user/history`, { headers: getHeaders() });
+        return handleResponse(res);
+    },
+
+    async createPayment(packId: string) {
+        const res = await fetch(`${API_BASE}/payments/create?pack_id=${packId}`, {
+            method: 'POST',
+            headers: getHeaders()
+        });
+        return handleResponse(res);
     }
 };

@@ -6,6 +6,7 @@ from typing import List, Optional
 import os
 import uuid
 import logging
+import json
 
 from backend.database import get_db, Base, engine
 from backend import models, schemas, auth, services
@@ -58,16 +59,38 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
-# --- USER ---
+# --- USER & HISTORY ---
 @app.get("/api/v1/user/me")
 async def get_me(user: models.User = Depends(get_current_user)):
     return {"success": True, "data": user}
+
+@app.get("/api/v1/user/history")
+async def get_history(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    hist = await services.get_user_history(db, user.id)
+    return {"success": True, "data": hist}
 
 @app.post("/api/v1/user/model")
 async def update_model(model: schemas.ModelUpdate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     user.model_preference = services.normalize_model_id(model.model_id)
     await db.commit()
     return {"success": True}
+
+# --- PAYMENTS ---
+@app.post("/api/v1/payments/create")
+async def create_payment(pack_id: str, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
+    try:
+        packs = json.loads(packs_str)
+        if pack_id not in packs:
+            raise HTTPException(status_code=400, detail="Invalid pack")
+        
+        amount = float(pack_id)
+        description = f"S•NOVA AI: Пополнение на {packs[pack_id]} кр."
+        url = await services.create_yookassa_payment(user.id, amount, description)
+        return {"success": True, "data": {"payment_url": url}}
+    except Exception as e:
+        logger.error(f"Payment error: {e}")
+        return {"success": False, "error": str(e)}
 
 # --- STATIC FILES ---
 UPLOAD_DIR = os.path.join("backend", "static", "uploads")
