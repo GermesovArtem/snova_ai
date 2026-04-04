@@ -176,12 +176,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
         limit = get_model_limit(services.normalize_model_id(user.model_preference))
+        actual_model = human_model_name(user.model_preference)
         
-        text = messages.MSG_START.format(balance=int(user.balance))
-        
+        text = messages.MSG_START.format(balance=int(user.balance), limit=limit, model=actual_model)
         await message.answer(text, reply_markup=build_reply_kb(), parse_mode="Markdown")
-        await asyncio.sleep(0.5)
-        await message.answer("👇 **Выбери нейросеть ниже, чтобы начать!**", reply_markup=build_start_kb(), parse_mode="Markdown")
 
 # --- NATIVE MENU COMMANDS ---
 @user_router.message(Command("model"))
@@ -389,7 +387,7 @@ async def process_set_model(callback_query: CallbackQuery):
         await callback_query.answer(f"Модель успешно обновлена!", show_alert=False)
         
         limit = get_model_limit(user.model_preference)
-        await bot.send_message(callback_query.from_user.id, messages.MSG_MODEL_SET_NEXT.format(limit=limit), parse_mode="Markdown")
+        await bot.send_message(callback_query.from_user.id, messages.MSG_MODEL_SET_NEXT.format(limit=limit), parse_mode="Markdown", reply_markup=build_reply_kb())
 
 @user_router.callback_query(GenState.confirming, F.data == "settings_menu")
 async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
