@@ -88,11 +88,11 @@ export default function ChatApp() {
         </div>
 
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-glass" style={{ padding: '8px', borderRadius: '12px' }}>
+          <button className="btn-glass" style={{ padding: '8px', borderRadius: '12px', cursor: 'pointer' }}>
             <Settings size={20} />
           </button>
-          <button className="btn-glass" style={{ padding: '8px 12px', borderRadius: '12px', fontSize: '14px', fontWeight: 600 }}>
-             12.5 кр.
+          <button className="btn-glass" style={{ padding: '8px 12px', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: 'default' }}>
+             {user?.balance !== undefined ? user.balance : '...'} кр.
           </button>
         </div>
       </header>
@@ -137,9 +137,11 @@ export default function ChatApp() {
       <footer style={{
         padding: '20px',
         paddingBottom: 'calc(20px + var(--safe-area-bottom))',
-        background: 'rgba(5, 5, 5, 0.8)',
+        background: 'rgba(5, 5, 5, 0.95)',
         backdropFilter: 'blur(20px)',
-        borderTop: '1px solid var(--glass-border)'
+        borderTop: '1px solid var(--glass-border)',
+        zIndex: 20,
+        position: 'relative'
       }}>
         {/* Model Selector Bar */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>

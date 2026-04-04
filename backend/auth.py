@@ -47,7 +47,35 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         raise credentials_exception
     return user
 
+import hashlib
+import hmac
+
 def verify_telegram_data(data: dict):
-    # TODO: Реализовать проверку подписи от Telegram
-    # Временная заглушка для разработки
-    return True
+    """
+    Проверка подлинности данных от Telegram Login Widget.
+    https://core.telegram.org/widgets/login#checking-authorization
+    """
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        # Для локальной разработки без токена
+        return True
+        
+    received_hash = data.get("hash")
+    if not received_hash:
+        return False
+        
+    # Формируем строку для проверки (все поля кроме hash, отсортированные)
+    check_list = []
+    for key, value in data.items():
+        if key != 'hash' and value:
+            check_list.append(f"{key}={value}")
+    
+    check_string = "\n".join(sorted(check_list))
+    
+    # Считаем секретный ключ (SHA256 от токена бота)
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    
+    # Считаем HMAC-SHA256
+    hash_computed = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+    
+    return hash_computed == received_hash
