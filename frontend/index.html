@@ -11,6 +11,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Глобальный диагностический скрипт: выводит в консоль (F12) каждый ваш клик
+      window.addEventListener('click', (e) => {
+        console.log('DEBUG: Нажат элемент:', e.target);
+        if (getComputedStyle(e.target).pointerEvents === 'none') {
+            console.warn('DEBUG WARNING: У элемента отключены pointer-events (нажатие блокируется)!');
+            e.target.style.pointerEvents = 'auto'; // Попытка авто-исправления "на лету"
+        }
+      }, true);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

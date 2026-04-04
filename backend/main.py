@@ -161,19 +161,7 @@ async def get_generation(task_uuid: str, user: models.User = Depends(get_current
     }
 
 # --- Admin Endpoints ---
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-
-@app.get("/admin_panel", response_class=HTMLResponse)
-async def get_admin_ui(admin: str = Depends(admin_auth)):
-    static_dir = os.path.join(os.path.dirname(__file__), "static")
-    admin_file = os.path.join(static_dir, "admin.html")
-    if not os.path.exists(admin_file):
-        # Create a basic admin.html if missing for safety
-        os.makedirs(static_dir, exist_ok=True)
-        with open(admin_file, "w", encoding="utf-8") as f:
-            f.write("<h1>Admin Panel Placeholder</h1>")
-    return FileResponse(admin_file)
+# Роутинг /adminpanel (уже настроен пользователем)
 
 @app.get(f"/{ADMIN_PATH}/api/stats")
 async def get_admin_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(admin_auth)):
