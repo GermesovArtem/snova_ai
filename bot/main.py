@@ -843,7 +843,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 try:
                     photo_data = await get_safe_preview_photo(info["image_url"])
                     if photo_data:
-                        caption = f"🔥 **Готово!**\n\n💳 Остаток: **{new_balance} кр.**\n🤖 Модель: **{human_name}**"
+                        caption = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=new_balance, model_name=human_name)
                         await bot.send_photo(user_id, photo=photo_data, caption=caption, reply_markup=build_after_gen_kb(), parse_mode="Markdown")
                         photo_sent = True
                     
@@ -851,8 +851,9 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 except Exception as e:
                     logger.warning(f"Delivery failed: {e}")
                     if not photo_sent:
+                        fallback_caption = messages.MSG_GEN_SUCCESS_FALLBACK.format(balance=new_balance)
                         await bot.send_document(user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), 
-                                               caption=f"🔥 **Готово!**\n\n💳 Остаток: **{new_balance} кр.**", reply_markup=build_after_gen_kb())
+                                               caption=fallback_caption, parse_mode="Markdown", reply_markup=build_after_gen_kb())
                 
                 try: await bot.delete_message(user_id, msg_id)
                 except: pass
