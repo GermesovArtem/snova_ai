@@ -6,7 +6,6 @@ interface Message {
   id: string;
   type: 'user' | 'bot';
   text: string;
-  sender?: 'user' | 'bot';
 }
 
 export default function ChatApp() {
@@ -111,7 +110,7 @@ export default function ChatApp() {
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button onClick={() => setIsSettingsOpen(true)} className="glass" style={{
-            width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
+            width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', border: 'none'
           }}>
             <Settings size={20} />
           </button>
@@ -155,12 +154,76 @@ export default function ChatApp() {
           <button 
             onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
             className="btn-glass" 
-            style={{ padding: '6px 12px', borderRadius: '100px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.7)' }}
+            style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '100px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
           >
-            <Send size={24} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#44ff44' }}></div>
+            {model === 'nano-banana-pro' ? 'NanoBanana PRO' : 'NanoBanana 2'}
+            <ChevronDown size={14} />
+          </button>
+
+          {isModelMenuOpen && (
+            <div className="glass" style={{ 
+              position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)',
+              width: '180px', borderRadius: '16px', padding: '8px', zIndex: 10001,
+              background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <div 
+                onClick={() => updateModel('nano-banana-2')}
+                style={{ padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', background: model === 'nano-banana-2' ? 'rgba(255,255,255,0.1)' : 'transparent' }}
+              >
+                NanoBanana 2
+              </div>
+              <div 
+                onClick={() => updateModel('nano-banana-pro')}
+                style={{ padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', background: model === 'nano-banana-pro' ? 'rgba(255,255,255,0.1)' : 'transparent' }}
+              >
+                NanoBanana PRO ⭐️
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input Bar */}
+        <div className="glass" style={{ width: '100%', maxWidth: '600px', borderRadius: '30px', display: 'flex', alignItems: 'center', padding: '6px 12px', gap: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <button onClick={() => fileInputRef.current?.click()} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>
+            <ImageIcon size={24} />
+          </button>
+          <input 
+            type="text" value={input} onChange={(e) => setInput(e.target.value)} 
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Опиши идею..." 
+            style={{ flex: 1, background: 'none', border: 'none', color: '#fff', outline: 'none', fontSize: '16px', height: '40px' }}
+          />
+          <button onClick={handleSend} disabled={isLoading} className="btn-primary" style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fff', border: 'none', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <Send size={20} />
           </button>
         </div>
+        <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept="image/*" />
       </footer>
+
+      {/* SETTINGS MODAL */}
+      {isSettingsOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 11000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '400px', borderRadius: '24px', padding: '24px', position: 'relative', background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <button onClick={() => setIsSettingsOpen(false)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>
+              <X size={24} />
+            </button>
+            <h2 style={{ marginBottom: '20px' }}>Настройки</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.05)' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <User size={24} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600 }}>{user?.name || 'Пользователь'}</div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>ID: {user?.id}</div>
+              </div>
+            </div>
+            <div style={{ marginTop: '20px', fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
+              Версия PWA: 3.2 Stable (Latest Buttons Fix)
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
