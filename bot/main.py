@@ -5,7 +5,7 @@ import io
 import httpx
 from PIL import Image
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 9.5 (START ONLY) !!!")
+print("!!! BOT MAIN.PY: VERSION 9.6 (BUTTONS FIXED) !!!")
 print("!"*50 + "\n")
 
 
@@ -160,16 +160,47 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # Instead of deleting, just set ONE useful command (/start)
+    # Set only /start command
     try:
         commands = [
             BotCommand(command="start", description="🚀 Перезапустить бота")
         ]
         await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
         await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-        print("DEBUG: Set /start command successfully.")
     except Exception as e:
         print(f"DEBUG: Error setting commands: {e}")
+
+# --- INTERNAL LOGIC FUNCTIONS (No slash commands) ---
+async def logic_model(message: types.Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, message.from_user.id)
+        text = generate_model_menu_text(user.balance, user.model_preference)
+        await message.answer(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
+
+async def logic_buy(message: types.Message, state: FSMContext):
+    await state.clear()
+    packs = get_credit_packs()
+    kb = InlineKeyboardBuilder()
+    for price, amount in packs.items():
+        kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
+    kb.button(text="⬅️ Назад", callback_data="main_menu")
+    kb.adjust(1)
+    await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
+
+async def logic_gen(message: types.Message, state: FSMContext):
+    async with AsyncSessionLocal() as db:
+        user = await services.get_or_create_user(db, message.from_user.id)
+        limit = get_model_limit(user.model_preference)
+    await state.clear()
+    await message.answer(
+        messages.MSG_GEN_PROMPT.format(limit=limit),
+        reply_markup=build_cancel_kb(),
+        parse_mode="Markdown"
+    )
+
+async def logic_contacts(message: types.Message):
+    await message.answer(messages.MSG_CONTACTS, parse_mode="Markdown")
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -201,15 +232,19 @@ async def catch_any_command(message: types.Message):
 
 @user_router.message(F.text == "✨ Создать")
 async def handle_reply_gen(message: types.Message, state: FSMContext):
-    await cmd_gen(message, state)
+    await logic_gen(message, state)
 
 @user_router.message(F.text == "🤖 Модель")
 async def handle_reply_model(message: types.Message, state: FSMContext):
-    await cmd_model(message, state)
+    await logic_model(message, state)
 
 @user_router.message(F.text == "💳 Баланс")
 async def handle_reply_buy(message: types.Message, state: FSMContext):
-    await cmd_buy(message, state)
+    await logic_buy(message, state)
+
+@user_router.message(F.text == "📬 Контакты")
+async def handle_reply_contacts(message: types.Message):
+    await logic_contacts(message)
 
 # --- CALLBACK ROUTERS ---
 @user_router.callback_query(F.data == "cancel_fsm")
