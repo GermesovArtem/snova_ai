@@ -57,28 +57,53 @@ def verify_access_token(token: str):
 import hashlib
 import hmac
 
+from urllib.parse import parse_qsl
+
 def verify_telegram_auth(data: dict):
     """
-    Проверка подлинности данных от Telegram Login Widget.
+    Проверка подлинности данных от Telegram.
+    Поддерживает как виджет (widget), так и WebApp (twa).
     """
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
         return True
         
-    received_hash = data.get("hash")
-    if not received_hash:
-        return False
-
-    if received_hash == "test_bypass" or received_hash == "8305886915354964": # For local dev
-        return True
+    auth_type = data.get("auth_type", "widget")
+    
+    if auth_type == "twa":
+        init_data = data.get("initData")
+        if not init_data:
+            return False
+            
+        parsed_data = dict(parse_qsl(init_data))
+        received_hash = parsed_data.pop("hash", None)
+        if not received_hash:
+            return False
+            
+        # Secret key for WebApp
+        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+        check_list = [f"{k}={v}" for k, v in parsed_data.items()]
+        check_string = "\n".join(sorted(check_list))
         
-    check_list = []
-    for key, value in data.items():
-        if key != 'hash' and value:
-            check_list.append(f"{key}={value}")
-    
-    check_string = "\n".join(sorted(check_list))
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-    hash_computed = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
-    
-    return hash_computed == received_hash
+        hash_computed = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+        return hash_computed == received_hash
+        
+    else:
+        # Режим виджета
+        received_hash = data.get("hash")
+        if not received_hash:
+            return False
+
+        if received_hash == "test_bypass" or received_hash == "8305886915354964": # For local dev
+            return True
+            
+        check_list = []
+        for key, value in data.items():
+            if key not in ['hash', 'auth_type', 'initData'] and value is not None:
+                check_list.append(f"{key}={value}")
+        
+        check_string = "\n".join(sorted(check_list))
+        secret_key = hashlib.sha256(bot_token.encode()).digest()
+        hash_computed = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+        
+        return hash_computed == received_hash

@@ -7,8 +7,10 @@ class TelegramAuth(BaseModel):
     last_name: Optional[str] = None
     username: Optional[str] = None
     photo_url: Optional[str] = None
-    auth_date: int
-    hash: str
+    auth_date: Optional[int] = None
+    hash: Optional[str] = None
+    auth_type: str = "widget" # "widget" or "twa"
+    initData: Optional[str] = None
 
 class ModelUpdate(BaseModel):
     model_id: str
