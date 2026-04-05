@@ -12,7 +12,7 @@ print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton, BotCommandScopeAllPrivateChats
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -160,8 +160,9 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # Remove the blue menu button entirely for all users
+    # Remove the blue menu button entirely for all possible scopes
     await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+    await bot.delete_my_commands(scope=BotCommandScopeDefault())
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -174,48 +175,22 @@ async def cmd_start(message: types.Message, state: FSMContext):
         text = messages.MSG_START.format(balance=int(user.balance), limit=limit, model=actual_model)
         await message.answer(text, reply_markup=build_reply_kb(), parse_mode="Markdown")
 
-# --- NATIVE MENU COMMANDS ---
+# --- REDIRECTS FOR OLD COMMANDS ---
 @user_router.message(Command("model"))
-async def cmd_model(message: types.Message, state: FSMContext):
-    await state.clear()
-    async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, message.from_user.id)
-        text = generate_model_menu_text(user.balance, user.model_preference)
-        await message.answer(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
-
 @user_router.message(Command("buy"))
-async def cmd_buy(message: types.Message, state: FSMContext):
-    await state.clear()
-    packs = get_credit_packs()
-    kb = InlineKeyboardBuilder()
-    for price, amount in packs.items():
-        kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
-    kb.button(text="⬅️ Назад", callback_data="main_menu")
-    kb.adjust(1)
-    await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
-
 @user_router.message(Command("gen"))
-async def cmd_gen(message: types.Message, state: FSMContext):
-    async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, message.from_user.id)
-        limit = get_model_limit(user.model_preference)
-    await state.clear()
-    await message.answer(
-        messages.MSG_GEN_PROMPT.format(limit=limit),
-        reply_markup=build_cancel_kb(),
-        parse_mode="Markdown"
-    )
-
 @user_router.message(Command("contacts"))
-@user_router.message(F.text == "📬 Контакты")
-async def cmd_contacts(message: types.Message):
-    await message.answer(messages.MSG_CONTACTS, parse_mode="Markdown")
-
 @user_router.message(Command("bots"))
 @user_router.message(Command("example"))
 @user_router.message(Command("friend"))
-async def cmd_dummies(message: types.Message):
-    await message.answer(messages.MSG_NOT_AVAILABLE)
+async def catch_old_commands(message: types.Message):
+    await message.answer("💡 Пожалуйста, используйте кнопки в меню ниже для управления ботом.", reply_markup=build_reply_kb())
+
+@user_router.message(F.text.startswith("/"))
+async def catch_any_command(message: types.Message):
+    # Ignore unknown commands or remind about buttons
+    if message.text != "/start":
+        await message.answer("💡 Все функции теперь доступны через кнопки внизу экрана.", reply_markup=build_reply_kb())
 
 @user_router.message(F.text == "✨ Создать")
 async def handle_reply_gen(message: types.Message, state: FSMContext):
