@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Cloud, User as UserIcon, Loader2 } from 'lucide-react';
 import { api } from '../api';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 // Global types for Telegram
 declare global {
@@ -12,12 +12,20 @@ declare global {
   }
 }
 
-function TelegramWidget() {
+// Отдельный компонент для виджета
+function TelegramWidget({ onAuth }: { onAuth: (user: any) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Предотвращаем двойную загрузку в Strict Mode
-    if (containerRef.current && containerRef.current.children.length === 0) {
+    // Подготавливаем глобальный колбэк заранее
+    window.onTelegramAuth = (user: any) => {
+        onAuth(user);
+    };
+
+    if (containerRef.current) {
+      // Очищаем контейнер перед вставкой (важно для React)
+      containerRef.current.innerHTML = '';
+      
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
       script.setAttribute('data-telegram-login', 'snovananobananabot');
@@ -27,66 +35,57 @@ function TelegramWidget() {
       script.async = true;
       containerRef.current.appendChild(script);
     }
-  }, []);
+  }, [onAuth]);
 
-  return <div ref={containerRef} style={{ minHeight: '40px', display: 'flex', justifyContent: 'center' }}></div>;
+  return (
+    <div 
+        ref={containerRef} 
+        id="telegram-widget-container"
+        style={{ minHeight: '40px', display: 'flex', justifyContent: 'center' }}
+    ></div>
+  );
 }
 
 export default function Auth({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate();
   const [isWebAppAuth, setIsWebAppAuth] = useState(false);
 
+  // Оборачиваем логику в useCallback
+  const handleAuth = useCallback(async (data: any, type: 'twa' | 'widget') => {
+    try {
+      const payload = type === 'twa' ? data : { ...data, auth_type: 'widget' };
+      if (type === 'twa') payload.auth_type = 'twa';
+
+      const res = await api.loginTelegram(payload);
+      if (res.success && res.access_token) {
+        localStorage.setItem('token', res.access_token);
+        onLogin();
+        navigate('/app');
+      } else {
+        setIsWebAppAuth(false);
+        if (type === 'twa') console.warn("TWA Auth failed, waiting for widget...");
+      }
+    } catch (e) {
+      setIsWebAppAuth(false);
+      console.error("Auth error:", e);
+    }
+  }, [navigate, onLogin]);
+
   useEffect(() => {
-    // 1. Попытка бесшовного входа через Telegram Web App (TWA)
-    const initData = window.Telegram?.WebApp?.initData;
-    
-    if (initData) {
+    // Проверка на Telegram Web App
+    const twa = window.Telegram?.WebApp;
+    if (twa?.initData) {
       setIsWebAppAuth(true);
-      
-      const urlParams = new URLSearchParams(initData);
+      const urlParams = new URLSearchParams(twa.initData);
       const userStr = urlParams.get('user');
       let userId = 0;
       if (userStr) {
         try { userId = JSON.parse(userStr).id; } catch(e) {}
       }
-
-      api.loginTelegram({ 
-        auth_type: 'twa', 
-        initData: initData,
-        id: userId
-      }).then(res => {
-        if (res.success && res.access_token) {
-          localStorage.setItem('token', res.access_token);
-          onLogin();
-          navigate('/app');
-        } else {
-          setIsWebAppAuth(false);
-          alert("Ошибка авто-входа: " + (res.error || 'Неверная подпись'));
-        }
-      }).catch(e => {
-        setIsWebAppAuth(false);
-        console.error(e);
-      });
-      return;
+      
+      handleAuth({ initData: twa.initData, id: userId }, 'twa');
     }
-
-    // 2. Иначе (мы в обычном браузере) — рендерим виджет
-    window.onTelegramAuth = async (user: any) => {
-      user.auth_type = 'widget';
-      try {
-        const res = await api.loginTelegram(user);
-        if (res.success && res.access_token) {
-          localStorage.setItem('token', res.access_token);
-          onLogin();
-          navigate('/app');
-        } else {
-          alert('Ошибка авторизации через виджет: ' + (res.error || 'Неверная подпись'));
-        }
-      } catch (e) {
-        alert('Ошибка сети при авторизации');
-      }
-    };
-  }, [navigate, onLogin]);
+  }, [handleAuth]);
 
   const handleOAuthPlaceholder = (provider: string) => {
     alert(`Вход через ${provider} будет доступен в следующем обновлении!`);
@@ -135,7 +134,7 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
               <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>Безопасный вход через Telegram...</span>
             </div>
           ) : (
-            <TelegramWidget />
+            <TelegramWidget onAuth={(user) => handleAuth(user, 'widget')} />
           )}
 
           <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '15px 0' }}></div>
