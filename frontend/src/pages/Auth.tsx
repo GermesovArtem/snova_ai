@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Cloud, User as UserIcon, Loader2 } from 'lucide-react';
+import { ChevronLeft, Cloud, User as UserIcon, Loader2, MessageCircle } from 'lucide-react';
 import { api } from '../api';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 // Global types for Telegram
 declare global {
@@ -13,29 +13,26 @@ declare global {
 }
 
 // Отдельный компонент для виджета
-function TelegramWidget({ onAuth }: { onAuth: (user: any) => void }) {
+function TelegramWidget({ onAuth, onLoaded }: { onAuth: (user: any) => void, onLoaded?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Подготавливаем глобальный колбэк заранее
-    window.onTelegramAuth = (user: any) => {
-        onAuth(user);
-    };
+    window.onTelegramAuth = (user: any) => onAuth(user);
 
     if (containerRef.current) {
-      // Очищаем контейнер перед вставкой (важно для React)
-      containerRef.current.innerHTML = '';
-      
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'snovananobananabot');
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-      script.setAttribute('data-request-access', 'write');
-      script.async = true;
-      containerRef.current.appendChild(script);
+        containerRef.current.innerHTML = '';
+        const script = document.createElement('script');
+        script.src = 'https://telegram.org/js/telegram-widget.js?22';
+        script.setAttribute('data-telegram-login', 'snovananobananabot');
+        script.setAttribute('data-size', 'large');
+        script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+        script.setAttribute('data-request-access', 'write');
+        script.async = true;
+        
+        script.onload = () => onLoaded?.();
+        containerRef.current.appendChild(script);
     }
-  }, [onAuth]);
+  }, [onAuth, onLoaded]);
 
   return (
     <div 
@@ -48,9 +45,13 @@ function TelegramWidget({ onAuth }: { onAuth: (user: any) => void }) {
 
 export default function Auth({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate();
-  const [isWebAppAuth, setIsWebAppAuth] = useState(false);
+  
+  // Мгновенное определение режима TWA
+  const isTWA = useMemo(() => !!window.Telegram?.WebApp?.initData, []);
+  
+  const [isWebAppAuth, setIsWebAppAuth] = useState(isTWA);
+  const [widgetFailed, setWidgetFailed] = useState(false);
 
-  // Оборачиваем логику в useCallback
   const handleAuth = useCallback(async (data: any, type: 'twa' | 'widget') => {
     try {
       const payload = type === 'twa' ? data : { ...data, auth_type: 'widget' };
@@ -63,29 +64,38 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
         navigate('/app');
       } else {
         setIsWebAppAuth(false);
-        if (type === 'twa') console.warn("TWA Auth failed, waiting for widget...");
+        if (type === 'twa') setWidgetFailed(true);
       }
     } catch (e) {
       setIsWebAppAuth(false);
-      console.error("Auth error:", e);
+      setWidgetFailed(true);
     }
   }, [navigate, onLogin]);
 
   useEffect(() => {
-    // Проверка на Telegram Web App
-    const twa = window.Telegram?.WebApp;
-    if (twa?.initData) {
-      setIsWebAppAuth(true);
+    if (isTWA) {
+      const twa = window.Telegram.WebApp;
       const urlParams = new URLSearchParams(twa.initData);
       const userStr = urlParams.get('user');
       let userId = 0;
-      if (userStr) {
-        try { userId = JSON.parse(userStr).id; } catch(e) {}
-      }
-      
+      if (userStr) try { userId = JSON.parse(userStr).id; } catch(e) {}
       handleAuth({ initData: twa.initData, id: userId }, 'twa');
+    } else {
+      // Таймаут на загрузку виджета
+      const timer = setTimeout(() => {
+          const container = document.getElementById('telegram-widget-container');
+          if (!container || container.children.length === 0) {
+              setWidgetFailed(true);
+          }
+      }, 4000);
+      return () => clearTimeout(timer);
     }
-  }, [handleAuth]);
+  }, [isTWA, handleAuth]);
+
+  const handleFallbackLogin = () => {
+    // В крайнем случае отправляем в бота для авторизации
+    window.location.href = `https://t.me/snovananobananabot?start=login`;
+  };
 
   const handleOAuthPlaceholder = (provider: string) => {
     alert(`Вход через ${provider} будет доступен в следующем обновлении!`);
@@ -134,7 +144,19 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
               <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>Безопасный вход через Telegram...</span>
             </div>
           ) : (
-            <TelegramWidget onAuth={(user) => handleAuth(user, 'widget')} />
+            <>
+              {!widgetFailed ? (
+                <TelegramWidget onAuth={(user) => handleAuth(user, 'widget')} />
+              ) : (
+                <button 
+                    className="btn btn-primary" 
+                    onClick={handleFallbackLogin}
+                    style={{ width: '100%', maxWidth: '300px', background: '#0088cc', borderRadius: '30px', display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <MessageCircle size={20} /> Войти через Telegram
+                </button>
+              )}
+            </>
           )}
 
           <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '15px 0' }}></div>
