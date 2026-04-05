@@ -5,7 +5,7 @@ import io
 import httpx
 from PIL import Image
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 8.0 (YOOKASSA) !!!")
+print("!!! BOT MAIN.PY: VERSION 9.5 (START ONLY) !!!")
 print("!"*50 + "\n")
 
 
@@ -160,9 +160,16 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # Remove the blue menu button entirely for all possible scopes
-    await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
-    await bot.delete_my_commands(scope=BotCommandScopeDefault())
+    # Instead of deleting, just set ONE useful command (/start)
+    try:
+        commands = [
+            BotCommand(command="start", description="🚀 Перезапустить бота")
+        ]
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        print("DEBUG: Set /start command successfully.")
+    except Exception as e:
+        print(f"DEBUG: Error setting commands: {e}")
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
