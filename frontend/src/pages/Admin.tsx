@@ -9,14 +9,10 @@ import {
   LogOut, 
   LayoutDashboard, 
   CreditCard,
-  Settings as SettingsIcon,
   ShieldCheck,
-  AlertTriangle,
   RefreshCw
 } from 'lucide-react';
 import { 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -26,6 +22,7 @@ import {
   Area
 } from 'recharts';
 import { api } from '../api';
+import './Admin.css';
 
 const Admin: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('admin_token'));
@@ -95,48 +92,42 @@ const Admin: React.FC = () => {
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center p-4">
+      <div className="login-screen">
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white/5 border border-white/10 p-8 rounded-3xl backdrop-blur-xl"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="login-card"
         >
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-gradient-to-tr from-yellow-400 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-              <ShieldCheck className="text-white w-10 h-10" />
-            </div>
+          <div className="login-icon-box">
+            <ShieldCheck size={32} color="#000" />
           </div>
-          <h1 className="text-2xl font-bold text-white text-center mb-2">S•NOVA Admin</h1>
-          <p className="text-white/40 text-center mb-8 text-sm">Введите учетные данные для входа</p>
+          <h1 className="login-title">S•NOVA AI</h1>
+          <p className="login-subtitle">Control Center</p>
           
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs uppercase tracking-widest text-white/40 mb-2 font-medium">Username</label>
+          <form onSubmit={handleLogin}>
+            <div className="form-group">
+              <label className="form-label">Username</label>
               <input 
                 type="text" 
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-yellow-500/50 transition-colors"
+                className="admin-input"
                 placeholder="admin"
               />
             </div>
-            <div>
-              <label className="block text-xs uppercase tracking-widest text-white/40 mb-2 font-medium">Password</label>
+            <div className="form-group">
+              <label className="form-label">Password</label>
               <input 
                 type="password" 
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-yellow-500/50 transition-colors"
+                className="admin-input"
                 placeholder="••••••••"
               />
             </div>
-            {error && <p className="text-red-400 text-xs text-center">{error}</p>}
-            <button 
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-3 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-            >
-              {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : 'Вход в панель'}
+            {error && <p style={{color: '#ff4d4d', fontSize: '12px', marginBottom: '15px'}}>{error}</p>}
+            <button type="submit" disabled={loading} className="login-btn">
+              {loading ? <RefreshCw className="spinner" size={20} /> : 'Login to System'}
             </button>
           </form>
         </motion.div>
@@ -150,200 +141,158 @@ const Admin: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0b] text-white flex">
+    <div className="admin-container">
       {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 p-6 flex flex-col gap-8">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center font-bold text-black text-xs">SN</div>
-          <span className="font-bold tracking-tight">ADMIN PANEL</span>
+      <aside className="admin-sidebar">
+        <div className="admin-logo">
+          <div className="logo-icon">SN</div>
+          <div className="logo-text">ADMIN</div>
         </div>
 
-        <nav className="flex-1 space-y-2">
+        <nav className="nav-links">
           <button 
             onClick={() => setActiveTab('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-white/10 text-yellow-400' : 'text-white/40 hover:bg-white/5'}`}
+            className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
           >
             <LayoutDashboard size={18} />
-            <span className="text-sm font-medium">Дашборд</span>
+            Dashboard
           </button>
           <button 
             onClick={() => setActiveTab('users')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'users' ? 'bg-white/10 text-yellow-400' : 'text-white/40 hover:bg-white/5'}`}
+            className={`nav-link ${activeTab === 'users' ? 'active' : ''}`}
           >
             <Users size={18} />
-            <span className="text-sm font-medium">Пользователи</span>
+            Users
           </button>
         </nav>
 
-        <button 
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-400/60 hover:bg-red-400/5 transition-all text-sm font-medium"
-        >
+        <button onClick={handleLogout} className="nav-link logout-btn">
           <LogOut size={18} />
-          Выйти
+          Logout
         </button>
-      </div>
+      </aside>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto p-12">
-        <div className="max-w-6xl mx-auto">
-          
+      <main className="admin-main">
+        <div className="admin-content-inner">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
-              <motion.div 
-                key="dashboard"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
-                <div className="flex justify-between items-end">
-                  <div>
-                    <h2 className="text-3xl font-bold">Обзор системы</h2>
-                    <p className="text-white/40 mt-1">Основные показатели роста и активности</p>
+              <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <div className="header-section">
+                  <div className="header-title">
+                    <h2>Overview</h2>
+                    <p>System performance and metrics</p>
                   </div>
-                  <button onClick={loadData} className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <button onClick={loadData} className="action-btn">
+                    <RefreshCw size={16} className={loading ? 'spinner' : ''} />
                   </button>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white/5 border border-white/5 p-6 rounded-3xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-400">
-                        <Users size={24} />
-                      </div>
-                      <span className="text-xs font-bold text-green-400 flex items-center gap-1">
-                        <TrendingUp size={12} /> +{stats?.summary?.new_today || 0}
-                      </span>
-                    </div>
-                    <div className="text-2xl font-bold">{stats?.summary?.total_users || 0}</div>
-                    <div className="text-sm text-white/40">Всего пользователей</div>
+                <div className="stats-grid">
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
+                    <div className="stat-value">{stats?.summary?.total_users || 0}</div>
+                    <div className="stat-label">Total Users</div>
                   </div>
-
-                  <div className="bg-white/5 border border-white/5 p-6 rounded-3xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-yellow-500/10 rounded-2xl text-yellow-400">
-                        <Zap size={24} />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold">{stats?.summary?.total_generations || 0}</div>
-                    <div className="text-sm text-white/40">Выполнено генераций</div>
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
+                    <div className="stat-value">{stats?.summary?.total_generations || 0}</div>
+                    <div className="stat-label">Generations Done</div>
                   </div>
-
-                  <div className="bg-white/5 border border-white/5 p-6 rounded-3xl">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-green-500/10 rounded-2xl text-green-400">
-                        <CreditCard size={24} />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold">Активен</div>
-                    <div className="text-sm text-white/40">Статус сервера</div>
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
+                    <div className="stat-value">System OK</div>
+                    <div className="stat-label">Server Status</div>
                   </div>
                 </div>
 
-                {/* Charts */}
-                <div className="grid grid-cols-1 gap-6">
-                  <div className="bg-white/5 border border-white/5 p-8 rounded-3xl overflow-hidden">
-                    <h3 className="font-bold mb-8 flex items-center gap-2">
-                      <TrendingUp size={18} className="text-yellow-400" />
-                      Активность за 7 дней
-                    </h3>
-                    <div className="h-[300px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats?.chart || []}>
-                          <defs>
-                            <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#eab308" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#eab308" stopOpacity={0}/>
-                            </linearGradient>
-                            <linearGradient id="colorGens" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff0a" />
-                          <XAxis dataKey="date" stroke="#ffffff33" fontSize={12} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#ffffff33" fontSize={12} tickLine={false} axisLine={false} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#18181b', border: '1px solid #ffffff14', borderRadius: '12px' }}
-                            itemStyle={{ fontSize: '12px' }}
-                          />
-                          <Area type="monotone" dataKey="users" name="Новые юзеры" stroke="#eab308" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
-                          <Area type="monotone" dataKey="generations" name="Генерации" stroke="#22c55e" strokeWidth={3} fillOpacity={1} fill="url(#colorGens)" />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
+                <div className="chart-container">
+                  <div className="chart-header">
+                    <TrendingUp size={18} style={{color: '#facc15'}} />
+                    7-Day Activity
+                  </div>
+                  <div style={{height: '300px', width: '100%'}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={stats?.chart || []}>
+                        <defs>
+                          <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#facc15" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#facc15" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorGens" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                          itemStyle={{ fontSize: '11px', color: '#fff' }}
+                        />
+                        <Area type="monotone" dataKey="users" name="New Users" stroke="#facc15" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
+                        <Area type="monotone" dataKey="generations" name="Tasks" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorGens)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </motion.div>
             ) : (
-              <motion.div 
-                key="users"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
-                <div className="flex justify-between items-end">
-                  <div>
-                    <h2 className="text-3xl font-bold">Пользователи</h2>
-                    <p className="text-white/40 mt-1">Всего зарегистрировано: {users.length}</p>
+              <motion.div key="users" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <div className="header-section">
+                  <div className="header-title">
+                    <h2>User Directory</h2>
+                    <p>Manage {users.length} registered accounts</p>
                   </div>
-                  <div className="flex gap-4">
-                    <div className="relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 w-4 h-4" />
-                      <input 
-                        type="text" 
-                        placeholder="Поиск по ID или имени..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="bg-white/5 border border-white/10 rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none focus:border-yellow-500/50 w-64 transition-all"
-                      />
-                    </div>
+                  <div className="search-wrapper">
+                    <Search className="search-icon" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Search ID or name..."
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      className="admin-search"
+                    />
                   </div>
                 </div>
 
-                <div className="bg-white/5 border border-white/5 rounded-3xl overflow-hidden">
-                  <table className="w-full text-left">
+                <div className="table-container">
+                  <table className="admin-table">
                     <thead>
-                      <tr className="border-b border-white/5 bg-white/[0.02]">
-                        <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest">ID / User</th>
-                        <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest">Баланс</th>
-                        <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest">Дата рег.</th>
-                        <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest text-right">Действия</th>
+                      <tr>
+                        <th>ID / USER</th>
+                        <th>BALANCE</th>
+                        <th>REGISTERED</th>
+                        <th style={{textAlign: 'right'}}>ACTIONS</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody>
                       {filteredUsers.map(user => (
-                        <tr key={user.id} className="hover:bg-white/[0.02] transition-colors group">
-                          <td className="px-6 py-4">
-                            <div className="font-bold text-sm text-white/80">{user.name || 'Anonymous'}</div>
-                            <div className="text-xs text-white/20 font-mono tracking-tighter">{user.id}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-1 rounded-lg text-xs font-bold ${user.balance > 0 ? 'bg-yellow-500/10 text-yellow-500' : 'bg-red-500/10 text-red-500'}`}>
-                                {int(user.balance)} кр.
-                              </span>
+                        <tr key={user.id}>
+                          <td>
+                            <div className="user-info">
+                              <div className="user-name">{user.name || 'Unknown'}</div>
+                              <div className="user-id">{user.id}</div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-white/40">
-                             {new Date(user.created_at).toLocaleDateString()}
+                          <td>
+                            <span className={`balance-badge ${user.balance > 0 ? 'balance-positive' : 'balance-zero'}`}>
+                              {Math.floor(user.balance || 0)} Credits
+                            </span>
                           </td>
-                          <td className="px-6 py-4 text-right">
-                             <div className="flex justify-end gap-2">
-                                <button 
-                                  onClick={() => {
-                                    const amount = window.prompt("Сколько кредитов добавить (или вычесть, если с минусом)?", "10");
-                                    if (amount) handleUpdateBalance(user.id, parseFloat(amount));
-                                  }}
-                                  className="p-2 bg-white/5 rounded-lg border border-white/10 text-yellow-400 hover:bg-yellow-400 hover:text-black transition-all"
-                                >
-                                  <Plus size={16} />
-                                </button>
-                             </div>
+                          <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{new Date(user.created_at).toLocaleDateString()}</span></td>
+                          <td style={{textAlign: 'right'}}>
+                            <button 
+                              onClick={() => {
+                                const amount = window.prompt("Add credits (negative to subtract):", "10");
+                                if (amount) handleUpdateBalance(user.id, parseFloat(amount));
+                              }}
+                              className="action-btn"
+                              style={{marginLeft: 'auto'}}
+                            >
+                              <Plus size={16} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -354,11 +303,9 @@ const Admin: React.FC = () => {
             )}
           </AnimatePresence>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
-
-const int = (v: any) => Math.floor(parseFloat(v || 0));
 
 export default Admin;
