@@ -12,7 +12,7 @@ print("!"*50 + "\n")
 import json
 from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand, URLInputFile, InputMediaPhoto, ReplyKeyboardMarkup, KeyboardButton, BotCommandScopeAllPrivateChats
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -160,8 +160,8 @@ def build_settings_kb(model_id: str, settings: dict):
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
-    # Remove the blue menu button entirely
-    await bot.delete_my_commands()
+    # Remove the blue menu button entirely for all users
+    await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
 
 @user_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
