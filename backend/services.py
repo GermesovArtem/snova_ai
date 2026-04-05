@@ -29,7 +29,7 @@ def normalize_model_id(model_id: str) -> str:
             return dm
             
     # 3. Legacy/Pre-prefixed models (MUST have 'google/' prefix)
-    legacy_models = ["nano-banana", "nano-banana-edit"]
+    legacy_models = ["nano-banana", "nano-banana-edit", "nanobanana"]
     for lm in legacy_models:
         if model_id == lm:
             return f"google/{lm}"
@@ -94,9 +94,15 @@ async def get_or_create_user(db, user_id: int, name: str = None, username: str =
     # Try by internal/telegram ID first
     user = await get_user_by_id(db, user_id)
     if not user:
-        # Initial balance for new users
+        # Initial balance and model for new users
         starting_balance = float(os.getenv("STARTING_BALANCE", 5.0))
-        user = models.User(id=user_id, name=name or username, balance=starting_balance)
+        default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2")
+        user = models.User(
+            id=user_id, 
+            name=name or username, 
+            balance=starting_balance,
+            model_preference=default_model
+        )
         db.add(user)
         # Handle referral case if needed (not implemented here for web yet)
         await db.commit()
