@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Landing from './pages/Landing';
 import Auth from './pages/Auth';
 import ChatApp from './pages/ChatApp';
+import Admin from './pages/Admin';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
@@ -27,6 +28,7 @@ function App() {
           path="/app" 
           element={isAuthenticated ? <ChatApp /> : <Navigate to="/login" />} 
         />
+        <Route path="/adminpanel" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

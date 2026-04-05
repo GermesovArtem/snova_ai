@@ -10,6 +10,7 @@ import json
 
 from backend.database import get_db, Base, engine
 from backend import models, schemas, auth, services
+from backend.routers import admin
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,8 @@ async def startup():
     # Ensure starting models are normalized
     async with AsyncSession(engine) as db:
         await services.fix_all_model_ids(db)
+
+app.include_router(admin.router, prefix="/api/v1")
 
 # --- AUTH ---
 @app.post("/api/v1/auth/telegram")

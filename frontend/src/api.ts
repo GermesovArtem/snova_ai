@@ -76,5 +76,45 @@ export const api = {
             headers: getHeaders()
         });
         return handleResponse(res);
+    },
+
+    // --- Admin Panel Methods ---
+    async adminLogin(username: string, password: string) {
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+        
+        const res = await fetch(`${API_BASE}/admin/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        });
+        return handleResponse(res);
+    },
+
+    async getAdminStats() {
+        const res = await fetch(`${API_BASE}/admin/stats`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('admin_token')}` }
+        });
+        return handleResponse(res);
+    },
+
+    async adminListUsers() {
+        const res = await fetch(`${API_BASE}/admin/users`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('admin_token')}` }
+        });
+        return handleResponse(res);
+    },
+
+    async adminUpdateBalance(userId: number, amount: number) {
+        const res = await fetch(`${API_BASE}/admin/users/${userId}/balance`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('admin_token')}` 
+            },
+            body: JSON.stringify({ amount })
+        });
+        return handleResponse(res);
     }
 };
