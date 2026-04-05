@@ -12,10 +12,29 @@ declare global {
   }
 }
 
+function TelegramWidget() {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Предотвращаем двойную загрузку в Strict Mode
+    if (containerRef.current && containerRef.current.children.length === 0) {
+      const script = document.createElement('script');
+      script.src = 'https://telegram.org/js/telegram-widget.js?22';
+      script.setAttribute('data-telegram-login', 'snovananobananabot');
+      script.setAttribute('data-size', 'large');
+      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      script.setAttribute('data-request-access', 'write');
+      script.async = true;
+      containerRef.current.appendChild(script);
+    }
+  }, []);
+
+  return <div ref={containerRef} style={{ minHeight: '40px', display: 'flex', justifyContent: 'center' }}></div>;
+}
+
 export default function Auth({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate();
   const [isWebAppAuth, setIsWebAppAuth] = useState(false);
-  const widgetContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // 1. Попытка бесшовного входа через Telegram Web App (TWA)
@@ -24,7 +43,6 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
     if (initData) {
       setIsWebAppAuth(true);
       
-      // Парсим ID пользователя, так как он обязателен в схеме бэкенда
       const urlParams = new URLSearchParams(initData);
       const userStr = urlParams.get('user');
       let userId = 0;
@@ -68,20 +86,6 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
         alert('Ошибка сети при авторизации');
       }
     };
-
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    // Используем юзернейм вашего бота:
-    script.setAttribute('data-telegram-login', 'snovananobananabot');
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-    script.setAttribute('data-request-access', 'write');
-    script.async = true;
-    
-    if (widgetContainerRef.current) {
-      widgetContainerRef.current.innerHTML = '';
-      widgetContainerRef.current.appendChild(script);
-    }
   }, [navigate, onLogin]);
 
   const handleOAuthPlaceholder = (provider: string) => {
@@ -131,7 +135,7 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
               <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>Безопасный вход через Telegram...</span>
             </div>
           ) : (
-            <div style={{ minHeight: '40px', display: 'flex', justifyContent: 'center' }} ref={widgetContainerRef}></div>
+            <TelegramWidget />
           )}
 
           <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '15px 0' }}></div>
