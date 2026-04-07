@@ -28,6 +28,7 @@ import './Admin.css';
 
 const Admin: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('admin_token'));
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users'>('dashboard');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
