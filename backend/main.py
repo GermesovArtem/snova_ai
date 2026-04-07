@@ -8,7 +8,7 @@ import uuid
 import logging
 import json
 
-from backend.database import get_db, Base, engine
+from backend.database import get_db, Base, engine, AsyncSessionLocal
 from backend import models, schemas, auth, services
 from backend.routers import admin, payments
 

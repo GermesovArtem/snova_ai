@@ -202,20 +202,25 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
 async def check_generation_status(task_id: str):
     """Wrapper for KIE recordInfo with Russian error translation"""
     info = await get_task_info(task_id)
-    kie_status = info.get("state", "").lower()
-    if kie_status in ["failed", "error", "cancelled", "rejected", "blocked"] or info.get("success") is False:
-        err_text = info.get("error", "Неизвестная ошибка на стороне нейросети.")
-        raise Exception(err_text)
     
-    if not info.get("success"):
+    # Check for failure states
+    state = info.get("state", "").lower()
+    is_failed = state in ["failed", "error", "cancelled", "rejected", "blocked"] or not info.get("success")
+    
+    if is_failed:
         err = info.get("error", "Unknown error")
-        # Try to find a translation
+        # Translate the error if possible
         for key, val in ERRORS_RU.items():
-            if key.lower() in err.lower():
+            if key.lower() in str(err).lower():
                 info["error"] = val
                 break
         else:
             info["error"] = f"Ошибка ({err})"
+        
+        # Ensure state is 'failed' for consistent handling in bot/frontend
+        if state not in ["error", "failed"]:
+            info["state"] = "failed"
+            
     return info
 
 
