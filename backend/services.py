@@ -306,10 +306,12 @@ async def update_user_balance(db, user_id: int, amount: float) -> models.User:
     return user
 
 async def get_user_history(db, user_id: int):
-    # Fetch last 50 tasks for this user
+    # Fetch last 50 completed tasks for this user
     res = await db.execute(
         select(models.GenerationTask)
         .filter(models.GenerationTask.user_id == user_id)
+        .filter(models.GenerationTask.status == "completed")
+        .filter(models.GenerationTask.image_url.isnot(None))
         .order_by(models.GenerationTask.created_at.desc())
         .limit(50)
     )

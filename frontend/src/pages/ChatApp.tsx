@@ -335,8 +335,8 @@ export default function ChatApp() {
               </div>
             ) : (
               <div className="history-grid">
-                {historyTasks.filter(t => t.image_url).map(task => (
-                  <div key={task.id} className="history-item-square clickable" onClick={() => setHistoryLightboxTask(task)}>
+                {historyTasks.filter(t => t.image_url && t.status === 'completed').map(task => (
+                  <div key={task.task_uuid || task.id} className="history-item-square clickable" onClick={() => { setHistoryLightboxTask(task); setHistoryDetailsTask(null); }}>
                     <img src={fixUrl(task.image_url)} loading="lazy" />
                   </div>
                 ))}
