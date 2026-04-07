@@ -146,7 +146,10 @@ export default function ChatApp() {
       const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
       if (res.success) pollStatus(res.data.task_uuid, botMsgId);
       else updateBotMessage(botMsgId, "❌ Ошибка: " + res.error);
-    } catch (e: any) { updateBotMessage(botMsgId, "❌ Ошибка соединения"); }
+    } catch (e: any) { 
+      const errMsg = e.message || "Ошибка соединения";
+      updateBotMessage(botMsgId, `❌ ${errMsg}`); 
+    }
   };
 
   const pollStatus = async (uuid: string, msgId: string) => {

@@ -35,8 +35,8 @@ const Admin: React.FC = () => {
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -53,8 +53,10 @@ const Admin: React.FC = () => {
       ]);
       setStats(statsRes);
       setUsers(usersRes);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
       if (typeof err === 'object' && err !== null && 'message' in err && (err as any).message.includes('401')) {
         handleLogout();
       }
@@ -213,6 +215,12 @@ const Admin: React.FC = () => {
                     <RefreshCw size={16} className={loading ? 'spinner' : ''} />
                   </button>
                 </div>
+
+                {loadError && (
+                  <div className="error-banner">
+                    ⚠️ Ошибка загрузки данных. Убедитесь, что сервер API работает и база данных доступна.
+                  </div>
+                )}
 
                 <div className="stats-grid">
                   <div className="stat-card">

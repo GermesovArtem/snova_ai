@@ -49,7 +49,7 @@ async def startup():
             logger.error(f"Migration error: {e}")
 
     # Ensure starting models are normalized
-    async with AsyncSession(engine) as db:
+    async with AsyncSessionLocal() as db:
         await services.fix_all_model_ids(db)
 
 app.include_router(admin.router, prefix="/api/v1")
