@@ -228,7 +228,7 @@ async def check_generation_status(task_id: str):
 import datetime
 
 async def get_admin_stats(db) -> dict:
-    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     # User stats
     total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
@@ -259,20 +259,24 @@ async def get_admin_stats(db) -> dict:
     # Revenue chart (last 7 days)
     chart_data = []
     for i in range(6, -1, -1):
-        day = today - datetime.timedelta(days=i)
+        day_s = today_start - datetime.timedelta(days=i)
+        day_e = day_s + datetime.timedelta(days=1)
+        
         day_rev = (await db.execute(
             select(func.sum(models.Payment.amount_rub))
             .filter(models.Payment.status == "succeeded")
-            .filter(cast(models.Payment.created_at, Date) == day)
+            .filter(models.Payment.created_at >= day_s)
+            .filter(models.Payment.created_at < day_e)
         )).scalar() or 0.0
         
         day_users = (await db.execute(
             select(func.count(models.User.id))
-            .filter(cast(models.User.created_at, Date) == day)
+            .filter(models.User.created_at >= day_s)
+            .filter(models.User.created_at < day_e)
         )).scalar() or 0
         
         chart_data.append({
-            "date": day.strftime("%d.%m"),
+            "date": day_s.strftime("%d.%m"),
             "revenue": day_rev,
             "new_users": day_users
         })
