@@ -903,7 +903,9 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
         async with AsyncSessionLocal() as db:
             await services.refund_frozen_credits(db, user_id, cost)
             
-        await bot.send_message(user_id, f"❌ Ошибка генерации: {e}")
+        # Use translated message if possible
+        err_msg = services.translate_error(str(e))
+        await bot.send_message(user_id, f"❌ {err_msg}\n\nЕсли проблема в промпте, попробуйте изменить его. Если это сбой сервера — мы уже в курсе и чиним!")
         try: await bot.delete_message(user_id, msg_id)
         except: pass
 

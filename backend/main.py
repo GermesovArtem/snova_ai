@@ -27,11 +27,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from sqlalchemy import text, select
 # --- DB INIT ---
 @app.on_event("startup")
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Migration: Add prompt_images_json if missing
+        try:
+            # Check if column exists
+            res = await conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='generation_tasks' AND column_name='prompt_images_json';
+            """))
+            if not res.scalar():
+                logger.info("Migration: Adding prompt_images_json column to generation_tasks")
+                await conn.execute(text("ALTER TABLE generation_tasks ADD COLUMN prompt_images_json VARCHAR;"))
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
+
     # Ensure starting models are normalized
     async with AsyncSession(engine) as db:
         await services.fix_all_model_ids(db)

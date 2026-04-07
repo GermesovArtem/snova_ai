@@ -14,15 +14,28 @@ logger = logging.getLogger(__name__)
 
 # Russian Error Translations for Kie AI
 ERRORS_RU = {
-    "insufficient_funds": "Недостаточно кредитов на стороне API (обратитесь к администратору).",
-    "nsfw content detected": "Обнаружен контент 18+. Генерация отклонена.",
-    "server overload": "Сервер перегружен. Пожалуйста, попробуйте позже.",
-    "Internal Server Error": "Внутренняя ошибка API. Попробуйте еще раз.",
-    "Model not found": "Модель временно недоступна.",
-    "No data in response": "Техническая ошибка: пустой ответ от сервера.",
-    "No taskId returned from API": "Ошибка создания задачи. Попробуйте другой промпт.",
-    "Could not generate images": "Не удалось создать изображение с этими данными. Попробуйте изменить текст или фото."
+    "Could not generate images": "Не удалось создать изображение с этими данными. Попробуйте изменить текст или фото.",
+    "UndefinedColumnError": "Техническая ошибка: база данных устарела. Обратитесь к админу.",
+    "ProgrammingError": "Техническая ошибка в запросе к базе данных.",
+    "Internal Server Error": "Внутренняя ошибка сервера. Мы уже работаем над этим!",
+    "timeout": "Время ожидания истекло. Пожалуйста, попробуйте еще раз через минуту.",
+    "ConnectionError": "Ошибка соединения с сервером. Проверьте интернет или подождите."
 }
+
+def translate_error(error_msg: str) -> str:
+    """Translates technical error messages to user-friendly Russian."""
+    if not error_msg:
+        return "Произошла неизвестная ошибка."
+    
+    error_msg_lower = str(error_msg).lower()
+    for key, val in ERRORS_RU.items():
+        if key.lower() in error_msg_lower:
+            return val
+            
+    if "db" in error_msg_lower or "database" in error_msg_lower:
+        return "Ошибка базы данных. Повторите попытку позже."
+        
+    return f"Ошибка: {error_msg}"
 
 
 def normalize_model_id(model_id: str) -> str:
@@ -168,9 +181,13 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
         prompt_images_json=json.dumps(image_urls) if image_urls else None, # Store all images as JSON
         credits_cost=cost
     )
-    db.add(new_task)
-    await db.commit()
-    await db.refresh(new_task)
+    try:
+        db.add(new_task)
+        await db.commit()
+        await db.refresh(new_task)
+    except Exception as e:
+        logger.error(f"Error saving task to DB: {e}")
+        raise ValueError(translate_error(str(e)))
     
     # Call KIE
     res = await create_task(model_id, prompt, image_urls, aspect_ratio, resolution, output_format)
