@@ -19,7 +19,10 @@ ERRORS_RU = {
     "ProgrammingError": "Техническая ошибка в запросе к базе данных.",
     "Internal Server Error": "Внутренняя ошибка сервера. Мы уже работаем над этим!",
     "timeout": "Время ожидания истекло. Пожалуйста, попробуйте еще раз через минуту.",
-    "ConnectionError": "Ошибка соединения с сервером. Проверьте интернет или подождите."
+    "ConnectionError": "Ошибка соединения с сервером. Проверьте интернет или подождите.",
+    "violated Google's Generative AI Prohibited Use policy": "Ваш запрос был отклонен фильтром безопасности ИИ (нарушение политики использования). Пожалуйста, измените описание или фото на более нейтральные.",
+    "No images found in AI response": "Изображение не было создано ИИ. Попробуйте изменить запрос.",
+    "insufficient_funds": "Недостаточно средств на балансе сервиса генерации."
 }
 
 def translate_error(error_msg: str) -> str:
@@ -199,7 +202,12 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
 async def check_generation_status(task_id: str):
     """Wrapper for KIE recordInfo with Russian error translation"""
     info = await get_task_info(task_id)
-    if not info.get("success") or info.get("state") in ["failed", "error"]:
+    kie_status = info.get("state", "").lower()
+    if kie_status in ["failed", "error", "cancelled", "rejected", "blocked"] or info.get("success") is False:
+        err_text = info.get("error", "Неизвестная ошибка на стороне нейросети.")
+        raise Exception(err_text)
+    
+    if not info.get("success"):
         err = info.get("error", "Unknown error")
         # Try to find a translation
         for key, val in ERRORS_RU.items():
