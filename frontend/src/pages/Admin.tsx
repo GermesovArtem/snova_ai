@@ -52,8 +52,8 @@ const Admin: React.FC = () => {
         api.getAdminStats(),
         api.adminListUsers()
       ]);
-      setStats(statsRes);
-      setUsers(usersRes);
+      setStats(statsRes.data || {});
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
       setLoadError(false);
     } catch (err) {
       console.error(err);

@@ -93,7 +93,10 @@
   flex: 1;
   padding: 48px 64px;
   overflow-y: auto;
-  min-width: 0; /* Prevent flex overflow */
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* Mobile Header (Hidden on Desktop) */
