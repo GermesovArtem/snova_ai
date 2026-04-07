@@ -1,3 +1,5 @@
+import logging
+from dotenv import load_dotenv
 import datetime
 from sqlalchemy import func, cast, Date, desc
 from . import models
@@ -16,7 +18,8 @@ ERRORS_RU = {
     "Internal Server Error": "Внутренняя ошибка API. Попробуйте еще раз.",
     "Model not found": "Модель временно недоступна.",
     "No data in response": "Техническая ошибка: пустой ответ от сервера.",
-    "No taskId returned from API": "Ошибка создания задачи. Попробуйте другой промпт."
+    "No taskId returned from API": "Ошибка создания задачи. Попробуйте другой промпт.",
+    "Could not generate images": "Не удалось создать изображение с этими данными. Попробуйте изменить текст или фото."
 }
 
 
