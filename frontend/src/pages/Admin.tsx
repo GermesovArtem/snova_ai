@@ -10,7 +10,9 @@ import {
   LayoutDashboard, 
   CreditCard,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Menu,
+  X
 } from 'lucide-react';
 import { 
   XAxis, 
@@ -34,6 +36,7 @@ const Admin: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -102,11 +105,11 @@ const Admin: React.FC = () => {
             <ShieldCheck size={32} color="#000" />
           </div>
           <h1 className="login-title">S•NOVA AI</h1>
-          <p className="login-subtitle">Control Center</p>
+          <p className="login-subtitle">Центр управления</p>
           
           <form onSubmit={handleLogin}>
             <div className="form-group">
-              <label className="form-label">Username</label>
+              <label className="form-label">Логин</label>
               <input 
                 type="text" 
                 value={username}
@@ -116,7 +119,7 @@ const Admin: React.FC = () => {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Password</label>
+              <label className="form-label">Пароль</label>
               <input 
                 type="password" 
                 value={password}
@@ -127,7 +130,7 @@ const Admin: React.FC = () => {
             </div>
             {error && <p style={{color: '#ff4d4d', fontSize: '12px', marginBottom: '15px'}}>{error}</p>}
             <button type="submit" disabled={loading} className="login-btn">
-              {loading ? <RefreshCw className="spinner" size={20} /> : 'Login to System'}
+              {loading ? <RefreshCw className="spinner" size={20} /> : 'Войти в систему'}
             </button>
           </form>
         </motion.div>
@@ -142,46 +145,69 @@ const Admin: React.FC = () => {
 
   return (
     <div className="admin-container">
+      {/* Sidebar Mobile Backdrop */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="sidebar-backdrop"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
-      <aside className="admin-sidebar">
+      <aside className={`admin-sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="admin-logo">
           <div className="logo-icon">SN</div>
-          <div className="logo-text">ADMIN</div>
+          <div className="logo-text">АДМИН</div>
+          <button className="sidebar-close-btn" onClick={() => setIsSidebarOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
 
         <nav className="nav-links">
           <button 
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
             className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
           >
             <LayoutDashboard size={18} />
-            Dashboard
+            Дашборд
           </button>
           <button 
-            onClick={() => setActiveTab('users')}
+            onClick={() => { setActiveTab('users'); setIsSidebarOpen(false); }}
             className={`nav-link ${activeTab === 'users' ? 'active' : ''}`}
           >
             <Users size={18} />
-            Users
+            Пользователи
           </button>
         </nav>
 
         <button onClick={handleLogout} className="nav-link logout-btn">
           <LogOut size={18} />
-          Logout
+          Выйти
         </button>
       </aside>
 
       {/* Main Content */}
       <main className="admin-main">
+        <div className="admin-mobile-header">
+          <button className="menu-toggle-btn" onClick={() => setIsSidebarOpen(true)}>
+            <Menu size={24} />
+          </button>
+          <div className="logo-text">S•NOVA AI</div>
+        </div>
+
         <div className="admin-content-inner">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' ? (
               <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
                 <div className="header-section">
                   <div className="header-title">
-                    <h2>Overview</h2>
-                    <p>System performance and metrics</p>
+                    <h2>Обзор</h2>
+                    <p>Метрики производительности системы</p>
                   </div>
                   <button onClick={loadData} className="action-btn">
                     <RefreshCw size={16} className={loading ? 'spinner' : ''} />
@@ -192,29 +218,29 @@ const Admin: React.FC = () => {
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
                     <div className="stat-value">{stats?.data?.total_users || 0}</div>
-                    <div className="stat-label">Total Users</div>
-                    <div className="stat-sublabel">+{stats?.data?.new_users_today || 0} today</div>
+                    <div className="stat-label">Всего пользователей</div>
+                    <div className="stat-sublabel">+{stats?.data?.new_users_today || 0} сегодня</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
                     <div className="stat-value">{stats?.data?.total_gens || 0}</div>
-                    <div className="stat-label">Generations Done</div>
-                    <div className="stat-sublabel">+{stats?.data?.gens_today || 0} today</div>
+                    <div className="stat-label">Генераций выполнено</div>
+                    <div className="stat-sublabel">+{stats?.data?.gens_today || 0} сегодня</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
                     <div className="stat-value">{Math.round(stats?.data?.total_revenue || 0)} ₽</div>
-                    <div className="stat-label">Total Revenue</div>
-                    <div className="stat-sublabel">+{Math.round(stats?.data?.revenue_today || 0)} ₽ today</div>
+                    <div className="stat-label">Общая выручка</div>
+                    <div className="stat-sublabel">+{Math.round(stats?.data?.revenue_today || 0)} ₽ сегодня</div>
                   </div>
                 </div>
 
                 <div className="chart-container">
                   <div className="chart-header">
                     <TrendingUp size={18} style={{color: '#facc15'}} />
-                    7-Day Revenue & Growth
+                    Выручка и рост (7 дней)
                   </div>
-                  <div style={{height: '300px', width: '100%'}}>
+                  <div className="chart-wrapper">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={stats?.data?.chart_data || []}>
                         <defs>
@@ -228,14 +254,14 @@ const Admin: React.FC = () => {
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={11} tickLine={false} axisLine={false} />
-                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={11} tickLine={false} axisLine={false} />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} tickLine={false} axisLine={false} />
                         <Tooltip 
                           contentStyle={{ backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                           itemStyle={{ fontSize: '11px', color: '#fff' }}
                         />
-                        <Area type="monotone" dataKey="revenue" name="Revenue (₽)" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
-                        <Area type="monotone" dataKey="new_users" name="New Users" stroke="#facc15" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
+                        <Area type="monotone" dataKey="revenue" name="Выручка (₽)" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                        <Area type="monotone" dataKey="new_users" name="Новые пользователи" stroke="#facc15" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -243,16 +269,16 @@ const Admin: React.FC = () => {
               </motion.div>
             ) : (
               <motion.div key="users" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                <div className="header-section">
+                <div className="header-section flex-col-mobile">
                   <div className="header-title">
-                    <h2>User Directory</h2>
-                    <p>Manage {users.length} registered accounts</p>
+                    <h2>Пользователи</h2>
+                    <p>Управление {users.length} аккаунтами</p>
                   </div>
                   <div className="search-wrapper">
                     <Search className="search-icon" size={16} />
                     <input 
                       type="text" 
-                      placeholder="Search ID or name..."
+                      placeholder="Поиск по ID или имени..."
                       value={search}
                       onChange={e => setSearch(e.target.value)}
                       className="admin-search"
@@ -261,46 +287,48 @@ const Admin: React.FC = () => {
                 </div>
 
                 <div className="table-container">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>ID / USER</th>
-                        <th>BALANCE</th>
-                        <th>REGISTERED</th>
-                        <th style={{textAlign: 'right'}}>ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.map(user => (
-                        <tr key={user.id}>
-                          <td>
-                            <div className="user-info">
-                              <div className="user-name">{user.name || 'Unknown'}</div>
-                              <div className="user-id">{user.id}</div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`balance-badge ${user.balance > 0 ? 'balance-positive' : 'balance-zero'}`}>
-                              {Math.floor(user.balance || 0)} Credits
-                            </span>
-                          </td>
-                          <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{new Date(user.created_at).toLocaleDateString()}</span></td>
-                          <td style={{textAlign: 'right'}}>
-                            <button 
-                              onClick={() => {
-                                const amount = window.prompt("Add credits (negative to subtract):", "10");
-                                if (amount) handleUpdateBalance(user.id, parseFloat(amount));
-                              }}
-                              className="action-btn"
-                              style={{marginLeft: 'auto'}}
-                            >
-                              <Plus size={16} />
-                            </button>
-                          </td>
+                  <div className="table-scroll">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>ID / ИМЯ</th>
+                          <th>БАЛАНС</th>
+                          <th>РЕГИСТРАЦИЯ</th>
+                          <th style={{textAlign: 'right'}}>ДЕЙСТВИЯ</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {filteredUsers.map(user => (
+                          <tr key={user.id}>
+                            <td>
+                              <div className="user-info">
+                                <div className="user-name">{user.name || 'Неизвестно'}</div>
+                                <div className="user-id">{user.id}</div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className={`balance-badge ${user.balance > 0 ? 'balance-positive' : 'balance-zero'}`}>
+                                {Math.floor(user.balance || 0)} кр.
+                              </span>
+                            </td>
+                            <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{new Date(user.created_at).toLocaleDateString()}</span></td>
+                            <td style={{textAlign: 'right'}}>
+                              <button 
+                                onClick={() => {
+                                  const amount = window.prompt("Добавить кредиты (отрицательное — отнять):", "10");
+                                  if (amount) handleUpdateBalance(user.id, parseFloat(amount));
+                                }}
+                                className="action-btn"
+                                style={{marginLeft: 'auto'}}
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </motion.div>
             )}

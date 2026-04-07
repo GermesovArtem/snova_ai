@@ -165,6 +165,7 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
         prompt=prompt,
         image_url=None, # This is the result URL, keep empty until success
         prompt_image_url=image_urls[0] if image_urls else None, # Store the first input image as prompt reference
+        prompt_images_json=json.dumps(image_urls) if image_urls else None, # Store all images as JSON
         credits_cost=cost
     )
     db.add(new_task)

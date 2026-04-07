@@ -34,6 +34,7 @@ export default function ChatApp() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyDetailsTask, setHistoryDetailsTask] = useState<any>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null); 
+  const [historyLightboxTask, setHistoryLightboxTask] = useState<any>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
   
@@ -98,7 +99,6 @@ export default function ChatApp() {
   const fixUrl = (url: string) => {
     if (!url) return '';
     if (url.startsWith('http')) return url;
-    // Используем относительный путь, так как Nginx теперь проксирует /images/
     return `/${url.replace(/^\//, '')}`;
   };
 
@@ -191,11 +191,19 @@ export default function ChatApp() {
     window.open(fullUrl, '_blank');
   };
 
+  // Helper to parse reference images
+  const getPromptImages = (task: any): string[] => {
+    if (task.prompt_images_json) {
+      try { return JSON.parse(task.prompt_images_json); } catch(e) { return []; }
+    }
+    return task.prompt_image_url ? [task.prompt_image_url] : [];
+  };
+
   return (
     <div className="chat-app" style={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-color)' }}>
       
       {/* HEADER */}
-      <header className="glass" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 15px', borderRadius: '0 0 20px 20px' }}>
+      <header className="glass" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 15px', borderRadius: '0 0 20px 20px', zIndex: 100 }}>
         <button onClick={toggleTheme} style={{ background: 'none', border: 'none', color: 'inherit', padding: 0 }} className="clickable">
           {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
         </button>
@@ -303,75 +311,92 @@ export default function ChatApp() {
         </div>
       )}
 
-      {/* MODAL: HISTORY */}
+      {/* MODAL: HISTORY GRID */}
       {isHistoryOpen && (
-        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--bg-color)', display: 'flex', flexDirection: 'column', borderRadius: 0, border: 'none' }}>
-          <header style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-               <History size={24} />
-               <h2 style={{ margin: 0, fontSize: '20px' }}>Моя история</h2>
-            </div>
-            <X onClick={() => setIsHistoryOpen(false)} size={28} className="clickable" />
+        <div className="history-portal" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--bg-color)', display: 'flex', flexDirection: 'column' }}>
+          <header style={{ padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)' }}>
+             <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>Мои работы</h2>
+             <button onClick={() => setIsHistoryOpen(false)} style={{ background: 'var(--glass-bg)', border: 'none', color: '#fff', padding: '8px', borderRadius: '12px' }} className="clickable">
+               <X size={24} />
+             </button>
           </header>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
             {isHistoryLoading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: '350px', width: '100%' }} />)}
+              <div className="history-grid">
+                {[1,2,3,4,5,6].map(i => <div key={i} className="skeleton history-item-square" />)}
               </div>
             ) : historyTasks.length === 0 ? (
               <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '150px' }}>
                  <Sparkles size={48} style={{ marginBottom: '15px', opacity: 0.2 }} />
-                 <div>Здесь будут ваши шедевры</div>
+                 <div>Ваша история пуста</div>
               </div>
-            ) : historyTasks.map(task => (
-              <div key={task.id} className="glass" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {task.image_url ? (
-                  <div style={{ position: 'relative' }}>
-                    <img src={fixUrl(task.image_url)} onClick={() => setActiveImage(fixUrl(task.image_url))} className="clickable" style={{ width: '100%', borderRadius: '14px', border: '1px solid var(--glass-border)', objectFit: 'cover' }} />
-                    <button onClick={() => downloadImage(task.image_url)} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', padding: '8px', borderRadius: '50%', color: '#fff', border: 'none' }} className="clickable"><Download size={16} /></button>
-                  </div>
-                ) : (task.status === 'failed' && (
-                  <div style={{ padding: '30px', textAlign: 'center', opacity: 0.5, borderRadius: '14px', background: 'rgba(255,255,255,0.05)' }}>
-                     ❌ Ошибка генерации
+            ) : (
+              <div className="history-grid">
+                {historyTasks.filter(t => t.image_url).map(task => (
+                  <div key={task.id} className="history-item-square clickable" onClick={() => setHistoryLightboxTask(task)}>
+                    <img src={fixUrl(task.image_url)} loading="lazy" />
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <div style={{ fontSize: '11px', opacity: 0.5 }}>
-                     {new Date(task.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                   </div>
-                   <button onClick={() => setHistoryDetailsTask(task)} className="clickable" style={{ padding: '8px 14px', background: 'var(--text-color)', color: 'var(--bg-color)', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: 800 }}>
-                     Детали генерации
-                   </button>
-                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: HISTORY DETAILS */}
-      {historyDetailsTask && (
-        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="glass" style={{ width: '100%', maxWidth: '400px', padding: '24px', borderRadius: '24px', background: 'var(--bg-color)', position: 'relative' }}>
-            <X onClick={() => setHistoryDetailsTask(null)} size={24} style={{ position: 'absolute', top: 20, right: 20 }} className="clickable" />
-            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Детали генерации</h3>
-            <div style={{ fontSize: '14px', marginBottom: '15px' }}>
-               <div style={{ opacity: 0.6, marginBottom: '6px' }}>📝 Промпт:</div>
-               <div style={{ background: 'rgba(255,255,255,0.08)', padding: '14px', borderRadius: '14px', lineHeight: 1.5 }}>
-                 {historyDetailsTask.prompt || 'Без описания'}
-               </div>
-            </div>
-            {historyDetailsTask.prompt_image_url && (
-               <div style={{ fontSize: '14px' }}>
-                  <div style={{ opacity: 0.6, marginBottom: '6px' }}>🖼 Добавленные фото ({1}):</div>
-                  <img src={fixUrl(historyDetailsTask.prompt_image_url)} onClick={() => setActiveImage(fixUrl(historyDetailsTask.prompt_image_url))} className="clickable" style={{ width: '100%', borderRadius: '14px', maxHeight: '200px', objectFit: 'cover' }} />
-               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* MODAL: MODEL SELECTION */}
+      {/* MODAL: HISTORY LIGHTBOX (Selected Image Details View) */}
+      {historyLightboxTask && (
+        <div className="lightbox-overlay" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', padding: '20px' }}>
+          <button onClick={() => setHistoryLightboxTask(null)} style={{ alignSelf: 'flex-end', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px', borderRadius: '50%', marginBottom: '10px' }} className="clickable"><X size={24} /></button>
+          
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+             <img src={fixUrl(historyLightboxTask.image_url)} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '16px', objectShadow: '0 20px 40px rgba(0,0,0,0.5)' }} />
+          </div>
+
+          <div style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+             <button onClick={() => downloadImage(historyLightboxTask.image_url)} className="btn btn-primary" style={{ width: '100%' }}>
+               <Download size={20} /> Скачать в хорошем качестве
+             </button>
+             <button onClick={() => setHistoryDetailsTask(historyLightboxTask)} className="btn btn-secondary" style={{ width: '100%' }}>
+               <HelpCircle size={20} /> Детали генерации
+             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GENERATION DETAILS */}
+      {historyDetailsTask && (
+        <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 2500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '450px', padding: '24px', borderRadius: '28px', background: 'var(--bg-color)', position: 'relative', overflowY: 'auto', maxHeight: '80vh' }}>
+            <X onClick={() => setHistoryDetailsTask(null)} size={24} style={{ position: 'absolute', top: 20, right: 20, opacity: 0.5 }} className="clickable" />
+            
+            <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px' }}>Детали шедевра</h3>
+            
+            <div style={{ marginBottom: '20px' }}>
+               <div style={{ opacity: 0.4, fontSize: '12px', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Промпт</div>
+               <div style={{ background: 'rgba(255,255,255,0.05)', padding: '14px', borderRadius: '14px', fontSize: '14px', lineHeight: 1.5, border: '1px solid rgba(255,255,255,0.05)' }}>
+                 {historyDetailsTask.prompt || 'Без описания'}
+               </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+               <div style={{ opacity: 0.4, fontSize: '12px', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>Исходные референсы</div>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                  {getPromptImages(historyDetailsTask).map((url, i) => (
+                    <img key={i} src={fixUrl(url)} onClick={() => setActiveImage(fixUrl(url))} className="clickable" style={{ width: '100%', aspectRatio: '1/1', borderRadius: '8px', objectFit: 'cover', background: 'rgba(255,255,255,0.05)' }} />
+                  ))}
+                  {getPromptImages(historyDetailsTask).length === 0 && <div style={{ fontSize: '12px', opacity: 0.3 }}>Нет референсов</div>}
+               </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '12px', opacity: 0.5 }}>
+               <div>{historyDetailsTask.model === 'nano-banana-pro' ? 'PRO Модель' : 'Стандарт'}</div>
+               <div>{new Date(historyDetailsTask.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ... (Existing SELECTION & BALANCE Modals) ... */}
       {isModelMenuOpen && (
         <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '30px', borderRadius: '32px', background: 'var(--bg-color)' }}>
@@ -391,7 +416,6 @@ export default function ChatApp() {
         </div>
       )}
 
-      {/* MODAL: BALANCE */}
       {isSettingsMenuOpen && (
         <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '30px', borderRadius: '32px', background: 'var(--bg-color)' }}>
@@ -412,7 +436,6 @@ export default function ChatApp() {
         </div>
       )}
 
-      {/* PWA INSTALL PROMPT */}
       {showPwaPrompt && (
         <div className="glass pwa-banner" style={{ position: 'fixed', bottom: 110, left: 15, right: 15, padding: '20px', borderRadius: '28px', zIndex: 5000, display: 'flex', alignItems: 'center', gap: '15px' }}>
           <Smartphone size={32} />
@@ -433,7 +456,30 @@ export default function ChatApp() {
         .status-dot { width: 6px; height: 6px; background-color: #00e676; border-radius: 50%; animation: blink 1.5s infinite; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         
-        /* Fix for mobile keyboard pushing content */
+        .history-grid { 
+           display: grid; 
+           grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); 
+           gap: 8px; 
+           width: 100%;
+           padding-bottom: 20px;
+        }
+        .history-item-square { 
+           aspect-ratio: 1/1; 
+           border-radius: 12px; 
+           overflow: hidden; 
+           background: var(--glass-bg);
+           border: 1px solid var(--glass-border);
+           transition: transform 0.2s;
+        }
+        .history-item-square:active { transform: scale(0.96); }
+        .history-item-square img { width: 100%; height: 100%; object-fit: cover; }
+
+        @media (min-width: 768px) {
+           .history-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; }
+           .history-item-square { border-radius: 20px; }
+           .history-item-square:hover { transform: scale(1.03); z-index: 10; border-color: rgba(255,255,255,0.3); }
+        }
+
         @media (max-height: 500px) {
           .chat-app header { padding: 8px 15px; }
           .btn-bot { padding: 5px 0; }
