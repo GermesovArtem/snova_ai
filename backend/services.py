@@ -1,7 +1,9 @@
 import logging
+import os
+import json
 from dotenv import load_dotenv
 import datetime
-from sqlalchemy import func, cast, Date, desc
+from sqlalchemy import func, cast, Date, desc, select
 from . import models
 from .kie_api import create_task, get_task_info
 import uuid
