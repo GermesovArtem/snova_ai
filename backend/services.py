@@ -1,9 +1,5 @@
-import os
-import json
-import logging
-from dotenv import load_dotenv
-from sqlalchemy.future import select
-from sqlalchemy import func, cast, Date
+import datetime
+from sqlalchemy import func, cast, Date, desc
 from . import models
 from .kie_api import create_task, get_task_info
 import uuid
@@ -11,6 +7,18 @@ import uuid
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Russian Error Translations for Kie AI
+ERRORS_RU = {
+    "insufficient_funds": "Недостаточно кредитов на стороне API (обратитесь к администратору).",
+    "nsfw content detected": "Обнаружен контент 18+. Генерация отклонена.",
+    "server overload": "Сервер перегружен. Пожалуйста, попробуйте позже.",
+    "Internal Server Error": "Внутренняя ошибка API. Попробуйте еще раз.",
+    "Model not found": "Модель временно недоступна.",
+    "No data in response": "Техническая ошибка: пустой ответ от сервера.",
+    "No taskId returned from API": "Ошибка создания задачи. Попробуйте другой промпт."
+}
+
 
 def normalize_model_id(model_id: str) -> str:
     """Corrects model names for KIE API compatibility.
@@ -165,8 +173,19 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
     return res["taskId"]
 
 async def check_generation_status(task_id: str):
-    """Wrapper for KIE recordInfo"""
-    return await get_task_info(task_id)
+    """Wrapper for KIE recordInfo with Russian error translation"""
+    info = await get_task_info(task_id)
+    if not info.get("success") or info.get("state") in ["failed", "error"]:
+        err = info.get("error", "Unknown error")
+        # Try to find a translation
+        for key, val in ERRORS_RU.items():
+            if key.lower() in err.lower():
+                info["error"] = val
+                break
+        else:
+            info["error"] = f"Ошибка ({err})"
+    return info
+
 
 # --- Admin API ---
 import datetime
@@ -188,11 +207,47 @@ async def get_admin_stats(db) -> dict:
         .filter(cast(models.GenerationTask.created_at, Date) == today)
     )).scalar() or 0
     
+    # Payment stats
+    total_revenue = (await db.execute(
+        select(func.sum(models.Payment.amount_rub))
+        .filter(models.Payment.status == "succeeded")
+    )).scalar() or 0.0
+    
+    revenue_today = (await db.execute(
+        select(func.sum(models.Payment.amount_rub))
+        .filter(models.Payment.status == "succeeded")
+        .filter(cast(models.Payment.created_at, Date) == today)
+    )).scalar() or 0.0
+    
+    # Revenue chart (last 7 days)
+    chart_data = []
+    for i in range(6, -1, -1):
+        day = today - datetime.timedelta(days=i)
+        day_rev = (await db.execute(
+            select(func.sum(models.Payment.amount_rub))
+            .filter(models.Payment.status == "succeeded")
+            .filter(cast(models.Payment.created_at, Date) == day)
+        )).scalar() or 0.0
+        
+        day_users = (await db.execute(
+            select(func.count(models.User.id))
+            .filter(cast(models.User.created_at, Date) == day)
+        )).scalar() or 0
+        
+        chart_data.append({
+            "date": day.strftime("%d.%m"),
+            "revenue": day_rev,
+            "new_users": day_users
+        })
+
     return {
         "total_users": total_users,
         "new_users_today": new_users_today,
         "total_gens": total_gens,
-        "gens_today": gens_today
+        "gens_today": gens_today,
+        "total_revenue": total_revenue,
+        "revenue_today": revenue_today,
+        "chart_data": chart_data
     }
 
 async def search_user(db, query: str) -> models.User:
@@ -223,7 +278,7 @@ async def get_user_history(db, user_id: int):
     )
     return res.scalars().all()
 
-async def create_yookassa_payment(user_id: int, amount: float, description: str):
+async def create_yookassa_payment(db, user_id: int, amount: float, description: str):
     import aiohttp
     import uuid
     
@@ -235,8 +290,9 @@ async def create_yookassa_payment(user_id: int, amount: float, description: str)
         raise Exception("YooKassa credentials are not set in .env")
 
     url = "https://api.yookassa.ru/v3/payments"
+    idempotence_key = str(uuid.uuid4())
     headers = {
-        "Idempotence-Key": str(uuid.uuid4()),
+        "Idempotence-Key": idempotence_key,
         "Content-Type": "application/json"
     }
     auth = aiohttp.BasicAuth(shop_id, secret_key)
@@ -253,7 +309,21 @@ async def create_yookassa_payment(user_id: int, amount: float, description: str)
         async with session.post(url, json=payload, headers=headers, auth=auth) as resp:
             data = await resp.json()
             if resp.status == 200:
-                return data["confirmation"]["confirmation_url"]
+                payment_url = data["confirmation"]["confirmation_url"]
+                provider_id = data["id"]
+                
+                # SAVE TO DB
+                new_payment = models.Payment(
+                    user_id=user_id,
+                    amount_rub=amount,
+                    status="pending",
+                    payment_url=payment_url,
+                    provider_payment_id=provider_id
+                )
+                db.add(new_payment)
+                await db.commit()
+                
+                return payment_url
             else:
                 logger.error(f"YooKassa API Error: {data}")
                 raise Exception(data.get("description", "YooKassa error"))

@@ -1,116 +1,78 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-
-import uuid
-from yookassa import Configuration, Payment
-from pydantic import BaseModel
-
+import logging
+import os
+import aiohttp
 from backend.database import get_db
-from backend.models.user import UserDB
-from backend.models.transaction import TransactionDB
-from backend.settings import settings
+from backend import models, services
 
-router = APIRouter(prefix="/payments", tags=["Payments"])
-
-# Настраиваем SDK ЮKassa
-Configuration.account_id = settings.shop_id
-Configuration.secret_key = settings.secret_key
-
-class CreatePaymentRequest(BaseModel):
-    telegram_id: int
-    amount: float
-    description: str
-
-@router.post("/create")
-async def create_payment(request: CreatePaymentRequest):
-    """Создает платеж и возвращает ссылку на оплату"""
-    idempotence_key = str(uuid.uuid4())
-    
-    payment_data = {
-        "amount": {
-            "value": str(request.amount),
-            "currency": "RUB"
-        },
-        "confirmation": {
-            "type": "redirect",
-            "return_url": "https://t.me/snovananobananabot" # Твой бот
-        },
-        "capture": True,
-        "description": request.description,
-        "metadata": {
-            "telegram_id": request.telegram_id
-        }
-    }
-    
-    try:
-        # SDK синхронная, но сетевой вызов быстрый. 
-        # В идеале завернуть в run_in_executor
-        payment = Payment.create(payment_data, idempotence_key)
-        return {"url": payment.confirmation.confirmation_url, "payment_id": payment.id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+router = APIRouter(prefix="/payments", tags=["payments"])
+logger = logging.getLogger(__name__)
 
 @router.post("/webhook")
 async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """
-    Вебхук от ЮKassa.
-    В реальном проекте здесь должна быть валидация IP адресов ЮKassa.
-    """
+    """Handles Yookassa payment notifications"""
     try:
         data = await request.json()
-    except:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        event = data.get("event")
+        payment_data = data.get("object", {})
         
-    event = data.get("event")
-    
-    # Ожидаем успешного платежа
-    if event == "payment.succeeded":
-        payment_obj = data.get("object", {})
-        status = payment_obj.get("status")
+        payment_id = payment_data.get("id")
+        status = payment_data.get("status")
         
-        # ЮKassa позволяет передавать кастомную мету, берем оттуда ID юзера
-        metadata = payment_obj.get("metadata", {})
-        telegram_id = metadata.get("telegram_id")
+        logger.info(f"YooKassa Webhook: event={event}, payment_id={payment_id}, status={status}")
         
-        if not telegram_id or status != "succeeded":
-            return {"status": "ignored"}
+        if event == "payment.succeeded":
+            # 1. Verify with Yookassa API for security
+            shop_id = os.getenv("YOOKASSA_SHOP_ID")
+            secret_key = os.getenv("YOOKASSA_SECRET_KEY")
             
-        amount_val = payment_obj.get("amount", {}).get("value")
-        if not amount_val:
-             return {"status": "ignored"}
-             
-        # Конвертируем рубли в кредиты (по какой-то логике, например 1 к 1 или 100р = 100кр)
-        credits_added = float(amount_val)
+            async with aiohttp.ClientSession() as session:
+                auth = aiohttp.BasicAuth(shop_id, secret_key)
+                async with session.get(f"https://api.yookassa.ru/v3/payments/{payment_id}", auth=auth) as resp:
+                    if resp.status == 200:
+                        verified_data = await resp.json()
+                        if verified_data.get("status") == "succeeded":
+                            # 2. Update DB Payment
+                            from sqlalchemy import select
+                            res = await db.execute(select(models.Payment).filter_by(provider_payment_id=payment_id))
+                            db_payment = res.scalars().first()
+                            
+                            if db_payment and db_payment.status != "succeeded":
+                                db_payment.status = "succeeded"
+                                
+                                # 3. Credit User Balance
+                                user_id = db_payment.user_id
+                                amount = db_payment.amount_rub
+                                
+                                # Determine how many credits to give based on package prices
+                                # Default: 1 руб = 0.2 кредита (or use the CREDIT_PACKS map)
+                                packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
+                                import json
+                                packs = json.loads(packs_str)
+                                
+                                credits_to_add = 0
+                                # Find exact match first
+                                for p_str, cr in packs.items():
+                                    if abs(float(p_str) - amount) < 1.0:
+                                        credits_to_add = cr
+                                        break
+                                
+                                if credits_to_add == 0:
+                                    # Fallback simple ratio
+                                    credits_to_add = int(amount * 0.2)
+                                
+                                await services.update_user_balance(db, user_id, credits_to_add)
+                                logger.info(f"Verified payment {payment_id} succeeded. Added {credits_to_add} credits to user {user_id}")
+                                await db.commit()
+                            else:
+                                logger.warning(f"Payment {payment_id} already processed or not found in DB")
+                        else:
+                            logger.error(f"YooKassa verification failed: Status is {verified_data.get('status')}")
+                    else:
+                        logger.error(f"YooKassa verification API error: {resp.status}")
         
-        # 1. Находим юзера
-        result = await db.execute(select(UserDB).filter_by(telegram_id=int(telegram_id)))
-        user = result.scalars().first()
-        
-        if not user:
-            return {"status": "user_not_found"}
-            
-        # 2. Начисляем баланс
-        user.balance += credits_added
-        
-        # 3. Записываем транзакцию
-        tx = TransactionDB(user_id=user.id, amount=credits_added, type="pay", status="completed")
-        db.add(tx)
-        
-        # Если есть реферер - начислить ему бонус 10% (упрощенная логика из ТЗ)
-        if user.referrer_id:
-            try:
-                ref_id = int(user.referrer_id)
-                ref_res = await db.execute(select(UserDB).filter_by(telegram_id=ref_id))
-                referrer = ref_res.scalars().first()
-                if referrer:
-                    bonus = credits_added * 0.10 # 10%
-                    referrer.balance += bonus
-                    db.add(TransactionDB(user_id=referrer.id, amount=bonus, type="ref", status="completed"))
-            except ValueError:
-                pass # Невалидный ID
-        
-        await db.commit()
         return {"status": "ok"}
-        
-    return {"status": "ignored"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}

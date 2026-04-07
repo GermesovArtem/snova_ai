@@ -191,37 +191,40 @@ const Admin: React.FC = () => {
                 <div className="stats-grid">
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
-                    <div className="stat-value">{stats?.summary?.total_users || 0}</div>
+                    <div className="stat-value">{stats?.data?.total_users || 0}</div>
                     <div className="stat-label">Total Users</div>
+                    <div className="stat-sublabel">+{stats?.data?.new_users_today || 0} today</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
-                    <div className="stat-value">{stats?.summary?.total_generations || 0}</div>
+                    <div className="stat-value">{stats?.data?.total_gens || 0}</div>
                     <div className="stat-label">Generations Done</div>
+                    <div className="stat-sublabel">+{stats?.data?.gens_today || 0} today</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
-                    <div className="stat-value">System OK</div>
-                    <div className="stat-label">Server Status</div>
+                    <div className="stat-value">{Math.round(stats?.data?.total_revenue || 0)} ₽</div>
+                    <div className="stat-label">Total Revenue</div>
+                    <div className="stat-sublabel">+{Math.round(stats?.data?.revenue_today || 0)} ₽ today</div>
                   </div>
                 </div>
 
                 <div className="chart-container">
                   <div className="chart-header">
                     <TrendingUp size={18} style={{color: '#facc15'}} />
-                    7-Day Activity
+                    7-Day Revenue & Growth
                   </div>
                   <div style={{height: '300px', width: '100%'}}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={stats?.chart || []}>
+                      <AreaChart data={stats?.data?.chart_data || []}>
                         <defs>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
+                          </linearGradient>
                           <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#facc15" stopOpacity={0.3}/>
                             <stop offset="95%" stopColor="#facc15" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="colorGens" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
@@ -231,8 +234,8 @@ const Admin: React.FC = () => {
                           contentStyle={{ backgroundColor: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                           itemStyle={{ fontSize: '11px', color: '#fff' }}
                         />
-                        <Area type="monotone" dataKey="users" name="New Users" stroke="#facc15" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
-                        <Area type="monotone" dataKey="generations" name="Tasks" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorGens)" />
+                        <Area type="monotone" dataKey="revenue" name="Revenue (₽)" stroke="#4ade80" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                        <Area type="monotone" dataKey="new_users" name="New Users" stroke="#facc15" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>

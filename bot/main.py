@@ -5,7 +5,7 @@ import io
 import httpx
 from PIL import Image
 print("\n" + "!"*50)
-print("!!! BOT MAIN.PY: VERSION 9.6 (BUTTONS FIXED) !!!")
+print("!!! BOT MAIN.PY: VERSION 9.7 (API ERRORS & PAYMENTS) !!!")
 print("!"*50 + "\n")
 
 
@@ -338,27 +338,38 @@ async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_i
 async def process_buy_packet(callback_query: CallbackQuery):
     _, price, amount = callback_query.data.split(":")
     
-    bot_info = await bot.me()
-    payment = Payment.create({
-        "amount": {"value": str(price), "currency": "RUB"},
-        "confirmation": {"type": "redirect", "return_url": f"https://t.me/{bot_info.username}"},
-        "capture": True,
-        "description": f"Покупка {amount} кредитов S•NOVA AI"
-    }, str(uuid.uuid4()))
+    async with AsyncSessionLocal() as db:
+        try:
+            description = f"Пополнение на {amount} кр. для S•NOVA AI"
+            payment_url = await services.create_yookassa_payment(db, callback_query.from_user.id, float(price), description)
+            
+            # Since create_yookassa_payment already saved to DB, we just need to get the provider ID if we want auto_check
+            # But with Webhook, auto_check is less critical. We'll still keep a manual check button.
+            from sqlalchemy import select
+            res = await db.execute(select(models.Payment).filter_by(user_id=callback_query.from_user.id).order_by(models.Payment.id.desc()))
+            db_payment = res.scalars().first()
+            provider_id = db_payment.provider_payment_id if db_payment else None
+            
+            kb = InlineKeyboardBuilder()
+            kb.button(text="💳 Оплатить", url=payment_url)
+            if provider_id:
+                kb.button(text="🔄 Проверить оплату", callback_data=f"check_pay:{provider_id}:{amount}:{price}")
+            kb.adjust(1)
+            
+            await callback_query.message.edit_text(
+                f"⏳ Создан счет на **{price} руб.** для оплаты **{amount} кр.**\n\n"
+                f"Оплата подтвердится автоматически через 1-2 минуты после зачисления.",
+                reply_markup=kb.as_markup(), parse_mode="Markdown"
+            )
+            
+            if provider_id:
+                asyncio.create_task(auto_check_payment(callback_query.from_user.id, provider_id, float(amount), callback_query.message.message_id, int(price)))
+                
+        except Exception as e:
+            logger.error(f"Payment creation error: {e}")
+            await callback_query.answer("Ошибка при создании счета. Попробуйте позже.", show_alert=True)
     
-    kb = InlineKeyboardBuilder()
-    kb.button(text="💳 Оплатить", url=payment.confirmation.confirmation_url)
-    kb.button(text="🔄 Проверить оплату", callback_data=f"check_pay:{payment.id}:{amount}:{price}")
-    kb.adjust(1)
-    
-    msg = await callback_query.message.edit_text(
-        f"⏳ Создан счет на **{price} руб.** для оплаты **{amount} кр.**\n\n"
-        f"Оплата подтвердится автоматически, либо нажмите кнопку проверки ниже.",
-        reply_markup=kb.as_markup(), parse_mode="Markdown"
-    )
     await callback_query.answer()
-    
-    asyncio.create_task(auto_check_payment(callback_query.from_user.id, payment.id, float(amount), msg.message_id, int(price)))
 
 @user_router.callback_query(F.data.startswith("check_pay:"))
 async def process_check_payment(callback_query: CallbackQuery):
@@ -870,7 +881,8 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 return
                 
             elif kie_status in ["failed", "error", "cancelled"]:
-                err_text = info.get("error", f"KIE reported state: {kie_status}")
+                err_text = info.get("error", "Неизвестная ошибка на стороне нейросети.")
+                # services.check_generation_status already translated it to RU if possible
                 raise Exception(err_text)
                 
         raise Exception("Превышено время ожидания генерации.")

@@ -46,44 +46,15 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     encoded_jwt = jwt.encode({"sub": form_data.username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": encoded_jwt, "token_type": "bearer"}
 
+from backend import services
+
 @router.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
-    """Returns data for charts (last 7 days registration and generation activity)"""
-    today = datetime.now(timezone.utc).date()
-    stats_data = []
-    
-    for i in range(6, -1, -1):
-        day = today - timedelta(days=i)
-        
-        # User registrations
-        user_count = (await db.execute(
-            select(func.count(models.User.id))
-            .filter(cast(models.User.created_at, Date) == day)
-        )).scalar() or 0
-        
-        # Generations
-        gen_count = (await db.execute(
-            select(func.count(models.GenerationTask.id))
-            .filter(cast(models.GenerationTask.created_at, Date) == day)
-        )).scalar() or 0
-        
-        stats_data.append({
-            "date": day.strftime("%d.%m"),
-            "users": user_count,
-            "generations": gen_count
-        })
-    
-    total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
-    total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
-    
+    """Returns data for charts (last 7 days registration, generation, and revenue activity)"""
+    stats = await services.get_admin_stats(db)
     return {
         "success": True,
-        "summary": {
-            "total_users": total_users,
-            "total_generations": total_gens,
-            "new_today": stats_data[-1]["users"]
-        },
-        "chart": stats_data
+        "data": stats
     }
 
 @router.get("/users")

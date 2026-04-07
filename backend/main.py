@@ -10,7 +10,7 @@ import json
 
 from backend.database import get_db, Base, engine
 from backend import models, schemas, auth, services
-from backend.routers import admin
+from backend.routers import admin, payments
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +37,7 @@ async def startup():
         await services.fix_all_model_ids(db)
 
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")
 
 # --- AUTH ---
 @app.post("/api/v1/auth/telegram")
@@ -89,7 +90,7 @@ async def create_payment(pack_id: str, user: models.User = Depends(get_current_u
         
         amount = float(pack_id)
         description = f"S•NOVA AI: Пополнение на {packs[pack_id]} кр."
-        url = await services.create_yookassa_payment(user.id, amount, description)
+        url = await services.create_yookassa_payment(db, user.id, amount, description)
         return {"success": True, "data": {"payment_url": url}}
     except Exception as e:
         logger.error(f"Payment error: {e}")

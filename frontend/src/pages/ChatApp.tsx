@@ -150,18 +150,27 @@ export default function ChatApp() {
   };
 
   const pollStatus = async (uuid: string, msgId: string) => {
+    let attempts = 0;
     const interval = setInterval(async () => {
+      attempts++;
       try {
         const res = await api.checkStatus(uuid);
         if (res.success && (res.data.state === 'success' || res.data.state === 'completed')) {
           clearInterval(interval);
           updateBotMessage(msgId, `🔥 **Результат готов!**`, res.data.image_url);
           fetchUserData();
-        } else if (res.data.state === 'failed') {
+        } else if (res.data.state === 'failed' || res.data.state === 'error') {
           clearInterval(interval);
-          updateBotMessage(msgId, `❌ Произошла ошибка. Баланс сохранен.`);
+          const errMsg = res.data.error || "Произошла ошибка при генерации.";
+          updateBotMessage(msgId, `❌ **Ошибка:** ${errMsg}\n\nБаланс был возвращен на ваш счет.`);
+          fetchUserData();
+        } else if (attempts > 120) { // 6 minutes timeout
+          clearInterval(interval);
+          updateBotMessage(msgId, `⚠️ **Тайм-аут:** Генерация занимает слишком много времени. Пожалуйста, проверьте историю позже.`);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error("Polling error:", e);
+      }
     }, 3000);
   };
 
@@ -423,6 +432,13 @@ export default function ChatApp() {
         [data-theme='light'] .chat-app b { color: #000; }
         .status-dot { width: 6px; height: 6px; background-color: #00e676; border-radius: 50%; animation: blink 1.5s infinite; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        /* Fix for mobile keyboard pushing content */
+        @media (max-height: 500px) {
+          .chat-app header { padding: 8px 15px; }
+          .btn-bot { padding: 5px 0; }
+          .status-dot { display: none; }
+        }
       `}</style>
     </div>
   );
