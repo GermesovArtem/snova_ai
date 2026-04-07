@@ -32,16 +32,6 @@ body {
 }
 
 .admin-container {
-  min-height: 100vh;
-  min-height: 100dvh;
-  background: #000;
-  display: flex;
-  flex-direction: row;
-  color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  overflow-x: hidden;
-}
-
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(25px) saturate(180%);

@@ -52,8 +52,16 @@ const Admin: React.FC = () => {
         api.getAdminStats(),
         api.adminListUsers()
       ]);
-      setStats(statsRes.data || {});
-      setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
+      
+      console.log("Admin Stats Raw:", statsRes);
+      console.log("Admin Users Raw:", usersRes);
+      
+      // Standardize data from { success, data: [...] } or directly [...]
+      const statsObj = statsRes.data || statsRes || {};
+      const userList = Array.isArray(usersRes.data) ? usersRes.data : (Array.isArray(usersRes) ? usersRes : []);
+      
+      setStats(statsObj);
+      setUsers(userList);
       setLoadError(false);
     } catch (err) {
       console.error(err);
@@ -226,21 +234,21 @@ const Admin: React.FC = () => {
                 <div className="stats-grid">
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
-                    <div className="stat-value">{stats?.data?.total_users || 0}</div>
+                    <div className="stat-value">{stats?.total_users || 0}</div>
                     <div className="stat-label">Всего пользователей</div>
-                    <div className="stat-sublabel">+{stats?.data?.new_users_today || 0} сегодня</div>
+                    <div className="stat-sublabel">+{stats?.new_users_today || 0} сегодня</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
-                    <div className="stat-value">{stats?.data?.total_gens || 0}</div>
+                    <div className="stat-value">{stats?.total_gens || 0}</div>
                     <div className="stat-label">Генераций выполнено</div>
-                    <div className="stat-sublabel">+{stats?.data?.gens_today || 0} сегодня</div>
+                    <div className="stat-sublabel">+{stats?.gens_today || 0} сегодня</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
-                    <div className="stat-value">{Math.round(stats?.data?.total_revenue || 0)} ₽</div>
+                    <div className="stat-value">{Math.round(stats?.total_revenue || 0)} ₽</div>
                     <div className="stat-label">Общая выручка</div>
-                    <div className="stat-sublabel">+{Math.round(stats?.data?.revenue_today || 0)} ₽ сегодня</div>
+                    <div className="stat-sublabel">+{Math.round(stats?.revenue_today || 0)} ₽ сегодня</div>
                   </div>
                 </div>
 
@@ -251,7 +259,7 @@ const Admin: React.FC = () => {
                   </div>
                   <div className="chart-wrapper">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={stats?.data?.chart_data || []}>
+                      <AreaChart data={stats?.chart_data || []}>
                         <defs>
                           <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>

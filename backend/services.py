@@ -228,20 +228,20 @@ async def check_generation_status(task_id: str):
 import datetime
 
 async def get_admin_stats(db) -> dict:
-    today = datetime.datetime.now(datetime.timezone.utc).date()
+    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     
     # User stats
     total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
     new_users_today = (await db.execute(
         select(func.count(models.User.id))
-        .filter(cast(models.User.created_at, Date) == today)
+        .filter(models.User.created_at >= today_start)
     )).scalar() or 0
     
     # Gen stats
     total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
     gens_today = (await db.execute(
         select(func.count(models.GenerationTask.id))
-        .filter(cast(models.GenerationTask.created_at, Date) == today)
+        .filter(models.GenerationTask.created_at >= today_start)
     )).scalar() or 0
     
     # Payment stats
@@ -253,7 +253,7 @@ async def get_admin_stats(db) -> dict:
     revenue_today = (await db.execute(
         select(func.sum(models.Payment.amount_rub))
         .filter(models.Payment.status == "succeeded")
-        .filter(cast(models.Payment.created_at, Date) == today)
+        .filter(models.Payment.created_at >= today_start)
     )).scalar() or 0.0
     
     # Revenue chart (last 7 days)

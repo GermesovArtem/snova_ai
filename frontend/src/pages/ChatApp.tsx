@@ -328,7 +328,7 @@ export default function ChatApp() {
               <div className="history-grid">
                 {[1,2,3,4,5,6].map(i => <div key={i} className="skeleton history-item-square" />)}
               </div>
-            ) : historyTasks.length === 0 ? (
+            ) : historyTasks?.length === 0 ? (
               <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '150px' }}>
                  <Sparkles size={48} style={{ marginBottom: '15px', opacity: 0.2 }} />
                  <div>Ваша история пуста</div>

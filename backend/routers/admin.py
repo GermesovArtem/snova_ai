@@ -60,7 +60,8 @@ async def get_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(ver
 @router.get("/users")
 async def list_users(db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
     res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(100))
-    return res.scalars().all()
+    users = res.scalars().all()
+    return {"success": True, "data": users}
 
 class BalanceUpdate(BaseModel):
     amount: float
