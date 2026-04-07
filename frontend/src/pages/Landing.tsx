@@ -1,9 +1,16 @@
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, ArrowRight, Zap, Target, Palette } from 'lucide-react';
 
 export default function Landing() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (localStorage.getItem('token')) {
+      navigate('/app', { replace: true });
+    }
+  }, [navigate]);
 
   return (
     <div className="landing-container" style={{

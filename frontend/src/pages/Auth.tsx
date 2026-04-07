@@ -47,7 +47,15 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate();
   
   // Мгновенное определение режима TWA
-  const isTWA = useMemo(() => !!window.Telegram?.WebApp?.initData, []);
+  const isTWA = useMemo(() => {
+    try {
+      return !!(window.Telegram?.WebApp?.initData || 
+                window.location.hash.includes('tgWebAppData') || 
+                new URLSearchParams(window.location.search).get('tgWebAppData'));
+    } catch (e) {
+      return false;
+    }
+  }, []);
   
   const [isWebAppAuth, setIsWebAppAuth] = useState(isTWA);
   const [widgetFailed, setWidgetFailed] = useState(false);
@@ -61,7 +69,7 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
       if (res.success && res.access_token) {
         localStorage.setItem('token', res.access_token);
         onLogin();
-        navigate('/app');
+        navigate('/app', { replace: true });
       } else {
         setIsWebAppAuth(false);
         if (type === 'twa') setWidgetFailed(true);
@@ -74,12 +82,14 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
 
   useEffect(() => {
     if (isTWA) {
-      const twa = window.Telegram.WebApp;
-      const urlParams = new URLSearchParams(twa.initData);
-      const userStr = urlParams.get('user');
-      let userId = 0;
-      if (userStr) try { userId = JSON.parse(userStr).id; } catch(e) {}
-      handleAuth({ initData: twa.initData, id: userId }, 'twa');
+      const twa = window.Telegram?.WebApp;
+      if (twa?.initData) {
+        const urlParams = new URLSearchParams(twa.initData);
+        const userStr = urlParams.get('user');
+        let userId = 0;
+        if (userStr) try { userId = JSON.parse(userStr).id; } catch(e) {}
+        handleAuth({ initData: twa.initData, id: userId }, 'twa');
+      }
     } else {
       // Таймаут на загрузку виджета
       const timer = setTimeout(() => {
@@ -87,7 +97,7 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
           if (!container || container.children.length === 0) {
               setWidgetFailed(true);
           }
-      }, 4000);
+      }, 6000); // Увеличиваем до 6 секунд
       return () => clearTimeout(timer);
     }
   }, [isTWA, handleAuth]);

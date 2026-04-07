@@ -21,7 +21,7 @@ from aiogram.fsm.storage.base import StorageKey
 from dotenv import load_dotenv
 
 from backend.database import get_db, AsyncSessionLocal, engine, Base
-from backend import services
+from backend import services, models
 from bot import messages
 from yookassa import Configuration, Payment
 import uuid
@@ -853,6 +853,16 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 # 2. Finalize credits
                 async with AsyncSessionLocal() as db:
                     await services.commit_frozen_credits(db, user_id, cost)
+                    
+                    # Persistence: Save result URL to DB
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(models.GenerationTask)
+                        .where(models.GenerationTask.task_uuid == kie_task_id)
+                        .values(image_url=info.get("image_url"), status="completed")
+                    )
+                    await db.commit()
+                    
                     user = await services.get_or_create_user(db, user_id)
                     new_balance = int(user.balance)
 

@@ -145,6 +145,17 @@ async def generate_edit(
 @app.get("/api/v1/generations/{task_uuid}")
 async def get_generation(task_uuid: str, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     info = await services.check_generation_status(task_uuid)
+    
+    # Persistence: Save result URL to DB when finished
+    if info.get("success") and info.get("state") in ["success", "completed"] and info.get("image_url"):
+        res = await db.execute(select(models.GenerationTask).filter_by(task_uuid=task_uuid))
+        task = res.scalars().first()
+        if task and not task.image_url:
+            task.image_url = info["image_url"]
+            task.status = "completed"
+            await db.commit()
+            logger.info(f"Task {task_uuid} persisted to DB with URL {info['image_url']}")
+
     return {
         "success": True,
         "data": info

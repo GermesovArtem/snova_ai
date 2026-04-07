@@ -22,7 +22,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={isAuthenticated ? <Navigate to="/app" /> : <Landing />} />
         <Route path="/login" element={<Auth onLogin={() => setIsAuthenticated(true)} />} />
         <Route 
           path="/app" 
