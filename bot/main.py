@@ -177,7 +177,7 @@ async def setup_bot_commands(bot: Bot):
 async def logic_model(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, message.from_user.id)
+        user, _ = await services.get_or_create_user(db, message.from_user.id)
         text = generate_model_menu_text(user.balance, user.model_preference)
         await message.answer(text, reply_markup=build_main_kb(user.model_preference), parse_mode="Markdown")
 
@@ -193,7 +193,7 @@ async def logic_buy(message: types.Message, state: FSMContext):
 
 async def logic_gen(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, message.from_user.id)
+        user, _ = await services.get_or_create_user(db, message.from_user.id)
         limit = get_model_limit(user.model_preference)
     await state.clear()
     await message.answer(
@@ -294,7 +294,7 @@ async def process_gen_similar(callback_query: CallbackQuery, state: FSMContext):
 async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback_query.from_user.id)
         text = generate_model_menu_text(user.balance, user.model_preference)
         await callback_query.message.edit_text(
             text,
@@ -305,7 +305,7 @@ async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
 @user_router.callback_query(F.data == "profile")
 async def process_profile(callback_query: CallbackQuery):
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback_query.from_user.id)
         text = f"👤 <b>Профиль</b>\n\n💳 Баланс: {user.balance} ⚡\n🤖 Модель: {user.model_preference}\n❄️ Заморожено: {user.frozen_balance} ⚡"
         
         kb = InlineKeyboardBuilder()
@@ -409,7 +409,7 @@ async def process_check_payment(callback_query: CallbackQuery):
 async def process_set_model(callback_query: CallbackQuery):
     model = callback_query.data.split(":")[1]
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback_query.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback_query.from_user.id)
         user.model_preference = model
         await db.commit()
         text = generate_model_menu_text(user.balance, user.model_preference)
@@ -423,7 +423,7 @@ async def process_set_model(callback_query: CallbackQuery):
 async def process_settings_menu(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback.from_user.id)
     
     settings = data.get("gen_settings", {})
     # Set maximum quality defaults for all models: 1:1, 4K, PNG
@@ -459,7 +459,7 @@ async def process_change_setting(callback: CallbackQuery, state: FSMContext):
     await state.update_data(gen_settings=settings)
     
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback.from_user.id)
     
     # Update menu to show new selection
     try:
@@ -481,7 +481,7 @@ async def process_confirm_settings(callback: CallbackQuery, state: FSMContext):
 async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, state: FSMContext, is_refinement: bool = False, message: types.Message = None):
     data = await state.get_data()
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, user_id)
+        user, _ = await services.get_or_create_user(db, user_id)
         model = services.normalize_model_id(user.model_preference)
     
     logger.info(f"show_confirmation: user={user_id}, model={model}, prompt={prompt}, imgs={len(image_urls)}, is_refine={is_refinement}")
@@ -492,7 +492,7 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     await state.set_state(GenState.confirming)
     
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, user_id)
+        user, _ = await services.get_or_create_user(db, user_id)
     
     actual_model = user.model_preference
     # Google Nano Banana needs a special 'edit' model ID if photos are present
@@ -582,7 +582,7 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
 
     settings = data.get("gen_settings", {})
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, callback.from_user.id)
+        user, _ = await services.get_or_create_user(db, callback.from_user.id)
     
     # Resolve resolution from variant
     ratio = settings.get("aspect_ratio", "1:1")
@@ -624,7 +624,7 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     messages = data["messages"]
     
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, user_id)
+        user, _ = await services.get_or_create_user(db, user_id)
     limit = get_model_limit(user.model_preference)
     
     if len(messages) > limit:
@@ -749,7 +749,7 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
                                aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, user_id)
+        user, _ = await services.get_or_create_user(db, user_id)
         
         # Determine actual resolution from model variant if not explicitly passed (e.g. from Repeat)
         if "-4k" in user.model_preference: resolution = "4K"
@@ -880,7 +880,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     )
                     await db.commit()
                     
-                    user = await services.get_or_create_user(db, user_id)
+                    user, _ = await services.get_or_create_user(db, user_id)
                     new_balance = int(user.balance)
 
                 models_map = get_available_models()

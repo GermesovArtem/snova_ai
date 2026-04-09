@@ -62,7 +62,7 @@ async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(g
         logger.warning(f"Telegram auth failed for user {data.id}")
         # return {"success": False, "error": "Invalid auth token"}
     
-    user = await services.get_or_create_user(db, data.id, data.first_name, data.username)
+    user, _ = await services.get_or_create_user(db, data.id, data.first_name, data.username)
     token = auth.create_access_token({"sub": str(user.id)})
     return {"success": True, "access_token": token, "token_type": "bearer"}
 
