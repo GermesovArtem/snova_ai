@@ -27,6 +27,11 @@ export const api = {
         return handleResponse(res);
     },
 
+    async getConfigModels() {
+        const res = await fetch(`${API_BASE}/config/models`, { headers: getHeaders() });
+        return handleResponse(res);
+    },
+
     async updateModel(model: string) {
         const res = await fetch(`${API_BASE}/user/model`, {
             method: 'POST',

@@ -66,6 +66,24 @@ async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(g
     token = auth.create_access_token({"sub": str(user.id)})
     return {"success": True, "access_token": token, "token_type": "bearer"}
 
+# --- CONFIG ---
+@app.get("/api/v1/config/models")
+async def get_config_models():
+    """Returns AVAILABLE_MODELS and CREDITS_PER_MODEL from .env"""
+    avail_str = os.getenv("AVAILABLE_MODELS", '{"Nano Banana 2 (1K)": "nano-banana-2-1k"}')
+    prices_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1.0}')
+    try:
+        return {
+            "success": True,
+            "data": {
+                "available_models": json.loads(avail_str),
+                "credits_per_model": json.loads(prices_str)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error parsing config: {e}")
+        return {"success": False, "error": str(e)}
+
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.lower().startswith("bearer "):

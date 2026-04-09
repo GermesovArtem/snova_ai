@@ -186,7 +186,7 @@ async def logic_buy(message: types.Message, state: FSMContext):
     packs = get_credit_packs()
     kb = InlineKeyboardBuilder()
     for price, amount in packs.items():
-        kb.button(text=f"🍌 {amount} ⚡ — {price} руб.", callback_data=f"buy:{price}:{amount}")
+        kb.button(text=f"{amount} ⚡ — {price} руб.", callback_data=f"buy:{price}:{amount}")
     kb.button(text="⬅️ Назад", callback_data="main_menu")
     kb.adjust(1)
     await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
@@ -313,7 +313,7 @@ async def process_buy_credits_cb(callback_query: CallbackQuery):
     packs = get_credit_packs()
     kb = InlineKeyboardBuilder()
     for price, amount in packs.items():
-        kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
+        kb.button(text=f\"⚡ {amount} кр. — {price} руб.\", callback_data=f\"buy:{price}:{amount}\")
     kb.button(text="⬅️ Назад", callback_data="profile")
     kb.adjust(1)
     await callback_query.message.edit_text(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())

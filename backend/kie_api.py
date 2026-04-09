@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-KIE_BASE_URL = os.getenv("KIE_BASE_URL", "https://api.kie.ai").rstrip('/')
+KIE_BASE_URL = os.getenv("KIE_BASE_URL", "https://api.kie.ai").rstrip('/').replace("/api/v1", "").replace("/v1", "")
 
 def get_headers():
     # Remove any extra quotes or spaces from .env value

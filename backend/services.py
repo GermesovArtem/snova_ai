@@ -210,23 +210,23 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
         raise ValueError(translate_error(str(e)))
     
     # Call KIE: Map internal Tier ID back to real KIE Model and Resolution
-    kie_model = "google/nano-banana-2"
+    kie_model = "nano-banana-2"
     final_res = resolution # use passed or default
     
     if model_id == "nano-banana-2-1k":
-        kie_model = "google/nano-banana-2"
+        kie_model = "nano-banana-2"
         final_res = "1K"
     elif model_id == "nano-banana-2-4k":
-        kie_model = "google/nano-banana-2"
+        kie_model = "nano-banana-2"
         final_res = "4K"
     elif model_id == "nano-banana-pro-2k":
-        kie_model = "google/nano-banana-pro"
+        kie_model = "nano-banana-pro"
         final_res = "2K"
     elif model_id == "nano-banana-pro-4k":
-        kie_model = "google/nano-banana-pro"
+        kie_model = "nano-banana-pro"
         final_res = "4K"
     elif "pro" in model_id:
-        kie_model = "google/nano-banana-pro"
+        kie_model = "nano-banana-pro"
         
     res = await create_task(kie_model, prompt, image_urls, aspect_ratio, final_res, output_format)
     if not res["success"]:

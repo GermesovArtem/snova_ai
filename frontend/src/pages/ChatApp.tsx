@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, Image as ImageIcon, Download, Moon, Sun,
-  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Wallet, CheckCircle2
+  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -37,6 +37,7 @@ export default function ChatApp() {
   const [historyLightboxTask, setHistoryLightboxTask] = useState<any>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
+  const [modelConfig, setModelConfig] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -45,6 +46,7 @@ export default function ChatApp() {
     initApp();
     document.documentElement.setAttribute('data-theme', theme);
     
+    fetchConfig();
     const pwaClosed = localStorage.getItem('pwa_closed');
     if (!pwaClosed) {
       setTimeout(() => setShowPwaPrompt(true), 3000);
@@ -90,11 +92,22 @@ export default function ChatApp() {
   const getCreditsLabel = (num: number) => "⚡";
 
   const getModelName = (id: string) => {
+    if (modelConfig?.available_models) {
+      const entry = Object.entries(modelConfig.available_models).find(([name, mid]) => mid === id);
+      if (entry) return entry[0];
+    }
     if (id === 'nano-banana-2-1k') return 'Nano Banana 2 (1K)';
     if (id === 'nano-banana-2-4k') return 'Nano Banana 2 (4K)';
     if (id === 'nano-banana-pro-2k') return 'Nano Banana PRO (2K)';
     if (id === 'nano-banana-pro-4k') return 'Nano Banana PRO (4K)';
     return id.includes('pro') ? 'Nano Banana PRO' : 'Nano Banana 2';
+  };
+
+  const fetchConfig = async () => {
+    try {
+      const res = await api.getConfigModels();
+      if (res.success) setModelConfig(res.data);
+    } catch (e) { console.error("Config fetch error:", e); }
   };
 
   const fixUrl = (url: string) => {
@@ -220,10 +233,27 @@ export default function ChatApp() {
           </div>
         </div>
         
-        <div className="glass" style={{ padding: '6px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.08)', border: 'none', whiteSpace: 'nowrap' }}>
-          <Wallet size={14} />
+        <button 
+          onClick={() => setIsSettingsMenuOpen(true)}
+          className="glass clickable" 
+          style={{ 
+            padding: '8px 14px', 
+            borderRadius: '16px', 
+            fontSize: '15px', 
+            fontWeight: 800, 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            background: 'var(--text-color)', 
+            color: 'var(--bg-color)',
+            border: 'none', 
+            whiteSpace: 'nowrap',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+          }}
+        >
+          <Zap size={16} fill="currentColor" />
           {user ? `${user.balance} ⚡` : '...'}
-        </div>
+        </button>
       </header>
 
       {/* CHAT AREA */}
@@ -253,8 +283,9 @@ export default function ChatApp() {
                      📝 {msg.meta.prompt || 'Без описания'}
                   </div>
                   <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{
-                    msg.meta.model === 'nano-banana-pro-4k' ? 3 :
-                    (msg.meta.model === 'nano-banana-2-4k' || msg.meta.model === 'nano-banana-pro-2k') ? 2 : 1
+                    modelConfig?.credits_per_model?.[msg.meta.model] || 
+                    (msg.meta.model === 'nano-banana-pro-4k' ? 3 :
+                    (msg.meta.model === 'nano-banana-2-4k' || msg.meta.model === 'nano-banana-pro-2k') ? 2 : 1)
                   } ⚡</b></div>
                 </>
               ) : msg.text && (
@@ -409,22 +440,25 @@ export default function ChatApp() {
           <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '30px', borderRadius: '32px', background: 'var(--bg-color)' }}>
             <h3 style={{ marginBottom: '24px', textAlign: 'center' }}>🤖 Выберите нейросеть</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <button onClick={() => updateModel('nano-banana-2-1k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-1k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-1k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (1K)</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>1 ⚡ | Скетчи</div>
-              </button>
-              <button onClick={() => updateModel('nano-banana-2-4k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-4k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-4k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (4K)</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>2 ⚡ | Дизайн</div>
-              </button>
-              <button onClick={() => updateModel('nano-banana-pro-2k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro-2k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro-2k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana PRO (2K)</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>2 ⚡ | Фото лица</div>
-              </button>
-              <button onClick={() => updateModel('nano-banana-pro-4k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro-4k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro-4k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana PRO (4K)</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>3 ⚡ | Максимум</div>
-              </button>
+              {modelConfig?.available_models ? (
+                Object.entries(modelConfig.available_models).map(([name, id]: [string, any]) => (
+                  <button key={id} onClick={() => updateModel(id)} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === id ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === id ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 800 }}>{name}</div>
+                    <div style={{ fontSize: '11px', opacity: 0.6 }}>{modelConfig.credits_per_model?.[id] || '?'} ⚡</div>
+                  </button>
+                ))
+              ) : (
+                <>
+                  <button onClick={() => updateModel('nano-banana-2-1k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-1k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-1k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (1K)</div>
+                    <div style={{ fontSize: '12px', opacity: 0.6 }}>1 ⚡</div>
+                  </button>
+                  <button onClick={() => updateModel('nano-banana-2-4k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-4k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-4k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (4K)</div>
+                    <div style={{ fontSize: '12px', opacity: 0.6 }}>2 ⚡</div>
+                  </button>
+                </>
+              )}
             </div>
             <button onClick={() => setIsModelMenuOpen(false)} style={{ width: '100%', marginTop: '20px', padding: '10px', border: 'none', background: 'none', color: 'inherit', opacity: 0.5 }} className="clickable">Отмена</button>
           </div>
@@ -435,7 +469,7 @@ export default function ChatApp() {
         <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '30px', borderRadius: '32px', background: 'var(--bg-color)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-               <Wallet size={40} style={{ marginBottom: '10px', opacity: 0.8 }} />
+               <Zap size={40} fill="#facc15" style={{ marginBottom: '10px', color: '#facc15' }} />
                <h3 style={{ margin: 0 }}>Пополнить баланс</h3>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
