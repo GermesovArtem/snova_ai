@@ -215,7 +215,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
         if created:
             text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit)
         else:
-            text = messages.MSG_START_REGULAR.format(balance=int(user.balance), limit=limit)
+            text = messages.MSG_START_REGULAR.format(
+                name=message.from_user.first_name, 
+                balance=int(user.balance)
+            )
             
         await message.answer(text, reply_markup=build_reply_kb(), parse_mode="Markdown")
 
