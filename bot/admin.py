@@ -131,7 +131,7 @@ async def process_balance_action(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_balance_amount)
     
     verb = "начислить" if is_add else "списать"
-    await callback.message.edit_text(f"Введите количество кредитов, которое нужно {verb} пользователю `{user_id}`:", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
+    await callback.message.edit_text(f"Введите количество ⚡, которое нужно {verb} пользователю `{user_id}`:", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
 
 @protected_admin_router.message(AdminStates.waiting_for_balance_amount)
 async def process_balance_amount(message: Message, state: FSMContext):
@@ -155,7 +155,7 @@ async def process_balance_amount(message: Message, state: FSMContext):
     
     verb_past = "Начислено" if is_add else "Списано"
     abs_amount = abs(amount)
-    await message.answer(f"✅ Успешно {verb_past.lower()} **{abs_amount}** кр.\nНовый баланс пользователя: **{user.balance:.2f}**", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
+    await message.answer(f"✅ Успешно {verb_past.lower()} **{abs_amount}** ⚡\nНовый баланс пользователя: **{user.balance:.2f}**", reply_markup=get_back_admin_kb(), parse_mode="Markdown")
 
 # --- BROADCAST ---
 @admin_router.callback_query(F.data == "admin_broadcast")

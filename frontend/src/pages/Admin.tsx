@@ -325,14 +325,14 @@ const Admin: React.FC = () => {
                             </td>
                             <td>
                               <span className={`balance-badge ${user.balance > 0 ? 'balance-positive' : 'balance-zero'}`}>
-                                {Math.floor(user.balance || 0)} кр.
+                                {Math.floor(user.balance || 0)} ⚡
                               </span>
                             </td>
                             <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{new Date(user.created_at).toLocaleDateString()}</span></td>
                             <td style={{textAlign: 'right'}}>
                               <button 
                                 onClick={() => {
-                                  const amount = window.prompt("Добавить кредиты (отрицательное — отнять):", "10");
+                                  const amount = window.prompt("Добавить ⚡ (отрицательное — отнять):", "10");
                                   if (amount) handleUpdateBalance(user.id, parseFloat(amount));
                                 }}
                                 className="action-btn"

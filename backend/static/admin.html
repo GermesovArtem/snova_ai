@@ -403,7 +403,7 @@
         <div class="modal glass">
             <h3 style="margin-bottom: 20px;">Изменить баланс</h3>
             <p id="target-user-name" style="margin-bottom: 16px; color: var(--text-secondary)"></p>
-            <input type="number" id="balance-amount" placeholder="Количество кредитов (+ или -)" style="width: 100%; padding: 12px; background: black; border: 1px solid var(--glass-border); color: white; border-radius: 8px; margin-bottom: 24px;">
+            <input type="number" id="balance-amount" placeholder="Количество ⚡ (+ или -)" style="width: 100%; padding: 12px; background: black; border: 1px solid var(--glass-border); color: white; border-radius: 8px; margin-bottom: 24px;">
             <div style="display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
                 <button class="btn btn-primary" onclick="confirmBalanceUpdate()">Обновить</button>
@@ -459,7 +459,7 @@
                     tr.innerHTML = `
                         <td>${u.name || 'Anonymous'}</td>
                         <td><code>${u.id}</code></td>
-                        <td style="font-weight: 700;">${Math.round(u.balance)} k</td>
+                        <td style="font-weight: 700;">${Math.round(u.balance)} ⚡</td>
                         <td><span class="badge">${u.model_preference}</span></td>
                         <td>
                             <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="openBalanceModal(${u.id}, '${u.name}')">

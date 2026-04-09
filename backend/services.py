@@ -42,30 +42,25 @@ def translate_error(error_msg: str) -> str:
 
 
 def normalize_model_id(model_id: str) -> str:
-    """Corrects model names for KIE API compatibility.
-    New models (2, Pro) must NOT have 'google/' prefix.
-    Legacy models must HAVE 'google/' prefix.
-    """
+    """Нормализация ID моделей для внутренней логики (цены, UI)."""
     if not model_id or not isinstance(model_id, str): return model_id
     
-    # 1. Lowercase and strip whitespace
-    model_id = model_id.lower().strip()
+    m = model_id.lower().strip()
     
-    # 2. Direct models (MUST NOT have prefix)
-    direct_models = ["nano-banana-2", "nano-banana-pro"]
-    for dm in direct_models:
-        if model_id == dm or model_id == f"google/{dm}":
-            return dm
-            
-    # 3. Legacy/Pre-prefixed models (MUST have 'google/' prefix)
-    legacy_models = ["nano-banana", "nano-banana-edit", "nanobanana"]
-    for lm in legacy_models:
-        if model_id == lm:
-            return f"google/{lm}"
-        if model_id == f"google/{lm}":
-            return model_id
-            
-    return model_id
+    # Резолюционные варианты (внутренние ID)
+    variants = ["nano-banana-2-1k", "nano-banana-2-4k", "nano-banana-pro-2k", "nano-banana-pro-4k"]
+    if m in variants:
+        return m
+
+    # Маппинг полных путей KIE в наши внутренние варианты
+    if "nano-banana-pro" in m:
+        return "nano-banana-pro-4k" if "4k" in m else "nano-banana-pro-2k"
+    if "nano-banana-2" in m:
+        return "nano-banana-2-4k" if "4k" in m else "nano-banana-2-1k"
+    if "nano-banana" in m and "edit" not in m:
+        return "nano-banana-2-1k"
+        
+    return m
 
 def get_model_limit(model_id: str) -> int:
     """Returns official limit for image_input: 8 for PRO, 14 for v2"""
@@ -74,11 +69,19 @@ def get_model_limit(model_id: str) -> int:
     return 14
 
 def get_available_models():
-    models_str = os.getenv("AVAILABLE_MODELS", '{"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}')
+    default_models = {
+        "Nano Banana 2 (1K)": "nano-banana-2-1k",
+        "Nano Banana 2 (4K)": "nano-banana-2-4k",
+        "Nano Banana PRO (2K)": "nano-banana-pro-2k",
+        "Nano Banana PRO (4K)": "nano-banana-pro-4k"
+    }
+    models_str = os.getenv("AVAILABLE_MODELS")
+    if not models_str:
+        return default_models
     try:
         return json.loads(models_str)
     except:
-        return {"NanoBanana 2": "nano-banana-2", "NanoBanana PRO": "nano-banana-pro"}
+        return default_models
 
 async def fix_all_model_ids(db):
     res = await db.execute(select(models.User))
@@ -96,16 +99,30 @@ async def fix_all_model_ids(db):
 def get_model_cost(model_id: str) -> float:
     # Auto-normalize to handle old DB values
     model_id = normalize_model_id(model_id)
-    # Default fallback prices without 'google/' prefix to match normalization
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
+    
+    # New variant costs
+    variant_costs = {
+        "nano-banana-2-1k": 1.0,
+        "nano-banana-2-4k": 2.0,
+        "nano-banana-pro-2k": 2.0,
+        "nano-banana-pro-4k": 3.0
+    }
+    if model_id in variant_costs:
+        return variant_costs[model_id]
 
-    try:
-        costs = json.loads(costs_str)
-        normalized_costs = {normalize_model_id(k): v for k, v in costs.items()}
-        return float(normalized_costs.get(model_id, 3.0))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        fallback = {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
-        return float(fallback.get(model_id, 3.0))
+    # Default fallback prices without 'google/' prefix to match normalization
+    costs_str = os.getenv("CREDITS_PER_MODEL")
+    if costs_str:
+        try:
+            costs = json.loads(costs_str)
+            normalized_costs = {normalize_model_id(k): v for k, v in costs.items()}
+            if model_id in normalized_costs:
+                return float(normalized_costs[model_id])
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+            
+    fallback = {"nano-banana-2": 2.0, "nano-banana-pro": 3.0, "google/nano-banana": 1.0}
+    return float(fallback.get(model_id, 2.0))
 
 async def get_user_by_id(db, user_id: int):
     res = await db.execute(select(models.User).filter(models.User.id == user_id))
@@ -125,7 +142,7 @@ async def get_or_create_user(db, user_id: int, name: str = None, username: str =
     if not user:
         # Initial balance and model for new users
         starting_balance = float(os.getenv("STARTING_BALANCE", 5.0))
-        default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2")
+        default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2-1k")
         user = models.User(
             id=user_id, 
             name=name or username, 
@@ -136,14 +153,14 @@ async def get_or_create_user(db, user_id: int, name: str = None, username: str =
         # Handle referral case if needed (not implemented here for web yet)
         await db.commit()
         await db.refresh(user)
-        logger.info(f"Created new user: {user_id} ({name}) with {starting_balance} cr.")
+        logger.info(f"Created new user: {user_id} ({name}) with {starting_balance} ⚡.")
     return user
 
 async def pre_charge_generation(db, user: models.User, model_id: str) -> float:
     """Freezes user balance before generation"""
     cost = get_model_cost(model_id)
     if user.balance < cost:
-        raise ValueError("Недостаточно кредитов!")
+        raise ValueError("Недостаточно ⚡!")
         
     user.balance -= cost
     user.frozen_balance += cost
@@ -192,8 +209,26 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
         logger.error(f"Error saving task to DB: {e}")
         raise ValueError(translate_error(str(e)))
     
-    # Call KIE
-    res = await create_task(model_id, prompt, image_urls, aspect_ratio, resolution, output_format)
+    # Call KIE: Map internal Tier ID back to real KIE Model and Resolution
+    kie_model = "google/nano-banana-2"
+    final_res = resolution # use passed or default
+    
+    if model_id == "nano-banana-2-1k":
+        kie_model = "google/nano-banana-2"
+        final_res = "1K"
+    elif model_id == "nano-banana-2-4k":
+        kie_model = "google/nano-banana-2"
+        final_res = "4K"
+    elif model_id == "nano-banana-pro-2k":
+        kie_model = "google/nano-banana-pro"
+        final_res = "2K"
+    elif model_id == "nano-banana-pro-4k":
+        kie_model = "google/nano-banana-pro"
+        final_res = "4K"
+    elif "pro" in model_id:
+        kie_model = "google/nano-banana-pro"
+        
+    res = await create_task(kie_model, prompt, image_urls, aspect_ratio, final_res, output_format)
     if not res["success"]:
         raise Exception(res.get("error", "Unknown API error from KIE"))
         

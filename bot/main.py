@@ -53,12 +53,21 @@ def get_model_limit(model_id: str) -> int:
 
 
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 3.0, "nano-banana-pro": 4.0}')
-    try:
-        costs = json.loads(costs_str)
-        return {services.normalize_model_id(k): v for k, v in costs.items()}
-    except:
-        return {"nano-banana-2": 3.0, "nano-banana-pro": 4.0}
+    costs_str = os.getenv("CREDITS_PER_MODEL")
+    if costs_str:
+        try:
+            costs = json.loads(costs_str)
+            return {services.normalize_model_id(k): v for k, v in costs.items()}
+        except:
+            pass
+            
+    # Fallback to new logic if env is not set
+    return {
+        "nano-banana-2-1k": 1,
+        "nano-banana-2-4k": 2,
+        "nano-banana-pro-2k": 2,
+        "nano-banana-pro-4k": 3
+    }
 
 
 def get_credit_packs():
@@ -86,9 +95,9 @@ def build_main_kb(current_model: str):
     costs = get_model_costs()
     for name, mm in models.items():
         norm_mm = services.normalize_model_id(mm)
-        cost = int(costs.get(norm_mm, 3))
-        prefix = "✅ " if mm == current_model else ("🆕 " if "2" in name else "")
-        kb.button(text=f"{prefix}{name} ({cost} кр)", callback_data=f"set_model:{mm}")
+        cost = int(costs.get(norm_mm, 1))
+        prefix = "✅ " if mm == current_model else ""
+        kb.button(text=f"{prefix}{name} ({cost} ⚡)", callback_data=f"set_model:{mm}")
     
     kb.adjust(1)
     return kb.as_markup()
@@ -136,19 +145,13 @@ def build_settings_kb(model_id: str, settings: dict):
     if "nano-banana-2" in model_id: ratios.insert(0, "auto")
     
     kb.button(text="📐 Размер:", callback_data="noop")
-    # Fix: Use | as delimiter to avoid collision with aspect ratio values like 1:1
     for r in ratios:
         prefix = "🔘 " if r == cur_ratio else ""
         kb.button(text=f"{prefix}{r}", callback_data=f"set_setting|aspect_ratio|{r}")
     
-    # 2. Resolution
-    cur_res = settings.get("resolution", "1K")
-    kb.button(text="💎 Качество:", callback_data="noop")
-    for res in ["1K", "2K", "4K"]:
-        prefix = "🔘 " if res == cur_res else ""
-        kb.button(text=f"{prefix}{res}", callback_data=f"set_setting|resolution|{res}")
+    # [REMOVED] Resolution is now tied to model variant
         
-    # 3. Format
+    # 2. Format
     cur_fmt = settings.get("output_format", "png" if "pro" in model_id else "jpg")
     kb.button(text="📁 Формат:", callback_data="noop")
     for fmt in ["png", "jpg"]:
@@ -156,7 +159,7 @@ def build_settings_kb(model_id: str, settings: dict):
         kb.button(text=f"{prefix}{fmt.upper()}", callback_data=f"set_setting|output_format|{fmt}")
 
     kb.button(text="✅ Готово", callback_data="confirm_settings")
-    kb.adjust(1, 4, 1, 3, 1, 2, 1)
+    kb.adjust(1, 4, 1, 2, 1, 2, 1)
     return kb.as_markup()
 
 async def setup_bot_commands(bot: Bot):
@@ -183,7 +186,7 @@ async def logic_buy(message: types.Message, state: FSMContext):
     packs = get_credit_packs()
     kb = InlineKeyboardBuilder()
     for price, amount in packs.items():
-        kb.button(text=f"🍌 {amount} кр. — {price} руб.", callback_data=f"buy:{price}:{amount}")
+        kb.button(text=f"🍌 {amount} ⚡ — {price} руб.", callback_data=f"buy:{price}:{amount}")
     kb.button(text="⬅️ Назад", callback_data="main_menu")
     kb.adjust(1)
     await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
@@ -297,7 +300,7 @@ async def process_main_menu(callback_query: CallbackQuery, state: FSMContext):
 async def process_profile(callback_query: CallbackQuery):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, callback_query.from_user.id)
-        text = f"👤 <b>Профиль</b>\n\n💳 Баланс: {user.balance} кредитов\n🤖 Модель: {user.model_preference}\n❄️ Заморожено: {user.frozen_balance} кр."
+        text = f"👤 <b>Профиль</b>\n\n💳 Баланс: {user.balance} ⚡\n🤖 Модель: {user.model_preference}\n❄️ Заморожено: {user.frozen_balance} ⚡"
         
         kb = InlineKeyboardBuilder()
         kb.button(text="💳 Купить кредиты", callback_data="buy_credits")
@@ -325,7 +328,7 @@ async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_i
                 async with AsyncSessionLocal() as db:
                     await services.update_user_balance(db, user_id, amount)
                 try:
-                    await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} кр.**", parse_mode="Markdown")
+                    await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
                 except: pass
                 return
             elif payment_info.status == 'canceled':
@@ -340,7 +343,7 @@ async def process_buy_packet(callback_query: CallbackQuery):
     
     async with AsyncSessionLocal() as db:
         try:
-            description = f"Пополнение на {amount} кр. для S•NOVA AI"
+            description = f"Пополнение на {amount} ⚡ для S•NOVA AI"
             payment_url = await services.create_yookassa_payment(db, callback_query.from_user.id, float(price), description)
             
             # Since create_yookassa_payment already saved to DB, we just need to get the provider ID if we want auto_check
@@ -357,7 +360,7 @@ async def process_buy_packet(callback_query: CallbackQuery):
             kb.adjust(1)
             
             await callback_query.message.edit_text(
-                f"⏳ Создан счет на **{price} руб.** для оплаты **{amount} кр.**\n\n"
+                f"⏳ Создан счет на **{price} руб.** для оплаты **{amount} ⚡**\n\n"
                 f"Оплата подтвердится автоматически через 1-2 минуты после зачисления.",
                 reply_markup=kb.as_markup(), parse_mode="Markdown"
             )
@@ -383,7 +386,7 @@ async def process_check_payment(callback_query: CallbackQuery):
         if payment_info.status == 'succeeded':
             async with AsyncSessionLocal() as db:
                 await services.update_user_balance(db, callback_query.from_user.id, amount)
-            await callback_query.message.edit_text(f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} кр.**", parse_mode="Markdown")
+            await callback_query.message.edit_text(f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
             await callback_query.answer("Оплата подтверждена!", show_alert=True)
         elif payment_info.status == 'canceled':
             kb = InlineKeyboardBuilder()
@@ -510,9 +513,9 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
         f"📝 Текст: `{safe_prompt}`\n"
         f"{img_count_text}"
         f"🤖 Модель: **{human_name}**\n"
-        f"📐 Размер: **{ratio}** | 💎 **{res}** | 📁 **{fmt.upper()}**\n"
-        f"💰 Стоимость: **{int(cost)} кр.**\n\n"
-        f"💳 Ваш баланс: **{int(user.balance)} кр.**\n\n"
+        f"📐 Размер: **{ratio}** | 📁 **{fmt.upper()}**\n"
+        f"💰 Стоимость: **{int(cost)} ⚡**\n\n"
+        f"💳 Ваш баланс: **{int(user.balance)} ⚡**\n\n"
         f"Всё верно? Начинаем генерацию?"
     )
 
@@ -575,10 +578,12 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, callback.from_user.id)
     
-    # Global max defaults: 4K, PNG, 1:1
+    # Resolve resolution from variant
     ratio = settings.get("aspect_ratio", "1:1")
-    res = settings.get("resolution", "4K")
     fmt = settings.get("output_format", "png")
+    res = "1K"
+    if "-4k" in user.model_preference: res = "4K"
+    elif "-2k" in user.model_preference: res = "2K"
 
     await start_generation_wrapper(
         callback.from_user.id, 
@@ -739,6 +744,12 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
     image_urls = image_urls or []
     async with AsyncSessionLocal() as db:
         user = await services.get_or_create_user(db, user_id)
+        
+        # Determine actual resolution from model variant if not explicitly passed (e.g. from Repeat)
+        if "-4k" in user.model_preference: resolution = "4K"
+        elif "-2k" in user.model_preference: resolution = "2K"
+        elif "-1k" in user.model_preference: resolution = "1K"
+
         # Resolve actual model and cost before try block
         actual_model = services.normalize_model_id(user.model_preference)
         
@@ -750,7 +761,7 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
 
         except ValueError:
             # Insufficient funds exact replica
-            text = f"Недостаточно кр. (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
+            text = f"Недостаточно ⚡ (нужно {int(cost)}, у вас {int(user.balance)}).\nПополните баланс или смените модель: /model"
             
             kb = InlineKeyboardBuilder()
             kb.button(text="💳 Карта РФ(₽)", callback_data="buy_credits")

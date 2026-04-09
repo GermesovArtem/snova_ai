@@ -87,14 +87,15 @@ export default function ChatApp() {
     setIsHistoryLoading(false);
   };
 
-  const getCreditsLabel = (num: number) => {
-    const n = Math.abs(num);
-    const cases = [2, 0, 1, 1, 1, 2];
-    const titles = ['кредит', 'кредита', 'кредитов'];
-    return titles[(n % 100 > 4 && n % 100 < 20) ? 2 : cases[(n % 10 < 5) ? n % 10 : 5]];
-  };
+  const getCreditsLabel = (num: number) => "⚡";
 
-  const getModelName = (id: string) => id.includes('pro') ? 'Nano Banana PRO' : 'Nano Banana 2';
+  const getModelName = (id: string) => {
+    if (id === 'nano-banana-2-1k') return 'Nano Banana 2 (1K)';
+    if (id === 'nano-banana-2-4k') return 'Nano Banana 2 (4K)';
+    if (id === 'nano-banana-pro-2k') return 'Nano Banana PRO (2K)';
+    if (id === 'nano-banana-pro-4k') return 'Nano Banana PRO (4K)';
+    return id.includes('pro') ? 'Nano Banana PRO' : 'Nano Banana 2';
+  };
 
   const fixUrl = (url: string) => {
     if (!url) return '';
@@ -221,7 +222,7 @@ export default function ChatApp() {
         
         <div className="glass" style={{ padding: '6px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.08)', border: 'none', whiteSpace: 'nowrap' }}>
           <Wallet size={14} />
-          {user ? `${user.balance} ${getCreditsLabel(user.balance)}` : '...'}
+          {user ? `${user.balance} ⚡` : '...'}
         </div>
       </header>
 
@@ -251,7 +252,10 @@ export default function ChatApp() {
                   >
                      📝 {msg.meta.prompt || 'Без описания'}
                   </div>
-                  <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{msg.meta.model.includes('pro') ? 4 : 3} {getCreditsLabel(msg.meta.model.includes('pro') ? 4 : 3)}</b></div>
+                  <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{
+                    msg.meta.model === 'nano-banana-pro-4k' ? 3 :
+                    (msg.meta.model === 'nano-banana-2-4k' || msg.meta.model === 'nano-banana-pro-2k') ? 2 : 1
+                  } ⚡</b></div>
                 </>
               ) : msg.text && (
                 <div style={{ fontSize: '15px', lineHeight: 1.5 }}>{msg.text.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}</div>
@@ -404,17 +408,25 @@ export default function ChatApp() {
         <div className="glass" style={{ position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '30px', borderRadius: '32px', background: 'var(--bg-color)' }}>
             <h3 style={{ marginBottom: '24px', textAlign: 'center' }}>🤖 Выберите нейросеть</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button onClick={() => updateModel('nano-banana-2')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '17px', fontWeight: 800 }}>Nano Banana 2</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>3 кр. | Скетчи и дизайн</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <button onClick={() => updateModel('nano-banana-2-1k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-1k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-1k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (1K)</div>
+                <div style={{ fontSize: '12px', opacity: 0.6 }}>1 ⚡ | Скетчи</div>
               </button>
-              <button onClick={() => updateModel('nano-banana-pro')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
-                <div style={{ fontSize: '17px', fontWeight: 800 }}>Nano Banana PRO</div>
-                <div style={{ fontSize: '12px', opacity: 0.6 }}>4 кр. | Фотореализм 4K</div>
+              <button onClick={() => updateModel('nano-banana-2-4k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-2-4k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-2-4k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana 2 (4K)</div>
+                <div style={{ fontSize: '12px', opacity: 0.6 }}>2 ⚡ | Дизайн</div>
               </button>
-              <button onClick={() => setIsModelMenuOpen(false)} style={{ marginTop: '10px', padding: '10px', border: 'none', background: 'none', color: 'inherit', opacity: 0.5 }} className="clickable">Отмена</button>
+              <button onClick={() => updateModel('nano-banana-pro-2k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro-2k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro-2k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana PRO (2K)</div>
+                <div style={{ fontSize: '12px', opacity: 0.6 }}>2 ⚡ | Фото лица</div>
+              </button>
+              <button onClick={() => updateModel('nano-banana-pro-4k')} className="clickable" style={{ padding: '20px', textAlign: 'left', borderRadius: '20px', background: currentModel === 'nano-banana-pro-4k' ? 'var(--text-color)' : 'var(--glass-bg)', color: currentModel === 'nano-banana-pro-4k' ? 'var(--bg-color)' : 'inherit', border: 'none' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800 }}>Nano Banana PRO (4K)</div>
+                <div style={{ fontSize: '12px', opacity: 0.6 }}>3 ⚡ | Максимум</div>
+              </button>
             </div>
+            <button onClick={() => setIsModelMenuOpen(false)} style={{ width: '100%', marginTop: '20px', padding: '10px', border: 'none', background: 'none', color: 'inherit', opacity: 0.5 }} className="clickable">Отмена</button>
           </div>
         </div>
       )}
@@ -429,7 +441,7 @@ export default function ChatApp() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[ {id:'149', cr: 30, p:'149₽'}, {id:'299', cr: 65, p:'299₽'}, {id:'990', cr: 270, p:'990₽'} ].map(p => (
                 <button key={p.id} onClick={() => { haptic(); api.createPayment(p.id).then(r=>r.success&&(window.location.href=r.data.payment_url)); }} className="clickable" style={{ display: 'flex', justifyContent: 'space-between', padding: '20px', borderRadius: '22px', background: 'var(--glass-bg)', border: 'none', color: 'inherit' }}>
-                  <span style={{ fontWeight: 800 }}>{p.cr} кредитов</span> 
+                  <span style={{ fontWeight: 800 }}>{p.cr} ⚡</span> 
                   <span style={{ color: '#00e676', fontWeight: 900, fontSize: '16px' }}>{p.p}</span>
                 </button>
               ))}
