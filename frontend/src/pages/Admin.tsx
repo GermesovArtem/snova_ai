@@ -38,6 +38,8 @@ const Admin: React.FC = () => {
   const [search, setSearch] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [broadcastText, setBroadcastText] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -101,6 +103,22 @@ const Admin: React.FC = () => {
       alert('Баланс обновлен!');
     } catch (err) {
       alert('Ошибка при обновлении баланса');
+    }
+  };
+
+  const handleBroadcast = async () => {
+    if (!broadcastText.trim()) return;
+    if (!window.confirm("Вы уверены, что хотите запустить рассылку всем пользователям?")) return;
+    
+    try {
+      setIsBroadcasting(true);
+      await api.adminBroadcast(broadcastText);
+      alert('Рассылка запущена в фоновом режиме!');
+      setBroadcastText('');
+    } catch (err) {
+      alert('Ошибка при запуске рассылки');
+    } finally {
+      setIsBroadcasting(false);
     }
   };
 
@@ -249,6 +267,30 @@ const Admin: React.FC = () => {
                     <div className="stat-value">{Math.round(stats?.total_revenue || 0)} ₽</div>
                     <div className="stat-label">Общая выручка</div>
                     <div className="stat-sublabel">+{Math.round(stats?.revenue_today || 0)} ₽ сегодня</div>
+                  </div>
+                </div>
+
+                <div className="admin-glass-card broadcast-section">
+                  <div className="card-header">
+                    <TrendingUp size={18} style={{color: '#facc15'}} />
+                    Глобальная рассылка (Telegram)
+                  </div>
+                  <div className="broadcast-controls">
+                    <textarea 
+                      placeholder="Введите текст сообщения для всех пользователей..." 
+                      value={broadcastText}
+                      onChange={e => setBroadcastText(e.target.value)}
+                      className="broadcast-textarea"
+                    />
+                    <button 
+                      onClick={handleBroadcast} 
+                      disabled={isBroadcasting || !broadcastText.trim()}
+                      className="broadcast-btn"
+                    >
+                      {isBroadcasting ? <RefreshCw className="spinner" size={16} /> : <Plus size={16} />}
+                      Запустить рассылку
+                    </button>
+                    <p className="broadcast-hint">Рассылка идет в фоновом режиме с соблюдением лимитов Telegram.</p>
                   </div>
                 </div>
 

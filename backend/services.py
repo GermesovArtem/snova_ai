@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import traceback
 from dotenv import load_dotenv
 import datetime
 from sqlalchemy import func, cast, Date, desc, select
@@ -263,68 +264,87 @@ async def check_generation_status(task_id: str):
 import datetime
 
 async def get_admin_stats(db) -> dict:
-    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # User stats
-    total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
-    new_users_today = (await db.execute(
-        select(func.count(models.User.id))
-        .filter(models.User.created_at >= today_start)
-    )).scalar() or 0
-    
-    # Gen stats
-    total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
-    gens_today = (await db.execute(
-        select(func.count(models.GenerationTask.id))
-        .filter(models.GenerationTask.created_at >= today_start)
-    )).scalar() or 0
-    
-    # Payment stats
-    total_revenue = (await db.execute(
-        select(func.sum(models.Payment.amount_rub))
-        .filter(models.Payment.status == "succeeded")
-    )).scalar() or 0.0
-    
-    revenue_today = (await db.execute(
-        select(func.sum(models.Payment.amount_rub))
-        .filter(models.Payment.status == "succeeded")
-        .filter(models.Payment.created_at >= today_start)
-    )).scalar() or 0.0
-    
-    # Revenue chart (last 7 days)
-    chart_data = []
-    for i in range(6, -1, -1):
-        day_s = today_start - datetime.timedelta(days=i)
-        day_e = day_s + datetime.timedelta(days=1)
+    logger.info("Fetching admin statistics...")
+    try:
+        try:
+            today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        except Exception as e:
+            logger.error(f"Error calculating today_start: {e}")
+            raise
         
-        day_rev = (await db.execute(
-            select(func.sum(models.Payment.amount_rub))
-            .filter(models.Payment.status == "succeeded")
-            .filter(models.Payment.created_at >= day_s)
-            .filter(models.Payment.created_at < day_e)
-        )).scalar() or 0.0
-        
-        day_users = (await db.execute(
+        # User stats
+        total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
+        new_users_today = (await db.execute(
             select(func.count(models.User.id))
-            .filter(models.User.created_at >= day_s)
-            .filter(models.User.created_at < day_e)
+            .filter(models.User.created_at >= today_start)
         )).scalar() or 0
         
-        chart_data.append({
-            "date": day_s.strftime("%d.%m"),
-            "revenue": day_rev,
-            "new_users": day_users
-        })
+        # Gen stats
+        total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
+        gens_today = (await db.execute(
+            select(func.count(models.GenerationTask.id))
+            .filter(models.GenerationTask.created_at >= today_start)
+        )).scalar() or 0
+        
+        # Payment stats
+        total_revenue = (await db.execute(
+            select(func.sum(models.Payment.amount_rub))
+            .filter(models.Payment.status == "succeeded")
+        )).scalar() or 0.0
+        
+        revenue_today = (await db.execute(
+            select(func.sum(models.Payment.amount_rub))
+            .filter(models.Payment.status == "succeeded")
+            .filter(models.Payment.created_at >= today_start)
+        )).scalar() or 0.0
+        
+        # Revenue chart (last 7 days)
+        chart_data = []
+        for i in range(6, -1, -1):
+            day_s = today_start - datetime.timedelta(days=i)
+            day_e = day_s + datetime.timedelta(days=1)
+            
+            day_rev = (await db.execute(
+                select(func.sum(models.Payment.amount_rub))
+                .filter(models.Payment.status == "succeeded")
+                .filter(models.Payment.created_at >= day_s)
+                .filter(models.Payment.created_at < day_e)
+            )).scalar() or 0.0
+            
+            day_users = (await db.execute(
+                select(func.count(models.User.id))
+                .filter(models.User.created_at >= day_s)
+                .filter(models.User.created_at < day_e)
+            )).scalar() or 0
+            
+            chart_data.append({
+                "date": day_s.strftime("%d.%m"),
+                "revenue": float(day_rev),
+                "new_users": int(day_users)
+            })
 
-    return {
-        "total_users": total_users,
-        "new_users_today": new_users_today,
-        "total_gens": total_gens,
-        "gens_today": gens_today,
-        "total_revenue": total_revenue,
-        "revenue_today": revenue_today,
-        "chart_data": chart_data
-    }
+        return {
+            "total_users": int(total_users),
+            "new_users_today": int(new_users_today),
+            "total_gens": int(total_gens),
+            "gens_today": int(gens_today),
+            "total_revenue": float(total_revenue),
+            "revenue_today": float(revenue_today),
+            "chart_data": chart_data
+        }
+    except Exception as e:
+        logger.error(f"CRITICAL ERROR in get_admin_stats: {e}")
+        logger.error(traceback.format_exc())
+        return {
+            "total_users": 0,
+            "new_users_today": 0,
+            "total_gens": 0,
+            "gens_today": 0,
+            "total_revenue": 0.0,
+            "revenue_today": 0.0,
+            "chart_data": [],
+            "error": str(e)
+        }
 
 async def search_user(db, query: str) -> models.User:
     if query.isdigit():
@@ -405,3 +425,45 @@ async def create_yookassa_payment(db, user_id: int, amount: float, description: 
             else:
                 logger.error(f"YooKassa API Error: {data}")
                 raise Exception(data.get("description", "YooKassa error"))
+
+async def broadcast_to_all_users(db, text: str):
+    """Sends a Telegram message to all registered users with rate limiting."""
+    import aiohttp
+    import asyncio
+    
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN not set for broadcast")
+        return
+        
+    res = await db.execute(select(models.User.id))
+    user_ids = res.scalars().all()
+    
+    logger.info(f"Starting broadcast to {len(user_ids)} users...")
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    
+    async with aiohttp.ClientSession() as session:
+        for i, user_id in enumerate(user_ids):
+            try:
+                payload = {"chat_id": user_id, "text": text, "parse_mode": "HTML"}
+                async with session.post(url, json=payload) as resp:
+                    if resp.status == 429: # Too many requests
+                        retry_after = (await resp.json()).get("parameters", {}).get("retry_after", 1)
+                        logger.warning(f"Rate limited by Telegram. Waiting {retry_after}s...")
+                        await asyncio.sleep(retry_after)
+                        # Retry once
+                        await session.post(url, json=payload)
+                    elif resp.status == 403:
+                        logger.warning(f"User {user_id} blocked the bot. Skipping.")
+                    elif resp.status != 200:
+                        data = await resp.json()
+                        logger.error(f"Failed to send broadcast to {user_id}: {data}")
+            except Exception as e:
+                logger.error(f"Error sending broadcast to {user_id}: {e}")
+            
+            # Rate limiting: ~25 messages per second
+            if (i + 1) % 25 == 0:
+                await asyncio.sleep(1)
+                
+    logger.info("Broadcast completed.")

@@ -121,5 +121,17 @@ export const api = {
             body: JSON.stringify({ amount })
         });
         return handleResponse(res);
+    },
+
+    async adminBroadcast(text: string) {
+        const res = await fetch(`${API_BASE}/admin/broadcast`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('admin_token')}` 
+            },
+            body: JSON.stringify({ text })
+        });
+        return handleResponse(res);
     }
 };

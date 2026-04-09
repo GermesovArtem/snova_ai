@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, Image as ImageIcon, Download, Moon, Sun,
-  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2
+  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2, ChevronDown
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api';
 
 interface Message {
@@ -19,7 +20,10 @@ const haptic = () => { if (typeof navigator !== 'undefined' && navigator.vibrate
 
 export default function ChatApp() {
   const [user, setUser] = useState<any>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('chat_messages');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -43,7 +47,9 @@ export default function ChatApp() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    initApp();
+    if (messages.length === 0) {
+      initApp();
+    }
     document.documentElement.setAttribute('data-theme', theme);
     
     fetchConfig();
@@ -57,6 +63,11 @@ export default function ChatApp() {
       setDeferredPrompt(e);
     });
   }, [theme]);
+
+  // Persist messages
+  useEffect(() => {
+    localStorage.setItem('chat_messages', JSON.stringify(messages));
+  }, [messages]);
 
   const initApp = async () => {
     fetchUserData();
@@ -220,120 +231,272 @@ export default function ChatApp() {
     <div className="chat-app" style={{ height: '100dvh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-color)' }}>
       
       {/* HEADER */}
-      <header className="glass" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 15px', borderRadius: '0 0 20px 20px', zIndex: 100 }}>
-        <button onClick={toggleTheme} style={{ background: 'none', border: 'none', color: 'inherit', padding: 0 }} className="clickable">
+      <header className="glass glass-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', margin: '0', borderRadius: '0 0 24px 24px', zIndex: 100, borderTop: 'none' }}>
+        <motion.button 
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={toggleTheme} 
+          style={{ background: 'none', border: 'none', color: 'inherit', padding: 8, display: 'flex' }} 
+          className="clickable"
+        >
           {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
-        </button>
+        </motion.button>
         
         <div style={{ textAlign: 'center', flex: 1, margin: '0 10px', overflow: 'hidden' }}>
-          <div style={{ fontWeight: 900, fontSize: '18px', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>S•NOVA AI</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>
+          <div style={{ fontWeight: 900, fontSize: '20px', letterSpacing: '-0.8px', whiteSpace: 'nowrap', background: 'linear-gradient(90deg, #fff, #999)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>S•NOVA AI</div>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.8 }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', fontSize: '10px', marginTop: '2px' }}
+          >
              <div className="status-dot"></div>
-             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Текущая модель: {getModelName(currentModel)}</span>
-          </div>
+             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getModelName(currentModel)}</span>
+          </motion.div>
         </div>
         
-        <button 
+        <motion.button 
+          initial={{ x: 20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setIsSettingsMenuOpen(true)}
-          className="glass clickable" 
+          className="balance-pill clickable" 
           style={{ 
-            padding: '8px 14px', 
-            borderRadius: '16px', 
-            fontSize: '15px', 
-            fontWeight: 800, 
+            padding: '8px 16px', 
+            borderRadius: '20px', 
+            fontSize: '16px', 
+            fontWeight: 900, 
             display: 'flex', 
             alignItems: 'center', 
-            gap: '8px', 
-            background: 'var(--text-color)', 
-            color: 'var(--bg-color)',
+            gap: '6px', 
+            background: 'linear-gradient(135deg, #facc15 0%, #eab308 100%)', 
+            color: '#000',
             border: 'none', 
             whiteSpace: 'nowrap',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+            boxShadow: '0 8px 20px rgba(250, 204, 21, 0.3)'
           }}
         >
-          <Zap size={16} fill="currentColor" />
-          {user ? `${user.balance} ⚡` : '...'}
-        </button>
+          <span style={{ fontSize: '18px' }}>⚡</span>
+          {user ? `${Math.floor(user.balance)}` : '...'}
+        </motion.button>
       </header>
 
       {/* CHAT AREA */}
-      <main style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        {messages.map((msg) => (
-          <div key={msg.id} style={{ alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-            <div className="glass" style={{ padding: '12px 16px', borderRadius: '22px', border: msg.type === 'user' ? 'none' : '', background: msg.type === 'user' ? 'rgba(255,255,255,0.15)' : '' }}>
-              {msg.image && (
-                <div style={{ position: 'relative', marginBottom: '10px' }}>
-                  <img src={fixUrl(msg.image)} onClick={() => setActiveImage(fixUrl(msg.image))} className="clickable" style={{ width: '100%', maxHeight: '45dvh', borderRadius: '16px', objectFit: 'cover' }} />
-                  {!msg.isGenerating && msg.type === 'bot' && (
-                    <button onClick={() => downloadImage(msg.image!)} style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.6)', padding: '10px', borderRadius: '50%', border: 'none', color: '#fff' }}>
-                      <Download size={18} />
-                    </button>
-                  )}
-                </div>
-              )}
-              {msg.type === 'bot-confirm' && msg.meta ? (
-                <>
-                  <div style={{ marginBottom: '12px' }}>✨ <b>Готовы начать генерацию?</b></div>
-                  <div 
-                    onClick={() => { haptic(); navigator.clipboard.writeText(msg.meta.prompt || ''); alert('Промпт скопирован!'); }}
-                    className="clickable"
-                    style={{ background: 'rgba(255,255,255,0.1)', padding: '12px', borderRadius: '12px', marginBottom: '12px', fontSize: '14px', border: '1px solid var(--glass-border)' }}
-                    title="Нажмите, чтобы скопировать"
-                  >
-                     📝 {msg.meta.prompt || 'Без описания'}
+      <main style={{ flex: 1, overflowY: 'auto', padding: '20px 15px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <AnimatePresence initial={false}>
+          {messages.map((msg, index) => (
+            <motion.div 
+              key={msg.id || index}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              style={{ 
+                alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '85%',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}
+            >
+              <div 
+                className="glass"
+                style={{ 
+                  padding: '14px 18px', 
+                  borderRadius: msg.type === 'user' ? '22px 22px 4px 22px' : '22px 22px 22px 4px',
+                  background: msg.type === 'user' 
+                    ? 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%)' 
+                    : 'var(--glass-bg)',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+              >
+                {msg.type === 'bot' && !msg.image && (
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: 'linear-gradient(to bottom, #7c3aed, #db2777)', opacity: 0.6 }}></div>
+                )}
+                
+                {msg.image && (
+                  <div style={{ position: 'relative', marginBottom: msg.text ? '12px' : '0' }}>
+                    <img 
+                      src={fixUrl(msg.image)} 
+                      onClick={() => setActiveImage(fixUrl(msg.image))} 
+                      className="clickable" 
+                      style={{ width: '100%', maxHeight: '45dvh', borderRadius: '16px', objectFit: 'cover' }} 
+                      alt="result"
+                    />
+                    {!msg.isGenerating && msg.type === 'bot' && (
+                      <button 
+                        onClick={() => downloadImage(msg.image!)} 
+                        style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.6)', padding: '10px', borderRadius: '50%', border: 'none', color: '#fff' }}
+                        className="clickable"
+                      >
+                        <Download size={18} />
+                      </button>
+                    )}
                   </div>
-                  <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{
-                    modelConfig?.credits_per_model?.[msg.meta.model] || 
-                    (msg.meta.model === 'nano-banana-pro-4k' ? 3 :
-                    (msg.meta.model === 'nano-banana-2-4k' || msg.meta.model === 'nano-banana-pro-2k') ? 2 : 1)
-                  } ⚡</b></div>
-                </>
-              ) : msg.text && (
-                <div style={{ fontSize: '15px', lineHeight: 1.5 }}>{msg.text.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}</div>
-              )}
-              <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.4, marginTop: '6px' }}>{new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(msg.timestamp)}</div>
+                )}
 
-              {msg.type === 'bot-confirm' && (
-                <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button onClick={() => handleConfirmGen(msg.id)} className="btn-inline clickable" style={{ background: 'var(--text-color)', color: 'var(--bg-color)', fontWeight: 800 }}>🚀 Сгенерировать</button>
-                  <button onClick={() => setMessages(p => p.filter(m => m.id !== msg.id))} className="btn-inline clickable">Отмена</button>
+                {msg.type === 'bot-confirm' && msg.meta ? (
+                  <>
+                    <div style={{ marginBottom: '12px' }}>✨ <b>Готовы начать генерацию?</b></div>
+                    <div 
+                      onClick={() => { haptic(); navigator.clipboard.writeText(msg.meta.prompt || ''); alert('Промпт скопирован!'); }}
+                      className="clickable"
+                      style={{ background: 'rgba(255,255,255,0.1)', padding: '12px', borderRadius: '12px', marginBottom: '12px', fontSize: '14px', border: '1px solid var(--glass-border)' }}
+                    >
+                       📝 {msg.meta.prompt || 'Без описания'}
+                    </div>
+                    <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{
+                      modelConfig?.credits_per_model?.[msg.meta.model] || 
+                      (msg.meta.model.includes('pro') ? 4 : 3)
+                    } ⚡</b></div>
+                  </>
+                ) : msg.text && (
+                  <div style={{ fontSize: '15px', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {msg.text.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}
+                  </div>
+                )}
+                
+                <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.4, marginTop: '6px' }}>
+                  {new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp))}
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
+
+                {msg.type === 'bot-confirm' && (
+                  <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button 
+                      onClick={() => handleConfirmGen(msg.id!)} 
+                      className="btn-inline clickable" 
+                      style={{ background: 'var(--text-color)', color: 'var(--bg-color)', fontWeight: 800, padding: '12px', borderRadius: '14px', border: 'none' }}
+                    >
+                      🚀 Сгенерировать
+                    </button>
+                    <button 
+                      onClick={() => setMessages(p => p.filter(m => m.id !== msg.id))} 
+                      className="btn-inline clickable"
+                      style={{ padding: '10px', borderRadius: '14px', border: 'none', background: 'rgba(255,255,255,0.05)', color: 'inherit' }}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: '10px', opacity: 0.5, alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start', padding: '0 5px' }}>
+                {msg.type === 'user' ? 'Вы' : getModelName(msg.meta?.model || currentModel)}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        
+        {messages.some(m => m.isGenerating) && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            style={{ alignSelf: 'flex-start', display: 'flex', gap: '8px', alignItems: 'center', padding: '10px 15px' }}
+          >
+            <Loader2 className="animate-spin" size={18} />
+            <span style={{ fontSize: '13px', opacity: 0.7 }}>S•NOVA создает...</span>
+          </motion.div>
+        )}
         <div ref={chatEndRef} />
       </main>
 
       {/* FOOTER */}
-      <footer style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <footer className="glass" style={{ padding: '15px', borderRadius: '24px 24px 0 0', borderBottom: 'none' }}>
         {previews.length > 0 && (
-          <div style={{ display: 'flex', gap: '10px', padding: '0 10px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '5px' }}>
             {previews.map((src, i) => (
-              <div key={i} style={{ position: 'relative' }}>
-                <img src={src} style={{ width: '55px', height: '55px', borderRadius: '14px', objectFit: 'cover' }} />
-                <button onClick={() => { haptic(); setSelectedFiles(p=>p.filter((_,idx)=>idx!==i)); setPreviews(p=>p.filter((_,idx)=>idx!==i)); }} style={{ position: 'absolute', top: -6, right: -6, background: '#ff3b30', borderRadius: '50%', color: '#fff', border: 'none', width: '20px', height: '20px', fontSize: '12px' }}>×</button>
+              <div key={i} style={{ position: 'relative', flexShrink: 0 }}>
+                <img src={src} style={{ height: '70px', width: '70px', objectFit: 'cover', borderRadius: '12px', border: '2px solid var(--accent-color)' }} alt="preview" />
+                <button 
+                  onClick={() => {
+                    setPreviews(p => p.filter((_, idx) => idx !== i));
+                    setSelectedFiles(f => f.filter((_, idx) => idx !== i));
+                  }}
+                  style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#ff3b30', color: '#fff', border: 'none', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.3)' }}
+                >
+                  <X size={12} />
+                </button>
               </div>
             ))}
           </div>
         )}
         
-        <div className="glass" style={{ margin: '0 10px', borderRadius: '30px', display: 'flex', alignItems: 'center', padding: '6px 18px', gap: '12px', background: 'rgba(255,255,255,0.08)', border: 'none' }}>
-          <button onClick={() => { haptic(); fileInputRef.current?.click(); }} style={{ background: 'none', border: 'none', color: 'inherit' }} className="clickable"><ImageIcon size={22} /></button>
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyPress={e=>e.key==='Enter'&&handleInitiate()} placeholder="Напиши идею..." style={{ flex: 1, background: 'none', border: 'none', color: 'inherit', padding: '12px 0', outline: 'none', fontSize: '16px' }} />
-          <button onClick={handleInitiate} style={{ background: 'var(--text-color)', borderRadius: '50%', width: '38px', height: '38px', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="clickable"><Send size={20} color="var(--bg-color)" /></button>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+          <button 
+            className="clickable"
+            onClick={() => { haptic(); fileInputRef.current?.click(); }}
+            style={{ background: 'var(--glass-bg)', border: 'none', borderRadius: '15px', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'inherit' }}
+          >
+            <ImageIcon size={22} />
+          </button>
+          
+          <div style={{ flex: 1, position: 'relative', display: 'flex', background: 'var(--glass-bg)', borderRadius: '20px', border: '1px solid var(--glass-border)', paddingRight: '5px', overflow: 'hidden' }}>
+            <textarea 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleInitiate();
+                }
+              }}
+              placeholder="Спроси о чем угодно..."
+              style={{ 
+                flex: 1, 
+                background: 'none', 
+                border: 'none', 
+                color: 'inherit', 
+                padding: '12px 15px', 
+                fontSize: '16px', 
+                outline: 'none', 
+                resize: 'none',
+                maxHeight: '150px',
+                minHeight: '48px'
+              }}
+              rows={1}
+            />
+            <button 
+              onClick={handleInitiate}
+              disabled={messages.some(m => m.isGenerating) || (!input.trim() && selectedFiles.length === 0)}
+              style={{ 
+                alignSelf: 'center',
+                background: input.trim() ? 'var(--text-color)' : 'transparent', 
+                color: input.trim() ? 'var(--bg-color)' : 'inherit', 
+                border: 'none', 
+                borderRadius: '15px', 
+                width: '38px', 
+                height: '38px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                transition: 'all 0.2s ease',
+                opacity: (messages.some(m => m.isGenerating) || (!input.trim() && selectedFiles.length === 0)) ? 0.3 : 1
+              }}
+            >
+              {messages.some(m => m.isGenerating) ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
+            </button>
+          </div>
         </div>
-        <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} onChange={e => {
-          if (e.target.files) {
-            const files = Array.from(e.target.files);
-            setSelectedFiles(p => [...p, ...files]);
-            files.forEach(f => {
-              const r = new FileReader(); r.onloadend = () => setPreviews(p => [...p, r.result as string]); r.readAsDataURL(f);
-            });
-          }
-        }} />
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', padding: '5px 5px 15px' }}>
+        
+        <input 
+          id="fileInput"
+          type="file" 
+          multiple 
+          ref={fileInputRef}
+          accept="image/*" 
+          style={{ display: 'none' }} 
+          onChange={e => {
+            if (e.target.files) {
+              const files = Array.from(e.target.files);
+              setSelectedFiles(p => [...p, ...files]);
+              files.forEach(f => {
+                const r = new FileReader(); r.onloadend = () => setPreviews(p => [...p, r.result as string]); r.readAsDataURL(f);
+              });
+            }
+          }}
+        />
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '15px', padding: '0 5px' }}>
           <button onClick={() => { haptic(); initApp(); }} className="btn-bot"><Sparkles size={18} /><br/>Создать</button>
           <button onClick={() => { haptic(); setIsModelMenuOpen(true); }} className="btn-bot"><Settings size={18} /><br/>Модель</button>
           <button onClick={openHistory} className="btn-bot"><History size={18} /><br/>История</button>
@@ -427,8 +590,8 @@ export default function ChatApp() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '12px', opacity: 0.5 }}>
-               <div>{historyDetailsTask.model === 'nano-banana-pro' ? 'PRO Модель' : 'Стандарт'}</div>
-               <div>{new Date(historyDetailsTask.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+               <div>{getModelName(historyDetailsTask.model)}</div>
+               <div>{historyDetailsTask.created_at ? new Date(historyDetailsTask.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Неизвестно'}</div>
             </div>
           </div>
         </div>

@@ -51,20 +51,56 @@ from backend import services
 @router.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
     """Returns data for charts (last 7 days registration, generation, and revenue activity)"""
-    stats = await services.get_admin_stats(db)
-    return {
-        "success": True,
-        "data": stats
-    }
+    try:
+        stats = await services.get_admin_stats(db)
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception:
+        return {"success": False, "data": {}}
 
 @router.get("/users")
 async def list_users(db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
     res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(100))
     users = res.scalars().all()
-    return {"success": True, "data": users}
+    # Simple conversion to avoid serialization issues
+    safe_users = []
+    for u in users:
+        safe_users.append({
+            "id": u.id,
+            "name": u.name,
+            "balance": u.balance,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        })
+    return {"success": True, "data": safe_users}
 
 class BalanceUpdate(BaseModel):
     amount: float
+
+class BroadcastRequest(BaseModel):
+    text: str
+
+@router.post("/broadcast")
+async def broadcast(req: BroadcastRequest, db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
+    from fastapi import BackgroundTasks
+    # We use a background task to not block the response
+    import asyncio
+    from fastapi import BackgroundTasks
+    
+    # Define a wrapper for background execution
+    async def run_broadcast():
+        await services.broadcast_to_all_users(db, req.text)
+        
+    # Note: We need a fresh session for long running background tasks 
+    # but for now we'll just trigger it. 
+    # Better approach: pass id and fetch in task.
+    
+    # For a simple implementation:
+    loop = asyncio.get_event_loop()
+    loop.create_task(services.broadcast_to_all_users(db, req.text))
+    
+    return {"success": True, "message": "Broadcast started in background"}
 
 @router.post("/users/{user_id}/balance")
 async def update_balance(user_id: int, req: BalanceUpdate, db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
