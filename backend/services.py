@@ -140,6 +140,7 @@ async def get_user_by_vk_id(db, vk_id: str):
 async def get_or_create_user(db, user_id: int, name: str = None, username: str = None):
     # Try by internal/telegram ID first
     user = await get_user_by_id(db, user_id)
+    created = False
     if not user:
         # Initial balance and model for new users
         starting_balance = float(os.getenv("STARTING_BALANCE", 5.0))
@@ -155,7 +156,8 @@ async def get_or_create_user(db, user_id: int, name: str = None, username: str =
         await db.commit()
         await db.refresh(user)
         logger.info(f"Created new user: {user_id} ({name}) with {starting_balance} ⚡.")
-    return user
+        created = True
+    return user, created
 
 async def pre_charge_generation(db, user: models.User, model_id: str) -> float:
     """Freezes user balance before generation"""

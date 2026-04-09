@@ -209,11 +209,14 @@ async def logic_contacts(message: types.Message):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
-        user = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
+        user, created = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
         limit = get_model_limit(services.normalize_model_id(user.model_preference))
-        actual_model = human_model_name(user.model_preference)
         
-        text = messages.MSG_START.format(balance=int(user.balance), limit=limit, model=actual_model)
+        if created:
+            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit)
+        else:
+            text = messages.MSG_START_REGULAR.format(balance=int(user.balance), limit=limit)
+            
         await message.answer(text, reply_markup=build_reply_kb(), parse_mode="Markdown")
 
 # --- REDIRECTS FOR OLD COMMANDS ---
