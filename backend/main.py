@@ -27,6 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def root_health_check():
+    return {"status": "ok", "message": "S•NOVA AI API is running"}
+
 from sqlalchemy import text, select
 # --- DB INIT ---
 @app.on_event("startup")

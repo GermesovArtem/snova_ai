@@ -183,13 +183,18 @@ async def logic_model(message: types.Message, state: FSMContext):
 
 async def logic_buy(message: types.Message, state: FSMContext):
     await state.clear()
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_user.id)
+        balance = int(user.balance)
+
     packs = get_credit_packs()
     kb = InlineKeyboardBuilder()
     for price, amount in packs.items():
         kb.button(text=f"{amount} ⚡ — {price} руб.", callback_data=f"buy:{price}:{amount}")
     kb.button(text="⬅️ Назад", callback_data="main_menu")
     kb.adjust(1)
-    await message.answer(messages.MSG_BUY_MENU, reply_markup=kb.as_markup())
+    text = messages.MSG_BUY_MENU.format(balance=balance)
+    await message.answer(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 async def logic_gen(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as db:
