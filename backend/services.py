@@ -251,7 +251,7 @@ async def check_generation_status(task_id: str):
     
     # Check for failure states
     state = info.get("state", "").lower()
-    is_failed = state in ["failed", "error", "cancelled", "rejected", "blocked"] or not info.get("success")
+    is_failed = state in ["fail", "failed", "failure", "error", "cancelled", "rejected", "blocked"] or not info.get("success")
     
     if is_failed:
         err = info.get("error", "Unknown error")

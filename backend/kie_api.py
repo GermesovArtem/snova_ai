@@ -108,7 +108,10 @@ async def get_task_info(task_id: str):
                     except json.JSONDecodeError:
                         pass
                         
-            return {"success": True, "state": state, "image_url": image_url}
+            # Достаем текст ошибки, если KIE его отдает (может быть в failReason, errorMsg и тд)
+            error_msg = job_data.get("failReason") or job_data.get("errorMsg") or job_data.get("error") or job_data.get("msg")
+            
+            return {"success": True, "state": state, "image_url": image_url, "error": error_msg}
         except Exception as e:
             logger.error(f"Kie API queryTask exception: {e}")
             return {"success": False, "state": "error", "error": str(e)}
