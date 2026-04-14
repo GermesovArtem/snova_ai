@@ -1,0 +1,68 @@
+import os
+import uuid
+import logging
+import aioboto3
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+
+async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
+    """
+    Асинхронно загружает файл (байты) в S3 бакет и возвращает публичный URL.
+    :param file_bytes: Содержимое файла в байтах.
+    :param ext: Расширение файла (например, '.jpg', '.png'). Возвращается ссылка для доступа.
+    """
+    if not all([S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET_NAME]):
+        logger.error("S3 configuration is missing in environment variables.")
+        raise ValueError("S3 config incomplete")
+
+    filename = f"{uuid.uuid4()}{ext}"
+    logger.info(f"Uploading {filename} to S3 bucket {S3_BUCKET_NAME}")
+
+    session = aioboto3.Session()
+    
+    # Убираем '/ru-3' из endpoint_url и указываем регион явно, если необходимо.
+    try:
+        async with session.client(
+            's3',
+            endpoint_url=S3_ENDPOINT_URL,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY
+        ) as s3_client:
+            
+            # Определяем Content-Type
+            content_type = 'image/jpeg'
+            if ext.lower() in ['.png']:
+                content_type = 'image/png'
+            elif ext.lower() in ['.webp']:
+                content_type = 'image/webp'
+            
+            await s3_client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=filename,
+                Body=file_bytes,
+                ContentType=content_type,
+                ACL='public-read' # Делаем файл публичным по умолчанию
+            )
+            
+            # В Virtual-Hosted адресации URL выглядит так: 
+            # https://bucket-name.endpoint_url/key
+            # Но если endpoint уже содержит https://, надо вставить bucket.
+            if "://" in S3_ENDPOINT_URL:
+                scheme, domain = S3_ENDPOINT_URL.split("://")
+                public_url = f"{scheme}://{S3_BUCKET_NAME}.{domain}/{filename}"
+            else:
+                public_url = f"https://{S3_BUCKET_NAME}.{S3_ENDPOINT_URL}/{filename}"
+            
+            return public_url
+            
+    except Exception as e:
+        logger.error(f"Failed to upload to S3: {e}")
+        raise e

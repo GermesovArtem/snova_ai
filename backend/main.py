@@ -9,7 +9,7 @@ import logging
 import json
 
 from backend.database import get_db, Base, engine, AsyncSessionLocal
-from backend import models, schemas, auth, services
+from backend import models, schemas, auth, services, s3_service
 from backend.routers import admin, payments
 
 # Logging
@@ -149,16 +149,13 @@ async def generate_edit(
     if not env_public:
         env_public = str(request.base_url).rstrip("/")
         
-    filenames = []
+    image_urls = []
     for img in images:
         ext = os.path.splitext(img.filename)[1] or ".jpg"
-        name = f"{uuid.uuid4()}{ext}"
-        path = os.path.join(UPLOAD_DIR, name)
-        with open(path, "wb") as f:
-            f.write(await img.read())
-        filenames.append(name)
+        file_bytes = await img.read()
+        public_url = await s3_service.upload_file_to_s3(file_bytes, ext)
+        image_urls.append(public_url)
     
-    image_urls = [f"{env_public}/static/uploads/{name}" for name in filenames]
     logger.info(f"KIE Generation: prompt='{prompt}', images={image_urls}")
 
     try:
