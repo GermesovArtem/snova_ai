@@ -8,6 +8,7 @@ from backend.models.user import UserDB
 from backend.services.generator import generate_image
 
 from backend.models.transaction import TransactionDB
+from backend.models import GenerationTask
 
 router = APIRouter(prefix="/generate", tags=["Generation"])
 
@@ -48,12 +49,24 @@ async def generate(request: GenerateRequest, db: AsyncSession = Depends(get_db))
         await db.commit()
         raise HTTPException(status_code=500, detail=str(e))
         
-    # 4b. Успешное списание
+    # Успешное списание
     user.frozen_balance -= request.cost
     
     # Запись транзакции
     tx = TransactionDB(user_id=user.id, amount=-request.cost, type="gen", status="completed")
     db.add(tx)
+    
+    # Запись истории
+    gen_task = GenerationTask(
+        user_id=user.id,
+        model=request.model,
+        prompt=request.prompt,
+        image_url=image_url,
+        status="completed",
+        credits_cost=int(request.cost),
+        tool="image"
+    )
+    db.add(gen_task)
     
     await db.commit()
     await db.refresh(user)

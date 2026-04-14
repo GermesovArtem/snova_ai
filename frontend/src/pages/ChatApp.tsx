@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, Image as ImageIcon, Download, Moon, Sun,
-  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2, ChevronDown
+  X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2, ChevronDown, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api';
@@ -254,31 +254,54 @@ export default function ChatApp() {
           </motion.div>
         </div>
         
-        <motion.button 
-          initial={{ x: 20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setIsSettingsMenuOpen(true)}
-          className="balance-pill clickable" 
-          style={{ 
-            padding: '8px 16px', 
-            borderRadius: '20px', 
-            fontSize: '16px', 
-            fontWeight: 900, 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px', 
-            background: 'linear-gradient(135deg, #facc15 0%, #eab308 100%)', 
-            color: '#000',
-            border: 'none', 
-            whiteSpace: 'nowrap',
-            boxShadow: '0 8px 20px rgba(250, 204, 21, 0.3)'
-          }}
-        >
-          <span style={{ fontSize: '18px' }}>⚡</span>
-          {user ? `${Math.floor(user.balance)}` : '...'}
-        </motion.button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <motion.button 
+            initial={{ x: 20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsSettingsMenuOpen(true)}
+            className="balance-pill clickable" 
+            style={{ 
+              padding: '8px 16px', 
+              borderRadius: '20px', 
+              fontSize: '16px', 
+              fontWeight: 900, 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              background: 'linear-gradient(135deg, #facc15 0%, #eab308 100%)', 
+              color: '#000',
+              border: 'none', 
+              whiteSpace: 'nowrap',
+              boxShadow: '0 4px 15px rgba(250, 204, 21, 0.4)'
+            }}
+          >
+            <span style={{ fontSize: '18px' }}>⚡</span>
+            {user !== null ? `${Math.floor(user.balance || 0)}` : '...'}
+          </motion.button>
+          
+          <motion.button
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => { localStorage.removeItem('token'); window.location.href='/'; }}
+            className="clickable"
+            style={{
+              padding: '8px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: '#ef4444',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <LogOut size={18} />
+          </motion.button>
+        </div>
       </header>
 
       {/* CHAT AREA */}
