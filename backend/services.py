@@ -235,6 +235,11 @@ async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list,
     if not res["success"]:
         raise Exception(res.get("error", "Unknown API error from KIE"))
         
+    # КРИТИЧЕСКИЙ ФИКС: Сохраняем реальный ID от KIE в нашу базу,
+    # иначе мы никогда не сможем найти эту задачу, чтобы пометить её как завершенную!
+    new_task.task_uuid = res["taskId"]
+    await db.commit()
+        
     return res["taskId"]
 
 async def check_generation_status(task_id: str):
