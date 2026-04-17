@@ -214,7 +214,7 @@ async def logic_contacts(message: types.Message):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     async with AsyncSessionLocal() as db:
-        user, created = await services.get_or_create_user(db, message.from_user.id, message.from_user.username)
+        user, created = await services.get_or_create_user(db, message.from_user.id, message.from_user.first_name, message.from_user.username)
         limit = get_model_limit(services.normalize_model_id(user.model_preference))
         
         if created:

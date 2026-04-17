@@ -7,7 +7,7 @@ import uuid
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(BigInteger, primary_key=True, index=True, autoincrement=False) # Telegram User ID or Internal ID
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=False)
     yandex_id = Column(String, unique=True, index=True, nullable=True)
     vk_id = Column(String, unique=True, index=True, nullable=True)
     name = Column(String, nullable=True)
