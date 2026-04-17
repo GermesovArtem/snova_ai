@@ -8,26 +8,25 @@ print("\n" + "#"*40)
 print(">>> BOT STARTUP: LOADING NEW CODE v3.1 <<<")
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL:
+def parse_db_url(url: str) -> str:
+    """Strips ${...} and expands if possible, ensuring a clean URL."""
+    if not url: return url
     import re
-    masked = re.sub(r":([^/@]+)@", ":****@", DATABASE_URL)
-    print(f"DEBUG: Found DATABASE_URL: {masked}")
-else:
-    print("DEBUG: DATABASE_URL not found in env!")
-
-# Check individual components
-print(f"DEBUG: POSTGRES_USER in env: {os.getenv('POSTGRES_USER')}")
-print(f"DEBUG: POSTGRES_PASSWORD set: {'Yes' if os.getenv('POSTGRES_PASSWORD') else 'No'}")
-print("#"*40 + "\n")
+    # Strip any shell-style variables like ${VAR} or $VAR if they leaked into the string
+    cleaned = re.sub(r'\$\{?[\w_]+\}?', lambda m: os.getenv(m.group(0).strip("${}"), ""), url)
+    # Ensure it's not empty after cleaning
+    return cleaned if cleaned and "://" in cleaned else None
 
 # DB Credentials and fallback
+DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL or "${" in DATABASE_URL:
     DB_USER = os.getenv("POSTGRES_USER", "postgres")
     DB_PASS = os.getenv("POSTGRES_PASSWORD", "postgres")
     DB_HOST = os.getenv("POSTGRES_HOST", "db")
     DB_NAME = os.getenv("POSTGRES_DB", "nanobanana")
     DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:5432/{DB_NAME}"
+else:
+    DATABASE_URL = parse_db_url(DATABASE_URL)
 # --- EXTREME DEBUG END ---
 
 # Create Async Engine
