@@ -943,7 +943,7 @@ async def on_startup():
 
 async def main():
     await on_startup()
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 if __name__ == "__main__":
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
