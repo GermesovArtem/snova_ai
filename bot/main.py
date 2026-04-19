@@ -942,11 +942,25 @@ async def on_startup():
         await services.fix_all_model_ids(db)
 
 async def main():
-    await on_startup()
-    await dp.start_polling(bot, drop_pending_updates=True)
+    try:
+        print(">>> Bot: Starting on_startup...")
+        await on_startup()
+        print(">>> Bot: Starting polling...")
+        await dp.start_polling(bot, drop_pending_updates=True)
+    except Exception as e:
+        print(f"\nCRITICAL BOT ERROR AT STARTUP: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
         logger.error("Please configure BOT_TOKEN properly in .env.")
     else:
-        asyncio.run(main())
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"Asyncio loop crash: {e}")
+            import traceback
+            traceback.print_exc()
