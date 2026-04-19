@@ -110,7 +110,9 @@ export default function ChatApp() {
       if (res.success) {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: res.data.id.toString(), db_id: res.data.id } : m));
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to save welcome message to DB, but keeping in UI.");
+    }
   };
 
   const fetchUserData = async () => {
@@ -158,17 +160,20 @@ export default function ChatApp() {
     if (!input.trim() && selectedFiles.length === 0) return;
     haptic();
     
-    // 1. User Message
-    const userMsgRes = await api.saveMessage('user', input, previews[0]);
-    if (userMsgRes.success) {
-      setMessages(prev => [...prev, {
-        id: userMsgRes.data.id.toString(),
-        db_id: userMsgRes.data.id,
-        type: 'user', text: input, image: previews[0], timestamp: new Date()
-      }]);
-    }
+    // 1. User Message (Optimistic)
+    const userTempId = `user-${Date.now()}`;
+    const userText = input;
+    const userImage = previews[0];
+    
+    setMessages(prev => [...prev, {
+      id: userTempId,
+      type: 'user', 
+      text: userText, 
+      image: userImage, 
+      timestamp: new Date()
+    }]);
 
-    // Prepare settings defaults
+    // 2. Prepare Settings
     const isPro = currentModel.includes('pro');
     const settings = {
        aspect_ratio: isPro ? "1:1" : "auto",
@@ -176,20 +181,32 @@ export default function ChatApp() {
        model: currentModel
     };
     
-    // 2. Step 2: Confirmation Bubble
-    const confirmRes = await api.saveMessage('bot-confirm', "", previews[0], { prompt: input, ...settings });
-    if (confirmRes.success) {
-      setMessages(prev => [...prev, {
-        id: confirmRes.data.id.toString(),
-        db_id: confirmRes.data.id,
-        type: 'bot-confirm',
-        image: previews[0],
-        timestamp: new Date(),
-        meta: { prompt: input, files: [...selectedFiles], previews: [...previews], ...settings }
-      }]);
-    }
-    
+    // 3. Confirmation Bubble (Optimistic)
+    const confirmTempId = `confirm-${Date.now()}`;
+    setMessages(prev => [...prev, {
+      id: confirmTempId,
+      type: 'bot-confirm',
+      image: userImage,
+      timestamp: new Date(),
+      meta: { prompt: userText, files: [...selectedFiles], previews: [...previews], ...settings }
+    }]);
+
     setInput(''); setSelectedFiles([]); setPreviews([]);
+
+    // 4. Background Sync with DB (Wait for IDs)
+    try {
+      const userRes = await api.saveMessage('user', userText); // Don't send base64 to DB history
+      if (userRes.success) {
+        setMessages(prev => prev.map(m => m.id === userTempId ? { ...m, id: userRes.data.id.toString(), db_id: userRes.data.id } : m));
+      }
+      
+      const confirmRes = await api.saveMessage('bot-confirm', "", undefined, { prompt: userText, ...settings });
+      if (confirmRes.success) {
+        setMessages(prev => prev.map(m => m.id === confirmTempId ? { ...m, id: confirmRes.data.id.toString(), db_id: confirmRes.data.id } : m));
+      }
+    } catch (e) {
+      console.error("DB Sync failed, but UI remains updated.");
+    }
   };
 
   const handleConfirmGen = async (msg: Message) => {
