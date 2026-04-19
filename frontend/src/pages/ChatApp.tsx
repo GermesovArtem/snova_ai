@@ -82,7 +82,7 @@ export default function ChatApp() {
           type: m.role as any,
           text: m.text,
           image: m.image_url,
-          meta: m.meta ? JSON.parse(m.meta) : null,
+          meta: m.meta ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } })() : null,
           timestamp: new Date(m.timestamp)
         })));
       } else {
@@ -125,6 +125,7 @@ export default function ChatApp() {
   const getModelLimit = (model: string) => 5;
 
   const getModelName = (id: string) => {
+    if (!id) return 'Nano Banana 2';
     if (modelConfig?.available_models) {
       const entry = Object.entries(modelConfig.available_models).find(([name, mid]) => mid === id);
       if (entry) return entry[0];
@@ -294,6 +295,7 @@ export default function ChatApp() {
   };
 
   const getCost = (modelId: string) => {
+    if (!modelId) return 1;
     if (modelId.includes('pro-4k')) return 3;
     if (modelId.includes('pro')) return 2;
     if (modelId.includes('4k')) return 2;
@@ -418,10 +420,10 @@ export default function ChatApp() {
               {msg.image && (
                 <div style={{ position: 'relative', marginBottom: '8px' }}>
                   <img 
-                    src={msg.image} 
+                    src={fixUrl(msg.image)} 
                     alt="preview" 
                     style={{ width: '100%', maxWidth: msg.type === 'bot' ? '240px' : '100%', borderRadius: '12px', cursor: 'pointer' }}
-                    onClick={() => window.open(msg.image, '_blank')}
+                    onClick={() => setActiveImage(fixUrl(msg.image))}
                   />
                 </div>
               )}
