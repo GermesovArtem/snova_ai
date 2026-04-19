@@ -104,8 +104,11 @@ body {
 .bubble-bot {
   background: var(--tg-bubble-bot);
   color: var(--text-color);
-  border-bottom-left-radius: 4px;
-  align-self: flex-start;
+  align-self: center;
+  margin: 8px auto;
+  width: fit-content;
+  max-width: 90%;
+  text-align: center;
 }
 
 .bubble-user {
