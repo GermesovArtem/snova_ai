@@ -169,7 +169,7 @@ async def generate_edit(
     prompt: str = Form(...),
     model_id: Optional[str] = Form(None),
     aspect_ratio: Optional[str] = Form(None),
-    output_format: Optional[str] = Form(None),
+    output_format: Optional[str] = Form("png"),
     images: List[UploadFile] = File(default=[]),
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)

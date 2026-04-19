@@ -190,7 +190,7 @@ export default function ChatApp() {
     const isPro = currentModel.includes('pro');
     const settings = {
        aspect_ratio: isPro ? "1:1" : "auto",
-       output_format: isPro ? "png" : "jpg",
+       output_format: "png",
        model: currentModel
     };
     
@@ -487,33 +487,36 @@ export default function ChatApp() {
         <AnimatePresence initial={false}>
           {messages.filter(m => m.type !== 'user').map((msg) => (
             <div key={msg.id} className="bubble bubble-bot">
-              <div className="bubble-content-flex">
+              <div className="bubble-content-flex" style={{ alignItems: 'stretch' }}> {/* Stretch to match image height */}
                 {msg.image && (
                   <img src={fixUrl(msg.image)} className="bubble-image-side" alt="Result" />
                 )}
                 
-                <div className="bubble-text-side">
-                  {msg.type === 'bot-confirm' && msg.meta && (
-                    <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
-                      ✨ <b>Ваш промпт почти готов!</b><br/><br/>
-                      📝 Текст: <code>{msg.meta.prompt || "Без текста"}</code><br/>
-                      🤖 Модель: {renderText(getModelName(msg.meta.model))}<br/>
-                      📐 Размер: {renderText(msg.meta.aspect_ratio)} | 📁 {renderText(msg.meta.output_format?.toUpperCase())}<br/>
-                      💰 Стоимость: {renderText(`${getCost(msg.meta.model)} ⚡️`)}
-                    </div>
-                  )}
+                <div className="bubble-text-side" style={{ justifyContent: 'space-between' }}> {/* Spread items vertically */}
+                  <div>
+                    {msg.type === 'bot-confirm' && msg.meta && (
+                      <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
+                        ✨ <b>Ваш промпт почти готов!</b><br/><br/>
+                        📝 Текст: <code>{msg.meta.prompt || "Без текста"}</code><br/>
+                        🤖 Модель: {renderText(getModelName(msg.meta.model))}<br/>
+                        📐 Размер: {renderText(msg.meta.aspect_ratio)} | 📁 {renderText(msg.meta.output_format?.toUpperCase())}<br/>
+                        💰 Стоимость: {renderText(`${getCost(msg.meta.model)} ⚡️`)}
+                      </div>
+                    )}
 
-                  {!['bot-confirm', 'bot-status'].includes(msg.type) && (
-                    <div style={{ fontSize: '15px' }}>{renderText(msg.text)}</div>
-                  )}
-                  
-                  {msg.type === 'bot-status' && (
-                    <div style={{ fontSize: '15px', color: 'var(--tg-accent)' }}>
-                      {renderText(msg.text)}
-                    </div>
-                  )}
+                    {!['bot-confirm', 'bot-status'].includes(msg.type) && (
+                      <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
+                    )}
+                    
+                    {msg.type === 'bot-status' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', color: 'var(--tg-accent)' }}>
+                        {renderText(msg.text)}
+                        <div className="loader-small"></div>
+                      </div>
+                    )}
+                  </div>
 
-                  <div style={{ display: 'grid', gap: '6px' }}>
+                  <div style={{ display: 'grid', gap: '6px', marginTop: '10px' }}>
                     {msg.type === 'bot-confirm' && (
                       <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
                         🚀 Сгенерировать
@@ -530,52 +533,30 @@ export default function ChatApp() {
                         </button>
                       </div>
                     )}
+
+                    {['bot', 'bot-result'].includes(msg.type) && msg.image && (
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => window.open(msg.image, '_blank')}>
+                            📥 Скачать
+                          </button>
+                          <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleRepeat(msg)}>
+                            🔄 Повтор
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => sendWelcome()}>
+                            🖼 Новая
+                          </button>
+                          <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleStartEdit(msg)}>
+                            ✏️ Правка
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-
-              {msg.type === 'bot-status' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
-                  {renderText(msg.text)}
-                  <div className="loader-small"></div>
-                </div>
-              )}
-
-              {msg.type === 'bot-edit-prompt' && (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                   <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
-                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
-                     ❌ Отмена
-                   </button>
-                </div>
-              )}
-
-              {msg.type === 'bot' && !msg.image && (
-                <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>
-                  {renderText(msg.text)}
-                </div>
-              )}
-
-              {['bot', 'bot-result'].includes(msg.type) && msg.image && (
-                <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => window.open(msg.image, '_blank')}>
-                      📥 Скачать результат
-                    </button>
-                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleRepeat(msg)}>
-                      🔄 Повторить
-                    </button>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => sendWelcome()}>
-                      🖼 Новая генерация
-                    </button>
-                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleStartEdit(msg)}>
-                      ✏️ Редактировать
-                    </button>
-                  </div>
-                </div>
-              )}
 
               <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.5, marginTop: '4px' }}>
                 {formatTime(msg.timestamp)}

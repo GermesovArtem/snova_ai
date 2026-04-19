@@ -16,7 +16,7 @@ from typing import Optional, List, Any
 
 async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] = None, 
                       aspect_ratio: str = "auto", resolution: str = "1K", 
-                      output_format: str = "jpg"):
+                      output_format: str = "png"):
     url = f"{KIE_BASE_URL}/api/v1/jobs/createTask"
     payload: dict[str, Any] = {
         "model": model, 
