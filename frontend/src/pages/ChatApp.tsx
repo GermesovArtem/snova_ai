@@ -484,9 +484,9 @@ export default function ChatApp() {
                         <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
                           ⚙️ Настройки
                         </button>
-                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); }}>
-                        ❌ Отмена
-                      </button>
+                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); sendWelcome(); }}>
+                          ❌ Отмена
+                        </button>
                     </div>
                   </div>
                 </div>
@@ -502,7 +502,7 @@ export default function ChatApp() {
               {msg.type === 'bot-edit-prompt' && (
                 <div style={{ display: 'grid', gap: '10px' }}>
                    <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
-                    <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => deleteMessage(msg.db_id, msg.id)}>
+                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); sendWelcome(); }}>
                      ❌ Отмена
                    </button>
                 </div>
