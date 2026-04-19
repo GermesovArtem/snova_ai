@@ -40,12 +40,13 @@ export const api = {
         return handleResponse(res);
     },
 
-    async generateEdit(prompt: string, images: File[] = [], model_id?: string, aspect_ratio?: string, output_format?: string) {
+    async generateEdit(prompt: string, images: File[] = [], model_id?: string, aspect_ratio?: string, output_format?: string, status_message_id?: number) {
         const formData = new FormData();
         formData.append('prompt', prompt);
         if (model_id) formData.append('model_id', model_id);
         if (aspect_ratio) formData.append('aspect_ratio', aspect_ratio);
         if (output_format) formData.append('output_format', output_format);
+        if (status_message_id) formData.append('status_message_id', status_message_id.toString());
         images.forEach(img => formData.append('images', img));
 
         const token = localStorage.getItem('token');

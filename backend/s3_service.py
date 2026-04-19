@@ -62,3 +62,25 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
     except Exception as e:
         logger.error(f"Failed to upload to S3: {e}")
         raise e
+
+async def get_presigned_url(filename: str, expires_in: int = 3600) -> str:
+    """
+    Генерирует временную (pre-signed) ссылку для доступа к приватному объекту в S3.
+    Это надежнее публичных ссылок для KIE AI.
+    """
+    if not all([S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET_NAME]):
+        raise ValueError("S3 config incomplete")
+
+    session = aioboto3.Session()
+    async with session.client(
+        's3',
+        endpoint_url=S3_ENDPOINT_URL,
+        aws_access_key_id=S3_ACCESS_KEY,
+        aws_secret_access_key=S3_SECRET_KEY
+    ) as s3_client:
+        url = await s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET_NAME, 'Key': filename},
+            ExpiresIn=expires_in
+        )
+        return url

@@ -193,7 +193,7 @@ async def refund_frozen_credits(db, user_id: int, cost: float):
         user.frozen_balance -= cost
         await db.commit()
 
-async def commit_frozen_credits(db, user_id: int, cost: float):
+async def commit_frozen_credits(db: AsyncSession, user_id: int, cost: float):
     """Permanently deducts frozen credits upon success"""
     res = await db.execute(select(models.User).filter_by(id=user_id))
     user = res.scalars().first()
@@ -201,60 +201,143 @@ async def commit_frozen_credits(db, user_id: int, cost: float):
         user.frozen_balance -= cost
         await db.commit()
 
-async def start_generation_flow(db, user_id: int, prompt: str, image_urls: list, 
-                                model_id: str, cost: float, 
-                                aspect_ratio: str = "auto", resolution: str = "1K", 
-                                output_format: str = "jpg"):
-    """Saves task to DB and sends to KIE API"""
-    # Final safety normalization
+async def start_generation_flow(
+    db: AsyncSession, 
+    user_id: int, 
+    prompt: str, 
+    image_paths: List[str] = [], 
+    model_id: str = "nano-banana-2", 
+    cost: float = 1.0,
+    aspect_ratio: str = "1:1",
+    resolution: str = "1K",
+    output_format: str = "png",
+    status_message_id: int = None
+) -> str:
+    """
+    Initializes generation task in DB, freezes credits, and calls KIE AI.
+    Returns the task_uuid.
+    """
+    # 1. Normalize model
     model_id = normalize_model_id(model_id)
+    
+    # 2. Check balance
+    user = await get_user_by_id(db, user_id)
+    if not user or (user.balance - user.frozen_balance) < cost:
+        raise Exception("insufficient_funds")
+
+    # 3. Freeze credits
+    user.frozen_balance += cost
+    db.add(user)
+    
+    # 4. Create Task record
     new_task = models.GenerationTask(
         user_id=user_id,
-        tool="image",
         model=model_id,
         prompt=prompt,
-        image_url=None, # This is the result URL, keep empty until success
-        prompt_image_url=image_urls[0] if image_urls else None, # Store the first input image as prompt reference
-        prompt_images_json=json.dumps(image_urls) if image_urls else None, # Store all images as JSON
-        credits_cost=cost
+        credits_cost=cost,
+        status_message_id=status_message_id,
+        prompt_image_url=image_paths[0] if image_paths else None,
+        prompt_images_json=json.dumps(image_paths) if image_paths else None
     )
-    try:
-        db.add(new_task)
-        await db.commit()
-        await db.refresh(new_task)
-    except Exception as e:
-        logger.error(f"Error saving task to DB: {e}")
-        raise ValueError(translate_error(str(e)))
-    
-    # Call KIE: Map internal Tier ID back to real KIE Model and Resolution
-    kie_model = "nano-banana-2"
-    final_res = resolution # use passed or default
-    
-    if model_id == "nano-banana-2-1k":
-        kie_model = "nano-banana-2"
-        final_res = "1K"
-    elif model_id == "nano-banana-2-4k":
-        kie_model = "nano-banana-2"
-        final_res = "4K"
-    elif model_id == "nano-banana-pro-2k":
-        kie_model = "nano-banana-pro"
-        final_res = "2K"
-    elif model_id == "nano-banana-pro-4k":
-        kie_model = "nano-banana-pro"
-        final_res = "4K"
-    elif "pro" in model_id:
-        kie_model = "nano-banana-pro"
-        
-    res = await create_task(kie_model, prompt, image_urls, aspect_ratio, final_res, output_format)
-    if not res["success"]:
-        raise Exception(res.get("error", "Unknown API error from KIE"))
-        
-    # КРИТИЧЕСКИЙ ФИКС: Сохраняем реальный ID от KIE в нашу базу,
-    # иначе мы никогда не сможем найти эту задачу, чтобы пометить её как завершенную!
-    new_task.task_uuid = res["taskId"]
+    db.add(new_task)
     await db.commit()
-        
-    return res["taskId"]
+    await db.refresh(new_task)
+
+    # 5. Call KIE AI
+    try:
+        kie_task_id = await create_task(
+            prompt=prompt, 
+            images=image_paths, 
+            model=model_id, 
+            aspect_ratio=aspect_ratio, 
+            resolution=resolution,
+            output_format=output_format
+        )
+        # Link UUIDs
+        new_task.task_uuid = kie_task_id
+        await db.commit()
+        return kie_task_id
+    except Exception as e:
+        # Refund on failure
+        user.frozen_balance -= cost
+        new_task.status = "failed"
+        await db.commit()
+        raise e
+
+async def background_poll_kie_task(db_factory, user_id: int, task_uuid: str, status_message_id: int = None):
+    """
+    Background task to poll KIE AI and finalize the task. 
+    Just like start_generation_wrapper in bot/main.py but for Web.
+    """
+    import asyncio # Ensure it's imported
+    try:
+        # Loop for 10 minutes
+        for i in range(120):
+            await asyncio.sleep(5)
+            info = await check_generation_status(task_uuid)
+            status = info.get("state")
+            
+            if status in ["success", "completed"] and info.get("image_url"):
+                async with db_factory() as db:
+                    # Finalize credits
+                    res = await db.execute(select(models.GenerationTask).filter_by(task_uuid=task_uuid))
+                    task = res.scalars().first()
+                    if not task: return
+                    
+                    cost = task.credits_cost
+                    await commit_frozen_credits(db, user_id, cost)
+                    
+                    # Update task
+                    task.status = "completed"
+                    task.image_url = info.get("image_url")
+                    
+                    # Update status bubble if web message ID provided
+                    if status_message_id:
+                        msg_res = await db.execute(select(models.WebChatMessage).filter_by(id=status_message_id))
+                        msg = msg_res.scalars().first()
+                        if msg:
+                            msg.role = "bot-result"
+                            msg.text = "🔥 **Результат готов!**"
+                            msg.image_url = info.get("image_url")
+                    
+                    await db.commit()
+                return
+            
+            elif status in ["failed", "error", "cancelled"]:
+                async with db_factory() as db:
+                    res = await db.execute(select(models.GenerationTask).filter_by(task_uuid=task_uuid))
+                    task = res.scalars().first()
+                    if task:
+                        await refund_frozen_credits(db, user_id, task.credits_cost)
+                        task.status = "failed"
+                        
+                        if status_message_id:
+                            msg_res = await db.execute(select(models.WebChatMessage).filter_by(id=status_message_id))
+                            msg = msg_res.scalars().first()
+                            if msg:
+                                err_text = translate_error(info.get("error", ""))
+                                msg.text = f"❌ **Ошибка:** {err_text or 'Генерация не удалась'}"
+                        
+                    await db.commit()
+                return
+                
+        # Timeout
+        async with db_factory() as db:
+            res = await db.execute(select(models.GenerationTask).filter_by(task_uuid=task_uuid))
+            task = res.scalars().first()
+            if task:
+                await refund_frozen_credits(db, user_id, task.credits_cost)
+                task.status = "failed"
+                if status_message_id:
+                    msg_res = await db.execute(select(models.WebChatMessage).filter_by(id=status_message_id))
+                    msg = msg_res.scalars().first()
+                    if msg:
+                        msg.text = "⚠️ **Тайм-аут.** Проверьте историю позже."
+            await db.commit()
+            
+    except Exception as e:
+        import logging
+        logging.getLogger("backend.services").error(f"Background polling failed for {task_uuid}: {e}", exc_info=True)
 
 async def check_generation_status(task_id: str):
     """Wrapper for KIE recordInfo with Russian error translation"""

@@ -32,6 +32,7 @@ class GenerationTask(Base):
     prompt = Column(String, nullable=True)
     image_url = Column(String, nullable=True) # Result URL
     credits_cost = Column(Integer, default=1)
+    status_message_id = Column(Integer, nullable=True) # ID of the "Processing" bubble in web_chat_messages
     prompt_image_url = Column(String, nullable=True) # Thumbnail/First reference
     prompt_images_json = Column(String, nullable=True) # All references as JSON list
     created_at = Column(DateTime, server_default=func.now())

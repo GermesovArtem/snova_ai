@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -174,47 +174,50 @@ app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 # --- GENERATION ---
 @app.post("/api/v1/generate/edit")
 async def generate_edit(
-    request: Request,
+    background_tasks: BackgroundTasks,
     prompt: str = Form(...),
-    model_id: Optional[str] = Form(None),
-    aspect_ratio: Optional[str] = Form(None),
-    output_format: Optional[str] = Form("png"),
-    images: List[UploadFile] = File(default=[]),
+    images: List[UploadFile] = File([]),
+    model_id: str = Form(None),
+    aspect_ratio: str = Form("1:1"),
+    resolution: str = Form("1K"),
+    output_format: str = Form("png"),
+    status_message_id: int = Form(None),
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Determine public URL for images
-    env_public = os.getenv("PUBLIC_URL")
-    if not env_public:
-        env_public = str(request.base_url).rstrip("/")
+    try:
+        # 1. Upload files and get URLs (Pre-signed for KIE AI)
+        image_urls = []
+        for img in images:
+            content = await img.read()
+            ext = os.path.splitext(img.filename)[1]
+            public_url = await s3_service.upload_file_to_s3(content, ext)
+            # Switch to pre-signed URL for KIE to avoid 403
+            filename = public_url.split('/')[-1]
+            presigned_url = await s3_service.get_presigned_url(filename)
+            image_urls.append(presigned_url)
+            
+        # 2. Get cost
+        model = services.normalize_model_id(model_id or user.model_preference)
+        cost = services.get_model_cost(model)
         
-    image_urls = []
-    for img in images:
-        ext = os.path.splitext(img.filename)[1] or ".jpg"
-        file_bytes = await img.read()
-        public_url = await s3_service.upload_file_to_s3(file_bytes, ext)
-        image_urls.append(public_url)
-    
-    logger.info(f"KIE Generation: prompt='{prompt}', images={image_urls}")
-
-    try:
-        cost = await services.pre_charge_generation(db, user, model_id or user.model_preference)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-
-    try:
-        task_id = await services.start_generation_flow(
-            db, user.id, prompt, image_urls, 
-            model_id=model_id or user.model_preference, 
-            cost=cost,
-            aspect_ratio=aspect_ratio or "auto",
-            output_format=output_format or "jpg"
+        # 3. Start flow
+        task_uuid = await services.start_generation_flow(
+            db, user.id, prompt, image_urls, model, cost, 
+            aspect_ratio, resolution, output_format,
+            status_message_id=status_message_id
         )
-        return {"success": True, "data": {"task_uuid": task_id}}
+        
+        # 4. Launch background polling (Parity with Bot)
+        background_tasks.add_task(
+            services.background_poll_kie_task, 
+            AsyncSessionLocal, user.id, task_uuid, status_message_id
+        )
+        
+        return {"success": True, "data": {"task_uuid": task_uuid}}
     except Exception as e:
-        logger.error(f"Generation error: {e}")
-        await services.refund_frozen_credits(db, user.id, cost)
-        return {"success": False, "error": str(e)}
+        logger.error(f"Generation error: {e}", exc_info=True)
+        return {"success": False, "error": services.translate_error(str(e))}
 
 @app.get("/api/v1/generations/{task_uuid}")
 async def get_generation(task_uuid: str, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

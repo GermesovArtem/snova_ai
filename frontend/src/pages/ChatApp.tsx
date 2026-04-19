@@ -91,17 +91,18 @@ export default function ChatApp() {
       if (activeRes.success && activeRes.data.length > 0) {
         const task = activeRes.data[0];
         const statusText = `🚀 **Продолжаю генерацию...**`;
+        const targetMsgId = task.status_message_id || task.id; // Fallback to task.id if message_id was missing (old tasks)
         
         setMessages(prev => [...prev, {
-          id: task.id.toString(),
-          db_id: task.id,
+          id: targetMsgId.toString(),
+          db_id: targetMsgId,
           type: 'bot-status',
           text: statusText,
           isGenerating: true,
           timestamp: new Date(task.created_at)
         }]);
         
-        pollStatus(task.task_uuid, task.id);
+        pollStatus(task.task_uuid, targetMsgId);
       }
     } catch (e) {
       console.error("Active tasks fetch error:", e);
@@ -275,7 +276,8 @@ export default function ChatApp() {
           msg.meta.files || [], 
           msg.meta.model, 
           msg.meta.aspect_ratio, 
-          msg.meta.output_format
+          msg.meta.output_format,
+          statusRes.data.id // Pass the message ID for background correlation
         );
         if (res.success) {
           pollStatus(res.data.task_uuid, statusRes.data.id);
