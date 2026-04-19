@@ -259,6 +259,8 @@ export default function ChatApp() {
     } catch (e) {
       console.error("DB Sync failed, but UI remains updated.");
     }
+  };
+
   const handleConfirmGen = async (msg: Message) => {
     haptic();
     const modelName = getModelName(msg.meta.model);
