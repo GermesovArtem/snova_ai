@@ -59,12 +59,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    command: caddy reverse-proxy --from fragmentx.tech --to frontend:80
-    depends_on:
-      - frontend
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
     <<: *default-logging
 
 volumes:
