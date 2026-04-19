@@ -76,8 +76,9 @@ export default function ChatApp() {
     fetchUserData();
     try {
       const res = await api.getMessages();
+      let history: Message[] = [];
       if (res.success && res.data.length > 0) {
-        setMessages(res.data.map((m: any) => ({
+        history = res.data.map((m: any) => ({
           id: m.id.toString(),
           db_id: m.id,
           type: m.role as any,
@@ -85,11 +86,19 @@ export default function ChatApp() {
           image: m.image_url,
           meta: m.meta ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } })() : null,
           timestamp: new Date(m.timestamp)
-        })));
-      } else {
-        // Step 1: Welcome message
-        sendWelcome();
+        }));
       }
+
+      // Always ensure a welcome message is at the top for this session
+      const welcomeText = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
+      const welcomeMsg: Message = {
+        id: 'welcome-session',
+        type: 'bot',
+        text: welcomeText,
+        timestamp: new Date()
+      };
+      
+      setMessages([welcomeMsg, ...history]);
     } catch (e) { console.error(e); }
   };
 
@@ -293,9 +302,11 @@ export default function ChatApp() {
     handleConfirmGen(msg);
   };
 
-  const deleteMessage = async (dbId: number) => {
-    setMessages(prev => prev.filter(m => m.db_id !== dbId));
-    await api.deleteMessage(dbId);
+  const deleteMessage = async (dbId?: number, localId?: string) => {
+    setMessages(prev => prev.filter(m => (dbId ? m.db_id !== dbId : true) && (localId ? m.id !== localId : true)));
+    if (dbId) {
+      await api.deleteMessage(dbId);
+    }
   };
 
   const handleStartEdit = async (msg: Message) => {
@@ -442,7 +453,7 @@ export default function ChatApp() {
         </div>
 
         <AnimatePresence initial={false}>
-          {messages.map((msg) => (
+          {messages.filter(m => m.type !== 'user').map((msg) => (
             <div key={msg.id} className={`bubble ${msg.type === 'user' ? 'bubble-user' : 'bubble-bot'}`}>
               
               {msg.image && (
@@ -450,7 +461,7 @@ export default function ChatApp() {
                   <img 
                     src={fixUrl(msg.image)} 
                     alt="preview" 
-                    style={{ width: '100%', maxWidth: msg.type === 'bot' ? '240px' : '100%', borderRadius: '12px', cursor: 'pointer' }}
+                    style={{ width: '100%', maxWidth: '280px', maxHeight: '320px', objectFit: 'cover', borderRadius: '12px', cursor: 'pointer' }}
                     onClick={() => setActiveImage(fixUrl(msg.image))}
                   />
                 </div>
@@ -473,7 +484,7 @@ export default function ChatApp() {
                         <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
                           ⚙️ Настройки
                         </button>
-                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id!); }}>
+                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); }}>
                         ❌ Отмена
                       </button>
                     </div>
@@ -491,7 +502,7 @@ export default function ChatApp() {
               {msg.type === 'bot-edit-prompt' && (
                 <div style={{ display: 'grid', gap: '10px' }}>
                    <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
-                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => deleteMessage(msg.db_id!)}>
+                    <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => deleteMessage(msg.db_id, msg.id)}>
                      ❌ Отмена
                    </button>
                 </div>
