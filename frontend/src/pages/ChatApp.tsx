@@ -72,6 +72,7 @@ export default function ChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const initApp = async () => {
     // Start with a local welcome message immediately
     const welcomeText = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
     const welcomeMsg: Message = {
@@ -100,6 +101,7 @@ export default function ChatApp() {
     } catch (e) {
       console.error("History fetch error:", e);
     }
+  };
 
   const sendWelcome = async () => {
     const text = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
