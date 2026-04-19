@@ -10,7 +10,7 @@ import { api } from '../api';
 interface Message {
   id: string; // "welcome", "temp-xxx", or real DB number string
   db_id?: number; // Store the numeric ID from the server for updates/deletes
-  type: 'user' | 'bot' | 'bot-confirm' | 'bot-status' | 'bot-edit-prompt';
+  type: 'user' | 'bot' | 'bot-confirm' | 'bot-status' | 'bot-result' | 'bot-edit-prompt';
   text?: string;
   image?: string;
   isGenerating?: boolean;
@@ -516,10 +516,11 @@ export default function ChatApp() {
                         <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-button)' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
                           ❌ Отмена
                         </button>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
 
               {msg.type === 'bot-status' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
@@ -543,7 +544,7 @@ export default function ChatApp() {
                 </div>
               )}
 
-              {msg.type === 'bot' && msg.image && (
+              {['bot', 'bot-result'].includes(msg.type) && msg.image && (
                 <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
                   <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap', marginBottom: '8px' }}>
                     {renderText(msg.text)}
