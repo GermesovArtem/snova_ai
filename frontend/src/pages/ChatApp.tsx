@@ -232,23 +232,35 @@ export default function ChatApp() {
 
     // 4. Background Sync with DB (Wait for IDs)
     try {
-      const userRes = await api.saveMessage('user', userText); // Don't send base64 to DB history
+      let finalImageUrl = undefined;
+      let finalFiles = [...selectedFiles];
+      
+      // If we have files, upload them immediately to ensure they persist in history
+      if (selectedFiles.length > 0) {
+         try {
+           const uploadRes = await api.uploadImage(selectedFiles[0]);
+           if (uploadRes.success) {
+              finalImageUrl = uploadRes.data.url;
+           }
+         } catch (e) {
+           console.error("Image upload failed during initiation:", e);
+         }
+      }
+
+      const userRes = await api.saveMessage('user', userText, finalImageUrl); 
       if (userRes.success) {
-        setMessages(prev => prev.map(m => m.id === userTempId ? { ...m, id: userRes.data.id.toString(), db_id: userRes.data.id } : m));
+        setMessages(prev => prev.map(m => m.id === userTempId ? { ...m, id: userRes.data.id.toString(), db_id: userRes.data.id, image: finalImageUrl || m.image } : m));
       }
       
-      const confirmRes = await api.saveMessage('bot-confirm', "", undefined, { prompt: userText, ...settings });
+      const confirmRes = await api.saveMessage('bot-confirm', "", finalImageUrl, { prompt: userText, ...settings, s3_urls: finalImageUrl ? [finalImageUrl] : [] });
       if (confirmRes.success) {
-        setMessages(prev => prev.map(m => m.id === confirmTempId ? { ...m, id: confirmRes.data.id.toString(), db_id: confirmRes.data.id } : m));
+        setMessages(prev => prev.map(m => m.id === confirmTempId ? { ...m, id: confirmRes.data.id.toString(), db_id: confirmRes.data.id, image: finalImageUrl || m.image, meta: { ...m.meta, s3_urls: finalImageUrl ? [finalImageUrl] : [] } } : m));
       }
     } catch (e) {
       console.error("DB Sync failed, but UI remains updated.");
     }
-  };
-
   const handleConfirmGen = async (msg: Message) => {
     haptic();
-    const botMsgId = `status-${Date.now()}`;
     const modelName = getModelName(msg.meta.model);
     
     // Add "Request confirmed" message (Step 3)
@@ -271,13 +283,17 @@ export default function ChatApp() {
           return;
         }
 
+        // Use existing S3 URLs if available from the initiation phase
+        const s3Urls = msg.meta?.s3_urls || [];
+        
         const res = await api.generateEdit(
           msg.meta.prompt, 
-          msg.meta.files || [], 
+          s3Urls.length > 0 ? [] : (msg.meta.files || []), // If we have S3 URLs, we don't need to re-upload files
           msg.meta.model, 
           msg.meta.aspect_ratio, 
           msg.meta.output_format,
-          statusRes.data.id // Pass the message ID for background correlation
+          statusRes.data.id,
+          s3Urls[0]
         );
         if (res.success) {
           pollStatus(res.data.task_uuid, statusRes.data.id);

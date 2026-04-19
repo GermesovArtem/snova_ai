@@ -40,13 +40,14 @@ export const api = {
         return handleResponse(res);
     },
 
-    async generateEdit(prompt: string, images: File[] = [], model_id?: string, aspect_ratio?: string, output_format?: string, status_message_id?: number) {
+    async generateEdit(prompt: string, images: File[] = [], model_id?: string, aspect_ratio?: string, output_format?: string, status_message_id?: number, s3_url?: string) {
         const formData = new FormData();
         formData.append('prompt', prompt);
         if (model_id) formData.append('model_id', model_id);
         if (aspect_ratio) formData.append('aspect_ratio', aspect_ratio);
         if (output_format) formData.append('output_format', output_format);
         if (status_message_id) formData.append('status_message_id', status_message_id.toString());
+        if (s3_url) formData.append('s3_url', s3_url);
         images.forEach(img => formData.append('images', img));
 
         const token = localStorage.getItem('token');
@@ -178,4 +179,15 @@ export const api = {
         });
         return handleResponse(res);
     },
+
+    async uploadImage(file: File) {
+        const formData = new FormData();
+        formData.append('image', file);
+        const res = await fetch(`${API_BASE}/user/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+            body: formData
+        });
+        return handleResponse(res);
+    }
 };

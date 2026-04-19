@@ -111,8 +111,23 @@ async def get_me(user: models.User = Depends(get_current_user)):
 
 @app.get("/api/v1/user/history")
 async def get_history(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    hist = await services.get_user_history(db, user.id)
-    return {"success": True, "data": hist}
+    history = await services.get_user_history(db, user.id)
+    return {"success": True, "data": history}
+
+@app.post("/api/v1/user/upload")
+async def upload_file(
+    image: UploadFile = File(...),
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        content = await image.read()
+        ext = os.path.splitext(image.filename)[1]
+        public_url = await s3_service.upload_file_to_s3(content, ext)
+        return {"success": True, "data": {"url": public_url}}
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        return {"success": False, "error": str(e)}
 
 @app.get("/api/v1/user/active-tasks")
 async def get_active_tasks(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -182,17 +197,24 @@ async def generate_edit(
     resolution: str = Form("1K"),
     output_format: str = Form("png"),
     status_message_id: int = Form(None),
+    s3_url: str = Form(None), # Accepts already uploaded URL
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     try:
         # 1. Upload files and get URLs (Pre-signed for KIE AI)
         image_urls = []
+        if s3_url:
+            # Use already uploaded S3 URL
+            # We still need to convert it to a pre-signed URL for KIE safety
+            filename = s3_url.split('/')[-1]
+            presigned = await s3_service.get_presigned_url(filename)
+            image_urls.append(presigned)
+        
         for img in images:
             content = await img.read()
             ext = os.path.splitext(img.filename)[1]
             public_url = await s3_service.upload_file_to_s3(content, ext)
-            # Switch to pre-signed URL for KIE to avoid 403
             filename = public_url.split('/')[-1]
             presigned_url = await s3_service.get_presigned_url(filename)
             image_urls.append(presigned_url)
