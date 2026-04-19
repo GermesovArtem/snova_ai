@@ -72,35 +72,34 @@ export default function ChatApp() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const initApp = async () => {
+    // Start with a local welcome message immediately
+    const welcomeText = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
+    const welcomeMsg: Message = {
+      id: 'welcome-session',
+      type: 'bot',
+      text: welcomeText,
+      timestamp: new Date()
+    };
+    setMessages([welcomeMsg]);
+
     fetchUserData();
     try {
       const res = await api.getMessages();
-      let history: Message[] = [];
       if (res.success && res.data.length > 0) {
-        history = res.data.map((m: any) => ({
+        const history = res.data.map((m: any) => ({
           id: m.id.toString(),
           db_id: m.id,
           type: m.role as any,
           text: m.text,
           image: m.image_url,
-          meta: m.meta ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } })() : null,
+          meta: (typeof m.meta === 'string' && m.meta) ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } })() : m.meta,
           timestamp: new Date(m.timestamp)
         }));
+        setMessages([welcomeMsg, ...history]);
       }
-
-      // Always ensure a welcome message is at the top for this session
-      const welcomeText = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
-      const welcomeMsg: Message = {
-        id: 'welcome-session',
-        type: 'bot',
-        text: welcomeText,
-        timestamp: new Date()
-      };
-      
-      setMessages([welcomeMsg, ...history]);
-    } catch (e) { console.error(e); }
-  };
+    } catch (e) {
+      console.error("History fetch error:", e);
+    }
 
   const sendWelcome = async () => {
     const text = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
