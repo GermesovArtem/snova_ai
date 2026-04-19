@@ -36,7 +36,6 @@ export default function ChatApp() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyTasks, setHistoryTasks] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
