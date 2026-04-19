@@ -57,9 +57,6 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   width: 100%;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
 }
 
 /* Telegram Chat Layout */
@@ -82,17 +79,12 @@ body {
 
 @media (min-width: 1024px) {
   .chat-container {
-    max-width: 100%; /* Changed to 100% for full screen */
-    margin: 0;         /* Removed margin */
+    max-width: 100%; 
+    margin: 0;
     height: 100dvh;
-    border-radius: 0;   /* Removed rounding for full screen */
+    border-radius: 0;
     box-shadow: none;
     overflow: hidden;
-  }
-  body {
-    background-color: var(--bg-color);
-    padding: 0;
-    align-items: stretch;
   }
 }
 

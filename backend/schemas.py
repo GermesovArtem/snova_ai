@@ -25,10 +25,16 @@ class MessageCreate(BaseModel):
     role: str
     text: Optional[str] = None
     image_url: Optional[str] = None
+    meta: Optional[dict] = None
+
+class MessageUpdate(BaseModel):
+    text: Optional[str] = None
+    meta: Optional[dict] = None
 
 class MessageRead(BaseModel):
     id: int
     role: str
     text: Optional[str] = None
     image_url: Optional[str] = None
-    timestamp: str
+    meta: Optional[str] = None # JSON string
+    timestamp: datetime.datetime

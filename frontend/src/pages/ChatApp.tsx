@@ -8,8 +8,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api';
 
 interface Message {
-  id: string;
-  type: 'user' | 'bot' | 'bot-confirm';
+  id: string; // "welcome", "temp-xxx", or real DB number string
+  db_id?: number; // Store the numeric ID from the server for updates/deletes
+  type: 'user' | 'bot' | 'bot-confirm' | 'bot-status' | 'bot-edit-prompt';
   text?: string;
   image?: string;
   isGenerating?: boolean;
@@ -30,14 +31,17 @@ export default function ChatApp() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [currentModel, setCurrentModel] = useState('nano-banana-2');
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyTasks, setHistoryTasks] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [historyDetailsTask, setHistoryDetailsTask] = useState<any>(null);
-  const [activeImage, setActiveImage] = useState<string | null>(null); 
+  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
+  const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  const [activeImage, setActiveImage] = useState<string | null>(null);
+ 
   const [historyLightboxTask, setHistoryLightboxTask] = useState<any>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
@@ -75,20 +79,38 @@ export default function ChatApp() {
       if (res.success && res.data.length > 0) {
         setMessages(res.data.map((m: any) => ({
           id: m.id.toString(),
+          db_id: m.id,
           type: m.role as any,
           text: m.text,
           image: m.image_url,
+          meta: m.meta ? JSON.parse(m.meta) : null,
           timestamp: new Date(m.timestamp)
         })));
       } else {
-        setMessages([{ 
-          id: 'welcome', 
-          type: 'bot', 
-          text: `✨ **Добро пожаловать в S•NOVA AI!**\n\nЯ помогу тебе воплотить любую задумку в арт за считанные секунды.\n\n👇 **Просто отправь текст или фото ниже!**`, 
-          timestamp: new Date() 
-        }]);
+        // Step 1: Welcome message
+        sendWelcome();
       }
     } catch (e) { console.error(e); }
+  };
+
+  const sendWelcome = async () => {
+    const text = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
+    
+    // UI optimistic
+    const tempId = `welcome-${Date.now()}`;
+    setMessages(prev => [...prev.filter(m => m.id !== 'welcome'), {
+      id: tempId,
+      type: 'bot',
+      text: text,
+      timestamp: new Date()
+    }]);
+
+    try {
+      const res = await api.saveMessage('bot', text);
+      if (res.success) {
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: res.data.id.toString(), db_id: res.data.id } : m));
+      }
+    } catch (e) {}
   };
 
   const fetchUserData = async () => {
@@ -101,16 +123,7 @@ export default function ChatApp() {
     } catch (e) { console.error(e); }
   };
 
-  const openHistory = async () => {
-    haptic();
-    setIsHistoryOpen(true);
-    setIsHistoryLoading(true);
-    try {
-      const res = await api.getHistory();
-      if (res.success) setHistoryTasks(res.data);
-    } catch (e) { console.error(e); }
-    setIsHistoryLoading(false);
-  };
+  const getModelLimit = (model: string) => 5;
 
   const getModelName = (id: string) => {
     if (modelConfig?.available_models) {
@@ -143,49 +156,78 @@ export default function ChatApp() {
   const handleInitiate = async () => {
     if (!input.trim() && selectedFiles.length === 0) return;
     haptic();
-    const userMsgId = Date.now().toString() + '-user';
-    const msgObj: Message = { id: userMsgId, type: 'user', text: input, image: previews[0], timestamp: new Date() };
     
-    setMessages(prev => [...prev, msgObj]);
+    // 1. User Message
+    const userMsgRes = await api.saveMessage('user', input, previews[0]);
+    if (userMsgRes.success) {
+      setMessages(prev => [...prev, {
+        id: userMsgRes.data.id.toString(),
+        db_id: userMsgRes.data.id,
+        type: 'user', text: input, image: previews[0], timestamp: new Date()
+      }]);
+    }
+
+    // Prepare settings defaults
+    const isPro = currentModel.includes('pro');
+    const settings = {
+       aspect_ratio: isPro ? "1:1" : "auto",
+       output_format: isPro ? "png" : "jpg",
+       model: currentModel
+    };
     
-    const confirmMsgId = Date.now().toString();
-    setMessages(prev => [...prev, {
-      id: confirmMsgId, type: 'bot-confirm', 
-      image: previews[0], timestamp: new Date(),
-      meta: { prompt: input, files: [...selectedFiles], previews: [...previews], model: currentModel }
-    }]);
-    
-    // Save user message to server (using previews[0] for the immediate image URL if needed, 
-    // but typically we'd wait for upload. Here we just save the text for now).
-    try { await api.saveMessage('user', input, previews[0]); } catch (e) {}
+    // 2. Step 2: Confirmation Bubble
+    const confirmRes = await api.saveMessage('bot-confirm', "", previews[0], { prompt: input, ...settings });
+    if (confirmRes.success) {
+      setMessages(prev => [...prev, {
+        id: confirmRes.data.id.toString(),
+        db_id: confirmRes.data.id,
+        type: 'bot-confirm',
+        image: previews[0],
+        timestamp: new Date(),
+        meta: { prompt: input, files: [...selectedFiles], previews: [...previews], ...settings }
+      }]);
+    }
     
     setInput(''); setSelectedFiles([]); setPreviews([]);
   };
 
-  const handleConfirmGen = async (msgId: string) => {
+  const handleConfirmGen = async (msg: Message) => {
     haptic();
-    const msg = messages.find(m => m.id === msgId);
-    if (!msg) return;
-
-    const botMsgId = Date.now().toString();
+    const botMsgId = `status-${Date.now()}`;
+    const modelName = getModelName(msg.meta.model);
     
-    // Batch update: remove confirmation bubble and add generating bubble in one go 
-    // to prevent hitting 0 messages and triggering a welcome reset.
-    setMessages(prev => [
-      ...prev.filter(m => m.id !== msgId),
-      { id: botMsgId, type: 'bot', text: `🚀 Начинаю генерацию...`, isGenerating: true, timestamp: new Date() }
-    ]);
-
-    try {
-      const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
-      if (res.success) pollStatus(res.data.task_uuid, botMsgId);
-      else updateBotMessage(botMsgId, "❌ Ошибка: " + res.error);
-    } catch (e: any) { 
-      updateBotMessage(botMsgId, `❌ Ошибка соединения`); 
+    // Add "Request confirmed" message (Step 3)
+    const statusText = `🚀 **Запрос подтвержден!** Начинаю генерацию [ **${modelName}** ]`;
+    const statusRes = await api.saveMessage('bot-status', statusText);
+    
+    if (statusRes.success) {
+      setMessages(prev => [...prev, {
+        id: statusRes.data.id.toString(),
+        db_id: statusRes.data.id,
+        type: 'bot-status',
+        text: statusText,
+        isGenerating: true,
+        timestamp: new Date()
+      }]);
+      
+      try {
+        const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
+        if (res.success) {
+          pollStatus(res.data.task_uuid, statusRes.data.id);
+        } else {
+          updateBotMessage(statusRes.data.id, "❌ Ошибка: " + res.error);
+        }
+      } catch (e: any) { 
+        updateBotMessage(statusRes.data.id, `❌ Ошибка соединения`); 
+      }
     }
   };
 
-  const pollStatus = async (uuid: string, msgId: string) => {
+  const updateBotMessage = (dbId: number, text: string) => {
+    setMessages(prev => prev.map(m => m.db_id === dbId ? { ...m, text, isGenerating: false } : m));
+  };
+
+  const pollStatus = async (uuid: string, statusDbId: number) => {
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
@@ -193,34 +235,87 @@ export default function ChatApp() {
         const res = await api.checkStatus(uuid);
         if (res.success && (res.data.state === 'success' || res.data.state === 'completed')) {
           clearInterval(interval);
-          updateBotMessage(msgId, `🔥 **Результат готов!**`, res.data.image_url);
+          // Step 3 Deletion: Delete the "Processing" bubble
+          await api.deleteMessage(statusDbId);
+          setMessages(prev => prev.filter(m => m.db_id !== statusDbId));
+          
+          // Step 4: Show Result
+          deliverResult(res.data.image_url);
           fetchUserData();
         } else if (res.data.state === 'failed' || res.data.state === 'error') {
           clearInterval(interval);
-          updateBotMessage(msgId, `❌ **Ошибка:** ${res.data.error || "Генерация не удалась"}`);
+          updateBotMessage(statusDbId, `❌ **Ошибка:** ${res.data.error || "Генерация не удалась"}`);
           fetchUserData();
         } else if (attempts > 120) {
           clearInterval(interval);
-          updateBotMessage(msgId, `⚠️ **Тайм-аут.** Проверьте историю позже.`);
+          updateBotMessage(statusDbId, `⚠️ **Тайм-аут.** Проверьте историю позже.`);
         }
       } catch (e) { console.error(e); }
     }, 3000);
   };
 
-  const updateBotMessage = async (id: string, text: string, imageUrl?: string) => {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, text, image: imageUrl, isGenerating: false } : m));
-    // Save bot result to server
-    try { await api.saveMessage('bot', text, imageUrl); } catch (e) {}
+  const deliverResult = async (imageUrl: string) => {
+    const text = `🔥 **Результат готов!**`;
+    const res = await api.saveMessage('bot', text, imageUrl);
+    if (res.success) {
+      setMessages(prev => [...prev, {
+        id: res.data.id.toString(),
+        db_id: res.data.id,
+        type: 'bot',
+        text: text,
+        image: imageUrl,
+        timestamp: new Date()
+      }]);
+    }
+  };
+
+  const handleRepeat = async (msg: Message) => {
+    haptic();
+    handleConfirmGen(msg);
+  };
+
+  const deleteMessage = async (dbId: number) => {
+    setMessages(prev => prev.filter(m => m.db_id !== dbId));
+    await api.deleteMessage(dbId);
+  };
+
+  const handleStartEdit = async (msg: Message) => {
+    haptic();
+    const text = `✏️ Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!`;
+    const res = await api.saveMessage('bot-edit-prompt', text);
+    if (res.success) {
+      setMessages(prev => [...prev, {
+        id: res.data.id.toString(),
+        db_id: res.data.id,
+        type: 'bot-edit-prompt',
+        text: text,
+        timestamp: new Date()
+      }]);
+    }
+  };
+
+  const getCost = (modelId: string) => {
+    if (modelId.includes('pro-4k')) return 3;
+    if (modelId.includes('pro')) return 2;
+    if (modelId.includes('4k')) return 2;
+    return 1;
+  };
+
+  const applySetting = async (key: string, value: string) => {
+    if (!editingMsgId) return;
+    const msg = messages.find(m => m.db_id === editingMsgId);
+    if (!msg || !msg.meta) return;
+
+    const newMeta = { ...msg.meta, [key]: value };
+    setMessages(prev => prev.map(m => m.db_id === editingMsgId ? { ...m, meta: newMeta } : m));
+    await api.updateMessage(editingMsgId, undefined, newMeta);
+    haptic();
   };
 
   const updateModel = async (m: string) => {
     haptic();
-    setCurrentModel(m); setIsModelModalOpen(false);
+    setCurrentModel(m);
     try { await api.updateModel(m); fetchUserData(); } catch (e) {}
-  };
-
-  const downloadImage = (url: string) => {
-    window.open(fixUrl(url), '_blank');
   };
 
   const formatTime = (date: Date | string) => {
@@ -258,6 +353,59 @@ export default function ChatApp() {
         </button>
       </header>
 
+      {/* SETTINGS MODAL */}
+      {isSettingsModalOpen && editingMsgId && (
+        <div className="modal-overlay" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px' }}>
+              <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>⚙️ Настройки генерации</h3>
+              
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.7 }}>📐 Размер (Aspect Ratio)</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {['1:1', '16:9', '9:16', '3:4', '4:3', '21:9'].map(r => (
+                      <button 
+                        key={r}
+                        className={`tg-key-btn ${messages.find(m=>m.db_id===editingMsgId)?.meta?.aspect_ratio === r ? 'active' : ''}`}
+                        style={{ padding: '10px', fontSize: '12px', border: messages.find(m=>m.db_id===editingMsgId)?.meta?.aspect_ratio === r ? '2px solid var(--tg-accent)' : 'none' }}
+                        onClick={() => applySetting('aspect_ratio', r)}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.7 }}>📁 Формат</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {['png', 'jpg'].map(f => (
+                      <button 
+                        key={f}
+                        className={`tg-key-btn ${messages.find(m=>m.db_id===editingMsgId)?.meta?.output_format === f ? 'active' : ''}`}
+                        style={{ padding: '10px', fontSize: '12px', border: messages.find(m=>m.db_id===editingMsgId)?.meta?.output_format === f ? '2px solid var(--tg-accent)' : 'none' }}
+                        onClick={() => applySetting('output_format', f)}
+                      >
+                        {f.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                className="tg-key-btn" 
+                style={{ width: '100%', marginTop: '24px', background: 'var(--tg-accent)', color: '#fff' }}
+                onClick={() => setIsSettingsModalOpen(false)}
+              >
+                ✅ Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MESSAGES */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div style={{ margin: '8px auto', background: 'rgba(0,0,0,0.15)', padding: '2px 12px', borderRadius: '12px', fontSize: '12px', color: '#fff', opacity: 0.8 }}>
@@ -269,42 +417,75 @@ export default function ChatApp() {
             <div key={msg.id} className={`bubble ${msg.type === 'user' ? 'bubble-user' : 'bubble-bot'}`}>
               
               {msg.image && (
-                <div style={{ position: 'relative', marginBottom: msg.text ? '8px' : '0' }}>
+                <div style={{ position: 'relative', marginBottom: '8px' }}>
                   <img 
-                    src={fixUrl(msg.image)} 
-                    onClick={() => setActiveImage(fixUrl(msg.image))}
-                    style={{ width: '100%', borderRadius: '12px', cursor: 'pointer', display: 'block' }} 
-                    alt="attachment" 
+                    src={msg.image} 
+                    alt="preview" 
+                    style={{ width: '100%', maxWidth: msg.type === 'bot' ? '240px' : '100%', borderRadius: '12px', cursor: 'pointer' }}
+                    onClick={() => window.open(msg.image, '_blank')}
                   />
-                  {!msg.isGenerating && msg.type === 'bot' && (
-                    <button 
-                      onClick={() => downloadImage(msg.image!)}
-                      style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.4)', border: 'none', color: '#fff', borderRadius: '50%', padding: '8px', display: 'flex' }}
-                    >
-                      <Download size={16} />
-                    </button>
-                  )}
                 </div>
               )}
 
-              {msg.type === 'bot-confirm' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ fontSize: '14px' }}>✨ <b>Подтвердите генерацию:</b></div>
-                  <div style={{ fontSize: '14px', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>
-                    {msg.meta?.prompt || 'Без описания'}
+              {msg.type === 'bot-confirm' && msg.meta && (
+                <div style={{ marginTop: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '10px' }}>
+                  <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
+                    ✨ **Ваш промпт почти готов!**<br/><br/>
+                    📝 Текст: `{msg.meta.prompt || "Без текста"}`<br/>
+                    🤖 Модель: **{getModelName(msg.meta.model)}**<br/>
+                    📐 Размер: **{msg.meta.aspect_ratio}** | 📁 **{msg.meta.output_format?.toUpperCase()}**<br/>
+                    💰 Стоимость: **{getCost(msg.meta.model)} ⚡️**
                   </div>
-                  <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{modelConfig?.credits_per_model?.[msg.meta?.model] || 3} ⚡</b></div>
-                  <button 
-                    onClick={() => handleConfirmGen(msg.id)}
-                    className="btn btn-primary"
-                    style={{ width: '100%', padding: '12px', borderRadius: '12px', fontSize: '15px', fontWeight: 'bold' }}
-                  >
-                    🚀 Сгенерировать
-                  </button>
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
+                      🚀 Сгенерировать
+                    </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.db_id); setIsSettingsModalOpen(true); }}>
+                        ⚙️ Настройки
+                      </button>
+                      <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id!); }}>
+                        ❌ Отмена
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>
-                  {msg.text?.split('**').map((p,i)=> i%2?<b key={i}>{p}</b>:p)}
+              )}
+
+              {msg.type === 'bot-status' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {msg.text}
+                  <div className="loader-small"></div>
+                </div>
+              )}
+
+              {msg.type === 'bot-edit-prompt' && (
+                <div style={{ display: 'grid', gap: '10px' }}>
+                   <div>{msg.text}</div>
+                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => deleteMessage(msg.db_id!)}>
+                     ❌ Отмена
+                   </button>
+                </div>
+              )}
+
+              {msg.type === 'bot' && msg.image && (
+                <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => window.open(msg.image, '_blank')}>
+                      📥 Скачать результат
+                    </button>
+                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleRepeat(msg)}>
+                      🔄 Повторить
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => sendWelcome()}>
+                      🖼 Новая генерация
+                    </button>
+                    <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => handleStartEdit(msg)}>
+                      ✏️ Редактировать
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -364,7 +545,7 @@ export default function ChatApp() {
 
         {/* CUSTOM KEYBOARD */}
         <div className="tg-keyboard">
-          <button className="tg-key-btn" onClick={() => { haptic(); initApp(); }}><Sparkles size={20} /> Создать</button>
+          <button className="tg-key-btn" onClick={() => { haptic(); setIsContactsModalOpen(true); }}><HelpCircle size={20} /> Шаблоны</button>
           <button className="tg-key-btn" onClick={() => { haptic(); setIsModelModalOpen(true); }}><Settings size={20} /> Модель</button>
           <button className="tg-key-btn" onClick={() => { haptic(); setIsBalanceModalOpen(true); }}><Zap size={20} /> Баланс</button>
           <button className="tg-key-btn" onClick={() => { haptic(); setIsContactsModalOpen(true); }}><User size={20} /> Контакты</button>

@@ -60,7 +60,8 @@ class WebChatMessage(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id"))
-    role = Column(String) # user, bot
+    role = Column(String) # user, bot, bot-confirm, welcome, edit-prompt
     text = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
+    meta = Column(String, nullable=True) # Store settings/JSON state
     timestamp = Column(DateTime, server_default=func.now())

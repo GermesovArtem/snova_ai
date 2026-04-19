@@ -125,8 +125,20 @@ async def get_messages(user: models.User = Depends(get_current_user), db: AsyncS
 
 @app.post("/api/v1/user/messages")
 async def add_message(msg: schemas.MessageCreate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    new_msg = await services.save_web_message(db, user.id, msg.role, msg.text, msg.image_url)
+    new_msg = await services.save_web_message(db, user.id, msg.role, msg.text, msg.image_url, msg.meta)
     return {"success": True, "data": new_msg}
+
+@app.patch("/api/v1/user/messages/{msg_id}")
+async def patch_message(msg_id: int, data: schemas.MessageUpdate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    updated = await services.update_web_message(db, user.id, msg_id, data.text, data.meta)
+    if not updated: raise HTTPException(status_code=404, detail="Message not found")
+    return {"success": True, "data": updated}
+
+@app.delete("/api/v1/user/messages/{msg_id}")
+async def remove_message(msg_id: int, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    success = await services.delete_web_message(db, user.id, msg_id)
+    if not success: raise HTTPException(status_code=404, detail="Message not found")
+    return {"success": True}
 
 # --- PAYMENTS ---
 @app.post("/api/v1/payments/create")

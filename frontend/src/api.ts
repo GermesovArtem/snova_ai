@@ -136,5 +136,37 @@ export const api = {
             body: JSON.stringify({ text })
         });
         return handleResponse(res);
-    }
+    },
+
+    async saveMessage(role: string, text?: string, imageUrl?: string, meta?: any) {
+        const res = await fetch(`${API_BASE}/user/messages`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify({ role, text, image_url: imageUrl, meta })
+        });
+        return handleResponse(res);
+    },
+
+    async updateMessage(msgId: number, text?: string, meta?: any) {
+        const res = await fetch(`${API_BASE}/user/messages/${msgId}`, {
+            method: 'PATCH',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify({ text, meta })
+        });
+        return handleResponse(res);
+    },
+
+    async deleteMessage(msgId: number) {
+        const res = await fetch(`${API_BASE}/user/messages/${msgId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        return handleResponse(res);
+    },
 };

@@ -478,16 +478,36 @@ async def broadcast_to_all_users(db, text: str):
                 
     logger.info("Broadcast completed.")
 
-async def save_web_message(db, user_id: int, role: str, text: str = None, image_url: str = None):
+async def save_web_message(db, user_id: int, role: str, text: str = None, image_url: str = None, meta: dict = None):
     new_msg = models.WebChatMessage(
         user_id=user_id,
         role=role,
         text=text,
-        image_url=image_url
+        image_url=image_url,
+        meta=json.dumps(meta) if meta else None
     )
     db.add(new_msg)
     await db.commit()
     return new_msg
+
+async def update_web_message(db, user_id: int, msg_id: int, text: str = None, meta: dict = None):
+    res = await db.execute(select(models.WebChatMessage).filter_by(id=msg_id, user_id=user_id))
+    msg = res.scalars().first()
+    if msg:
+        if text is not None: msg.text = text
+        if meta is not None: msg.meta = json.dumps(meta)
+        await db.commit()
+        return msg
+    return None
+
+async def delete_web_message(db, user_id: int, msg_id: int):
+    res = await db.execute(select(models.WebChatMessage).filter_by(id=msg_id, user_id=user_id))
+    msg = res.scalars().first()
+    if msg:
+        await db.delete(msg)
+        await db.commit()
+        return True
+    return False
 
 async def get_web_messages(db, user_id: int, limit: int = 50):
     res = await db.execute(
