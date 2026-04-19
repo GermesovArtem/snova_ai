@@ -249,7 +249,9 @@ export default function ChatApp() {
         if (res.success) {
           pollStatus(res.data.task_uuid, statusRes.data.id);
         } else {
-          updateBotMessage(statusRes.data.id, "❌ Ошибка: " + res.error);
+          alert(`Ошибка генерации: ${res.error || "Неизвестная ошибка"}`);
+          // Remove the loading bubble if it failed
+          setMessages(prev => prev.filter(m => m.id !== statusRes.data.id.toString()));
         }
       } catch (e: any) { 
         updateBotMessage(statusRes.data.id, `❌ Ошибка соединения`); 
@@ -291,12 +293,12 @@ export default function ChatApp() {
 
   const deliverResult = async (imageUrl: string) => {
     const text = `🔥 **Результат готов!**`;
-    const res = await api.saveMessage('bot', text, imageUrl);
+    const res = await api.saveMessage('bot-result', text, imageUrl);
     if (res.success) {
       setMessages(prev => [...prev, {
         id: res.data.id.toString(),
         db_id: res.data.id,
-        type: 'bot',
+        type: 'bot-result',
         text: text,
         image: imageUrl,
         timestamp: new Date()
@@ -391,7 +393,7 @@ export default function ChatApp() {
     <div className="chat-container">
       
       {/* HEADER */}
-      <header className="chat-header" style={{ borderRadius: '16px 16px 0 0', overflow: 'hidden' }}>
+      <header className="chat-header">
         <button 
           onClick={toggleTheme} 
           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
@@ -472,21 +474,14 @@ export default function ChatApp() {
 
         <AnimatePresence initial={false}>
           {messages.filter(m => m.type !== 'user').map((msg) => (
-            <div key={msg.id} className={`bubble ${msg.type === 'user' ? 'bubble-user' : 'bubble-bot'}`}>
-              
-              {msg.image && (
-                <div style={{ position: 'relative', marginBottom: '8px' }}>
-                  <img 
-                    src={fixUrl(msg.image)} 
-                    alt="preview" 
-                    style={{ width: '100%', maxWidth: '280px', maxHeight: '320px', objectFit: 'cover', borderRadius: '12px', cursor: 'pointer' }}
-                    onClick={() => setActiveImage(fixUrl(msg.image))}
-                  />
-                </div>
-              )}
-
-              {msg.type === 'bot-confirm' && msg.meta && (
-                <div style={{ marginTop: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '10px' }}>
+            <div key={msg.id} className="bubble bubble-bot">
+              <div className="bubble-content-flex">
+                {msg.image && (
+                  <img src={fixUrl(msg.image)} className="bubble-image-side" alt="Result" />
+                )}
+                
+                <div className="bubble-text-side">
+                  {msg.type === 'bot-confirm' && msg.meta && (
                     <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
                       ✨ <b>Ваш промпт почти готов!</b><br/><br/>
                       📝 Текст: <code>{msg.meta.prompt || "Без текста"}</code><br/>
@@ -494,15 +489,31 @@ export default function ChatApp() {
                       📐 Размер: {renderText(msg.meta.aspect_ratio)} | 📁 {renderText(msg.meta.output_format?.toUpperCase())}<br/>
                       💰 Стоимость: {renderText(`${getCost(msg.meta.model)} ⚡️`)}
                     </div>
-                    <div style={{ display: 'grid', gap: '6px' }}>
+                  )}
+
+                  {!['bot-confirm', 'bot-status'].includes(msg.type) && (
+                    <div style={{ fontSize: '15px' }}>{renderText(msg.text)}</div>
+                  )}
+                  
+                  {msg.type === 'bot-status' && (
+                    <div style={{ fontSize: '15px', color: 'var(--tg-accent)' }}>
+                      {renderText(msg.text)}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    {msg.type === 'bot-confirm' && (
                       <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
                         🚀 Сгенерировать
                       </button>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
+                    )}
+                    
+                    {msg.type === 'bot-confirm' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-button)' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
                           ⚙️ Настройки
                         </button>
-                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
+                        <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-button)' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
                           ❌ Отмена
                         </button>
                     </div>

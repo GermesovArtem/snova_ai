@@ -107,8 +107,33 @@ body {
   align-self: center;
   margin: 8px auto;
   width: fit-content;
-  max-width: 90%;
-  text-align: center;
+  max-width: 95%; /* Increased for wide side-by-side */
+  text-align: left; /* Changed from center to allow side-by-side text to align properly */
+}
+
+/* Side-by-Side Flex Layout for Bot Bubbles */
+.bubble-content-flex {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap; 
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.bubble-image-side {
+  max-width: 280px;
+  max-height: 320px;
+  border-radius: 8px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.bubble-text-side {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .bubble-user {

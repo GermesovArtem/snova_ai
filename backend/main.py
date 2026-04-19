@@ -189,7 +189,7 @@ async def generate_edit(
     logger.info(f"KIE Generation: prompt='{prompt}', images={image_urls}")
 
     try:
-        cost = await services.pre_charge_generation(db, user, user.model_preference)
+        cost = await services.pre_charge_generation(db, user, model_id or user.model_preference)
     except ValueError as e:
         return {"success": False, "error": str(e)}
 
