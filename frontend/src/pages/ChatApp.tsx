@@ -84,6 +84,29 @@ export default function ChatApp() {
     setMessages([welcomeMsg]);
 
     fetchUserData();
+    
+    // Check for active tasks to resume session persistence
+    try {
+      const activeRes = await api.getActiveTasks();
+      if (activeRes.success && activeRes.data.length > 0) {
+        const task = activeRes.data[0];
+        const statusText = `🚀 **Продолжаю генерацию...**`;
+        
+        setMessages(prev => [...prev, {
+          id: task.id.toString(),
+          db_id: task.id,
+          type: 'bot-status',
+          text: statusText,
+          isGenerating: true,
+          timestamp: new Date(task.created_at)
+        }]);
+        
+        pollStatus(task.task_uuid, task.id);
+      }
+    } catch (e) {
+      console.error("Active tasks fetch error:", e);
+    }
+
     try {
       const res = await api.getMessages();
       if (res.success && res.data.length > 0) {
@@ -646,12 +669,22 @@ export default function ChatApp() {
                    <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>Ваш текущий баланс</div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {[ {id:'149', cr: 30, p:'149₽'}, {id:'299', cr: 65, p:'299₽'}, {id:'990', cr: 270, p:'990₽'} ].map(p => (
-                    <button key={p.id} className="tg-key-btn" style={{ justifyContent: 'space-between', padding: '18px' }} onClick={() => api.createPayment(p.id).then(r=>r.success&&(window.location.href=r.data.payment_url))}>
-                      <span style={{ fontSize: '16px' }}>{p.cr} ⚡</span> 
-                      <span style={{ color: 'var(--tg-accent)', fontWeight: 'bold', fontSize: '16px' }}>{p.p}</span>
-                    </button>
-                  ))}
+                  {modelConfig?.credit_packs ? (
+                    Object.entries(modelConfig.credit_packs).map(([price, credits]: [string, any]) => (
+                      <button key={price} className="tg-key-btn" style={{ justifyContent: 'space-between', padding: '18px' }} onClick={() => api.createPayment(price).then(r=>r.success&&(window.location.href=r.data.payment_url))}>
+                        <span style={{ fontSize: '16px' }}>{credits} ⚡</span> 
+                        <span style={{ color: 'var(--tg-accent)', fontWeight: 'bold', fontSize: '16px' }}>{price}₽</span>
+                      </button>
+                    ))
+                  ) : (
+                    // Fallback
+                    [ {id:'149', cr: 30, p:'149₽'}, {id:'299', cr: 65, p:'299₽'}, {id:'990', cr: 270, p:'990₽'} ].map(p => (
+                      <button key={p.id} className="tg-key-btn" style={{ justifyContent: 'space-between', padding: '18px' }} onClick={() => api.createPayment(p.id).then(r=>r.success&&(window.location.href=r.data.payment_url))}>
+                        <span style={{ fontSize: '16px' }}>{p.cr} ⚡</span> 
+                        <span style={{ color: 'var(--tg-accent)', fontWeight: 'bold', fontSize: '16px' }}>{p.p}</span>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             </motion.div>

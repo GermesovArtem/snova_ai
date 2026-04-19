@@ -74,14 +74,16 @@ async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(g
 @app.get("/api/v1/config/models")
 async def get_config_models():
     """Returns AVAILABLE_MODELS and CREDITS_PER_MODEL from .env"""
-    avail_str = os.getenv("AVAILABLE_MODELS", '{"Nano Banana 2 (1K)": "nano-banana-2-1k"}')
-    prices_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1.0}')
-    try:
+        avail_str = os.getenv("AVAILABLE_MODELS", "{}")
+        prices_str = os.getenv("CREDITS_PER_MODEL", "{}")
+        packs_str = os.getenv("CREDIT_PACKS", '{"149": 10, "299": 25, "899": 100}')
+        
         return {
             "success": True,
             "data": {
                 "available_models": json.loads(avail_str),
-                "credits_per_model": json.loads(prices_str)
+                "credits_per_model": json.loads(prices_str),
+                "credit_packs": json.loads(packs_str)
             }
         }
     except Exception as e:
@@ -110,6 +112,12 @@ async def get_me(user: models.User = Depends(get_current_user)):
 async def get_history(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     hist = await services.get_user_history(db, user.id)
     return {"success": True, "data": hist}
+
+@app.get("/api/v1/user/active-tasks")
+async def get_active_tasks(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Check for pending/processing tasks to restore session state."""
+    tasks = await services.get_active_generation_tasks(db, user.id)
+    return {"success": True, "data": tasks}
 
 @app.post("/api/v1/user/model")
 async def update_model(model: schemas.ModelUpdate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

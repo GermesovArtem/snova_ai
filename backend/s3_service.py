@@ -52,14 +52,10 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
                 ACL='public-read' # Делаем файл публичным по умолчанию
             )
             
-            # В Virtual-Hosted адресации URL выглядит так: 
-            # https://bucket-name.endpoint_url/key
-            # Но если endpoint уже содержит https://, надо вставить bucket.
-            if "://" in S3_ENDPOINT_URL:
-                scheme, domain = S3_ENDPOINT_URL.split("://")
-                public_url = f"{scheme}://{S3_BUCKET_NAME}.{domain}/{filename}"
-            else:
-                public_url = f"https://{S3_BUCKET_NAME}.{S3_ENDPOINT_URL}/{filename}"
+            # Используем ПУТЬ (path-style): https://endpoint/bucket/file
+            # Это более надежно для публичного доступа в Selectel
+            clean_endpoint = S3_ENDPOINT_URL.rstrip('/')
+            public_url = f"{clean_endpoint}/{S3_BUCKET_NAME}/{filename}"
             
             return public_url
             

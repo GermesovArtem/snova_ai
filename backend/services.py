@@ -140,6 +140,16 @@ async def get_user_by_vk_id(db, vk_id: str):
     res = await db.execute(select(models.User).filter(models.User.vk_id == vk_id))
     return res.scalar_one_or_none()
 
+async def get_active_generation_tasks(db: AsyncSession, user_id: int):
+    """Finds tasks that are currently waiting for KIE AI result."""
+    res = await db.execute(
+        select(models.GenerationTask)
+        .where(models.GenerationTask.user_id == user_id)
+        .where(models.GenerationTask.status.in_(["pending", "processing"]))
+        .order_by(desc(models.GenerationTask.created_at))
+    )
+    return res.scalars().all()
+
 async def get_or_create_user(db, user_id: int, name: str = None, username: str = None):
     # Try by internal/telegram ID first
     user = await get_user_by_id(db, user_id)

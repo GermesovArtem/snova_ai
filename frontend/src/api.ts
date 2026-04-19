@@ -136,6 +136,16 @@ export const api = {
         return handleResponse(res);
     },
 
+    async getMessages() {
+        const res = await fetch(`${API_BASE}/user/messages`, { headers: getHeaders() });
+        return handleResponse(res);
+    },
+
+    async getActiveTasks() {
+        const res = await fetch(`${API_BASE}/user/active-tasks`, { headers: getHeaders() });
+        return handleResponse(res);
+    },
+
     async saveMessage(role: string, text?: string, imageUrl?: string, meta?: any) {
         const res = await fetch(`${API_BASE}/user/messages`, {
             method: 'POST',
