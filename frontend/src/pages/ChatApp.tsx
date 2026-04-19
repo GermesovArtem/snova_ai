@@ -341,6 +341,12 @@ export default function ChatApp() {
     try { await api.updateModel(m); fetchUserData(); } catch (e) {}
   };
 
+  const renderText = (text: string = "") => {
+    return text.split('**').map((part, i) => (
+      i % 2 === 1 ? <b key={i}>{part}</b> : part
+    ));
+  };
+
   const formatTime = (date: Date | string) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -476,23 +482,32 @@ export default function ChatApp() {
               )}
 
               {msg.type === 'bot-status' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {msg.text}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px' }}>
+                  {renderText(msg.text)}
                   <div className="loader-small"></div>
                 </div>
               )}
 
               {msg.type === 'bot-edit-prompt' && (
                 <div style={{ display: 'grid', gap: '10px' }}>
-                   <div>{msg.text}</div>
+                   <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
                    <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => deleteMessage(msg.db_id!)}>
                      ❌ Отмена
                    </button>
                 </div>
               )}
 
+              {msg.type === 'bot' && !msg.image && (
+                <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>
+                  {renderText(msg.text)}
+                </div>
+              )}
+
               {msg.type === 'bot' && msg.image && (
                 <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
+                  <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap', marginBottom: '8px' }}>
+                    {renderText(msg.text)}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                     <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => window.open(msg.image, '_blank')}>
                       📥 Скачать результат
