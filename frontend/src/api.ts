@@ -46,10 +46,13 @@ export const api = {
         formData.append('prompt', prompt);
         images.forEach(img => formData.append('images', img));
 
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error("Unauthorized: Access token is missing");
+
         const res = await fetch(`${API_BASE}/generate/edit`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             },
             body: formData
         });

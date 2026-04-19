@@ -10,10 +10,11 @@
   --tg-bubble-user: #2b5278;
   --tg-bubble-user-text: #ffffff;
   --tg-button: #242f3d;
-  --tg-button-hover: #2c3a4a;
+  --tg-button-light: #2c3a4a;
+  --tg-button-hover: #324254;
   --tg-accent: #64b5f6;
   --tg-accent-hover: #4dabf5;
-  --tg-gray: #1c2938;
+  --tg-gray: #111e2b;
   
   --glass-bg: #182533;
   --glass-border: rgba(255, 255, 255, 0.08);
@@ -24,24 +25,21 @@
 }
 
 [data-theme='light'] {
-  --bg-color: #ffffff;
+  --bg-color: #f0f0f0;
   --text-color: #000000;
   --text-muted: #828282;
   --tg-header: #ffffff;
   --tg-footer: #ffffff;
-  --tg-bg: #dbddbb; /* Classic TG light background */
+  --tg-bg: #dbddbb; 
   --tg-bubble-bot: #ffffff;
   --tg-bubble-user: #effdde;
   --tg-bubble-user-text: #000000;
-  --tg-button: #f4f4f5;
+  --tg-button: #ffffff;
+  --tg-button-light: #f4f4f5;
   --tg-button-hover: #e4e4e7;
   --tg-accent: #3390ec;
   --tg-accent-hover: #2884d8;
   --tg-gray: #f4f4f5;
-  
-  --glass-bg: #ffffff;
-  --glass-border: rgba(0, 0, 0, 0.05);
-  --accent-color: #3390ec;
 }
 
 * {
@@ -60,22 +58,27 @@ body {
   min-height: 100dvh;
   width: 100%;
   overflow: hidden;
-  -webkit-overflow-scrolling: touch;
+  display: flex;
+  justify-content: center;
 }
 
 /* Telegram Chat Layout */
 .chat-container {
-  max-width: 800px;
   width: 100%;
-  margin: 0 auto;
+  max-width: 800px; /* Default for mobile/small tablet */
   height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-color);
   position: relative;
+  transition: max-width 0.3s ease;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
+  .chat-container {
+    max-width: 1100px; /* Wider for Desktop */
+    box-shadow: 0 0 40px rgba(0,0,0,0.3);
+  }
   body {
     background-color: #0b1118;
   }
@@ -84,27 +87,47 @@ body {
 /* Bubbles */
 .bubble {
   max-width: 85%;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
   position: relative;
   font-size: 15px;
   line-height: 1.5;
   box-shadow: var(--shadow-sm);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .bubble-bot {
   background: var(--tg-bubble-bot);
   color: var(--text-color);
-  border-bottom-left-radius: 2px;
+  border-bottom-left-radius: 4px;
   align-self: flex-start;
 }
 
 .bubble-user {
   background: var(--tg-bubble-user);
   color: var(--tg-bubble-user-text);
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: 4px;
   align-self: flex-end;
+}
+
+/* Detached Input Footer */
+.chat-footer {
+  background: transparent;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+
+.floating-input-wrap {
+  background: var(--tg-header);
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--glass-border);
 }
 
 /* Custom Keyboard (Bots) */
@@ -112,28 +135,40 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  padding: 10px;
-  background: var(--tg-footer);
+  padding: 0;
 }
 
 .tg-key-btn {
-  background: var(--tg-button);
+  background: var(--tg-button-light);
   color: var(--text-color);
   border: none;
-  padding: 12px;
-  border-radius: 8px;
+  padding: 14px;
+  border-radius: 16px; /* High rounding */
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: background 0.2s;
+  gap: 10px;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
 }
 
 .tg-key-btn:active {
   background: var(--tg-button-hover);
+  transform: scale(0.98);
+}
+
+/* Header */
+.chat-header {
+  height: 64px;
+  background: var(--tg-header);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  box-shadow: var(--shadow-sm);
+  z-index: 100;
 }
 
 /* Modals */
@@ -146,65 +181,22 @@ body {
   justify-content: center;
   z-index: 1000;
   padding: 20px;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(4px);
 }
 
 .modal-content {
   background: var(--tg-header);
   width: 100%;
-  max-width: 400px;
-  border-radius: 16px;
+  max-width: 420px;
+  border-radius: 24px;
   overflow: hidden;
   box-shadow: var(--shadow-md);
-  animation: modalIn 0.2s ease-out;
+  animation: modalIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.modal-header {
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--glass-border);
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-radius: 8px;
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: var(--tg-accent);
-  color: #fff;
-}
-
-.btn-primary:active {
-  background: var(--tg-accent-hover);
-}
-
-.clickable {
-  cursor: pointer;
-}
-
-.clickable:hover {
-  opacity: 0.8;
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Scrollbar */
@@ -212,6 +204,6 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.08);
   border-radius: 10px;
 }

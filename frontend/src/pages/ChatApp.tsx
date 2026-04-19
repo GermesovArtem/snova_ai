@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, Image as ImageIcon, Download, Moon, Sun,
   X, Loader2, User, HelpCircle, Sparkles, Smartphone, History, Zap, CheckCircle2, ChevronDown, LogOut,
-  Paperclip, Mic, Smile, Search, MoreVertical, ChevronLeft
+  Paperclip, Mic, Smile, Search, MoreVertical, ChevronLeft, MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api';
@@ -213,35 +213,36 @@ export default function ChatApp() {
     <div className="chat-container">
       
       {/* HEADER */}
-      <header style={{ 
-        height: '60px', 
-        background: 'var(--tg-header)', 
-        display: 'flex', 
-        alignItems: 'center', 
-        padding: '0 16px',
-        boxShadow: 'var(--shadow-sm)',
-        zIndex: 100
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #64b5f6, #1976d2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px' }}>
+      <header className="chat-header">
+        <button 
+          onClick={toggleTheme} 
+          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
+        >
+          {theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifyContent: 'center' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #64b5f6, #1976d2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', color: '#fff' }}>
             S
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontWeight: '600', fontSize: '16px' }}>S • NOVA | НЕЙРОФОТО</span>
-            <span style={{ fontSize: '13px', color: 'var(--tg-accent)' }}>бот</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <span style={{ fontWeight: '600', fontSize: '15px' }}>S • NOVA | НЕЙРОФОТО</span>
+            <span style={{ fontSize: '12px', color: 'var(--tg-accent)' }}>бот</span>
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '16px', color: 'var(--text-muted)' }}>
-          <Search size={20} className="clickable" />
-          <MoreVertical size={20} className="clickable" onClick={toggleTheme} />
-        </div>
+        <button 
+          onClick={() => { localStorage.removeItem('token'); window.location.href='/'; }}
+          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
+        >
+          <LogOut size={22} />
+        </button>
       </header>
 
       {/* MESSAGES */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ margin: '8px auto', background: 'rgba(0,0,0,0.2)', padding: '2px 10px', borderRadius: '10px', fontSize: '12px', color: '#fff', opacity: 0.8 }}>
-          19 апреля
+        <div style={{ margin: '8px auto', background: 'rgba(0,0,0,0.15)', padding: '2px 12px', borderRadius: '12px', fontSize: '12px', color: '#fff', opacity: 0.8 }}>
+          {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
         </div>
 
         <AnimatePresence initial={false}>
@@ -253,13 +254,13 @@ export default function ChatApp() {
                   <img 
                     src={fixUrl(msg.image)} 
                     onClick={() => setActiveImage(fixUrl(msg.image))}
-                    style={{ width: '100%', borderRadius: '8px', cursor: 'pointer', display: 'block' }} 
+                    style={{ width: '100%', borderRadius: '12px', cursor: 'pointer', display: 'block' }} 
                     alt="attachment" 
                   />
                   {!msg.isGenerating && msg.type === 'bot' && (
                     <button 
                       onClick={() => downloadImage(msg.image!)}
-                      style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: '50%', padding: '6px' }}
+                      style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.4)', border: 'none', color: '#fff', borderRadius: '50%', padding: '8px', display: 'flex' }}
                     >
                       <Download size={16} />
                     </button>
@@ -268,16 +269,16 @@ export default function ChatApp() {
               )}
 
               {msg.type === 'bot-confirm' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ fontSize: '14px' }}>✨ <b>Подтвердите генерацию:</b></div>
-                  <div style={{ fontSize: '14px', background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '14px', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '10px', border: '1px solid var(--glass-border)' }}>
                     {msg.meta?.prompt || 'Без описания'}
                   </div>
                   <div style={{ fontSize: '13px', opacity: 0.8 }}>💰 Стоимость: <b>{modelConfig?.credits_per_model?.[msg.meta?.model] || 3} ⚡</b></div>
                   <button 
                     onClick={() => handleConfirmGen(msg.id)}
                     className="btn btn-primary"
-                    style={{ width: '100%', padding: '8px', borderRadius: '8px', fontSize: '14px' }}
+                    style={{ width: '100%', padding: '12px', borderRadius: '12px', fontSize: '15px', fontWeight: 'bold' }}
                   >
                     🚀 Сгенерировать
                   </button>
@@ -288,7 +289,7 @@ export default function ChatApp() {
                 </div>
               )}
 
-              <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.5, marginTop: '2px' }}>
+              <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.5, marginTop: '4px' }}>
                 {formatTime(msg.timestamp)}
               </div>
             </div>
@@ -304,54 +305,54 @@ export default function ChatApp() {
         <div ref={chatEndRef} />
       </main>
 
-      {/* INPUT AREA */}
-      <footer style={{ background: 'var(--tg-footer)', borderTop: '1px solid var(--glass-border)' }}>
+      {/* FOOTER */}
+      <footer className="chat-footer">
         {previews.length > 0 && (
-          <div style={{ display: 'flex', gap: '8px', padding: '8px 16px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: '8px', padding: '0 0 10px 0', overflowX: 'auto' }}>
             {previews.map((src, i) => (
               <div key={i} style={{ position: 'relative', flexShrink: 0 }}>
-                <img src={src} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} alt="preview" />
+                <img src={src} style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '12px', border: '1px solid var(--tg-accent)' }} alt="preview" />
                 <button 
                   onClick={() => { setPreviews(p => p.filter((_, idx) => idx !== i)); setSelectedFiles(f => f.filter((_, idx) => idx !== i)); }}
-                  style={{ position: 'absolute', top: -4, right: -4, background: '#ff3b30', border: 'none', borderRadius: '50%', color: '#fff', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}
+                  style={{ position: 'absolute', top: -6, right: -6, background: '#ff3b30', border: 'none', borderRadius: '50%', color: '#fff', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
                 >
-                  <X size={10} />
+                  <X size={12} />
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: '8px' }}>
-          <Paperclip size={22} className="clickable" style={{ color: 'var(--text-muted)' }} onClick={() => fileInputRef.current?.click()} />
-          <div style={{ flex: 1, position: 'relative' }}>
+        <div className="floating-input-wrap">
+          <Paperclip size={24} className="clickable" style={{ color: 'var(--text-muted)', padding: '4px' }} onClick={() => fileInputRef.current?.click()} />
+          <div style={{ flex: 1 }}>
             <textarea 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleInitiate(); } }}
               placeholder="Сообщение..."
               rows={1}
-              style={{ width: '100%', background: 'none', border: 'none', color: 'inherit', fontSize: '16px', resize: 'none', padding: '8px 0', maxHeight: '120px' }}
+              style={{ width: '100%', background: 'none', border: 'none', color: 'inherit', fontSize: '16px', resize: 'none', padding: '10px 4px', maxHeight: '160px' }}
             />
           </div>
-          <Smile size={22} className="clickable" style={{ color: 'var(--text-muted)' }} />
+          <Smile size={24} className="clickable" style={{ color: 'var(--text-muted)', padding: '4px' }} />
           {input.trim() || selectedFiles.length > 0 ? (
-            <Send size={22} className="clickable" style={{ color: 'var(--tg-accent)' }} onClick={handleInitiate} />
+            <Send size={24} className="clickable" style={{ color: 'var(--tg-accent)', padding: '4px' }} onClick={handleInitiate} />
           ) : (
-            <Mic size={22} className="clickable" style={{ color: 'var(--text-muted)' }} />
+            <Mic size={24} className="clickable" style={{ color: 'var(--text-muted)', padding: '4px' }} />
           )}
         </div>
 
         {/* CUSTOM KEYBOARD */}
         <div className="tg-keyboard">
-          <button className="tg-key-btn" onClick={() => { haptic(); initApp(); }}><Sparkles size={18} /> Создать</button>
-          <button className="tg-key-btn" onClick={() => { haptic(); setIsModelModalOpen(true); }}><Settings size={18} /> Модель</button>
-          <button className="tg-key-btn" onClick={() => { haptic(); setIsBalanceModalOpen(true); }}><Zap size={18} /> Баланс</button>
-          <button className="tg-key-btn" onClick={() => { haptic(); setIsContactsModalOpen(true); }}><User size={18} /> Контакты</button>
+          <button className="tg-key-btn" onClick={() => { haptic(); initApp(); }}><Sparkles size={20} /> Создать</button>
+          <button className="tg-key-btn" onClick={() => { haptic(); setIsModelModalOpen(true); }}><Settings size={20} /> Модель</button>
+          <button className="tg-key-btn" onClick={() => { haptic(); setIsBalanceModalOpen(true); }}><Zap size={20} /> Баланс</button>
+          <button className="tg-key-btn" onClick={() => { haptic(); setIsContactsModalOpen(true); }}><User size={20} /> Контакты</button>
         </div>
       </footer>
 
-      {/* HIDDEN INPUT */}
+      {/* HIDDEN INPUT, MODALS, etc... */}
       <input type="file" multiple ref={fileInputRef} hidden accept="image/*" onChange={e => {
         if (e.target.files) {
           const files = Array.from(e.target.files);
@@ -362,25 +363,24 @@ export default function ChatApp() {
         }
       }} />
 
-      {/* MODALS */}
       <AnimatePresence>
         {isBalanceModalOpen && (
           <div className="modal-overlay" onClick={() => setIsBalanceModalOpen(false)}>
             <motion.div className="modal-content" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                 <span style={{ fontWeight: 'bold' }}>💳 Пополнить баланс</span>
-                 <X size={20} className="clickable" onClick={() => setIsBalanceModalOpen(false)} />
+              <div className="modal-header" style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)' }}>
+                 <span style={{ fontWeight: 'bold', fontSize: '18px' }}>💳 Пополнить баланс</span>
+                 <X size={24} className="clickable" onClick={() => setIsBalanceModalOpen(false)} />
               </div>
-              <div className="modal-body">
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                   <div style={{ fontSize: '32px', marginBottom: '8px' }}>{user?.balance || 0} ⚡</div>
-                   <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Ваш текущий баланс</div>
+              <div className="modal-body" style={{ padding: '24px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                   <div style={{ fontSize: '36px', fontWeight: '900', color: 'var(--tg-accent)' }}>{user?.balance || 0} ⚡</div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '4px' }}>Ваш текущий баланс</div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {[ {id:'149', cr: 30, p:'149₽'}, {id:'299', cr: 65, p:'299₽'}, {id:'990', cr: 270, p:'990₽'} ].map(p => (
-                    <button key={p.id} className="tg-key-btn" style={{ justifyContent: 'space-between', padding: '16px' }} onClick={() => api.createPayment(p.id).then(r=>r.success&&(window.location.href=r.data.payment_url))}>
-                      <span>{p.cr} ⚡</span> 
-                      <span style={{ color: 'var(--tg-accent)', fontWeight: 'bold' }}>{p.p}</span>
+                    <button key={p.id} className="tg-key-btn" style={{ justifyContent: 'space-between', padding: '18px' }} onClick={() => api.createPayment(p.id).then(r=>r.success&&(window.location.href=r.data.payment_url))}>
+                      <span style={{ fontSize: '16px' }}>{p.cr} ⚡</span> 
+                      <span style={{ color: 'var(--tg-accent)', fontWeight: 'bold', fontSize: '16px' }}>{p.p}</span>
                     </button>
                   ))}
                 </div>
@@ -392,16 +392,16 @@ export default function ChatApp() {
         {isModelModalOpen && (
           <div className="modal-overlay" onClick={() => setIsModelModalOpen(false)}>
             <motion.div className="modal-content" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                 <span style={{ fontWeight: 'bold' }}>🤖 Выберите нейросеть</span>
-                 <X size={20} className="clickable" onClick={() => setIsModelModalOpen(false)} />
+              <div className="modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between' }}>
+                 <span style={{ fontWeight: 'bold', fontSize: '18px' }}>🤖 Выберите нейросеть</span>
+                 <X size={24} className="clickable" onClick={() => setIsModelModalOpen(false)} />
               </div>
-              <div className="modal-body">
+              <div className="modal-body" style={{ padding: '20px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
                   {modelConfig?.available_models && Object.entries(modelConfig.available_models).map(([name, id]: [string, any]) => (
-                    <button key={id} onClick={() => updateModel(id)} className="tg-key-btn" style={{ justifyContent: 'space-between', background: currentModel === id ? 'var(--tg-accent)' : 'var(--tg-button)', color: currentModel === id ? '#fff' : 'inherit' }}>
-                      <span>{name}</span>
-                      <span style={{ opacity: 0.7, fontSize: '12px' }}>{modelConfig.credits_per_model?.[id]} ⚡</span>
+                    <button key={id} onClick={() => updateModel(id)} className="tg-key-btn" style={{ justifyContent: 'space-between', background: currentModel === id ? 'var(--tg-accent)' : 'var(--tg-button-light)', color: currentModel === id ? '#fff' : 'inherit' }}>
+                      <span style={{ fontWeight: 'bold' }}>{name}</span>
+                      <span style={{ opacity: 0.8, fontSize: '14px' }}>{modelConfig.credits_per_model?.[id]} ⚡</span>
                     </button>
                   ))}
                 </div>
@@ -413,16 +413,20 @@ export default function ChatApp() {
         {isContactsModalOpen && (
           <div className="modal-overlay" onClick={() => setIsContactsModalOpen(false)}>
             <motion.div className="modal-content" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                 <span style={{ fontWeight: 'bold' }}>📬 Контакты</span>
-                 <X size={20} className="clickable" onClick={() => setIsContactsModalOpen(false)} />
+              <div className="modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between' }}>
+                 <span style={{ fontWeight: 'bold', fontSize: '18px' }}>📬 Контакты</span>
+                 <X size={24} className="clickable" onClick={() => setIsContactsModalOpen(false)} />
               </div>
-              <div className="modal-body" style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '15px', lineHeight: 1.6, marginBottom: '20px' }}>
-                  По всем вопросам, предложениям или при возникновении трудностей пишите нашему администратору.
+              <div className="modal-body" style={{ textAlign: 'center', padding: '30px 20px' }}>
+                <div style={{ fontSize: '16px', lineHeight: 1.6, marginBottom: '24px', opacity: 0.9 }}>
+                  При возникновении трудностей или предложений по работе сервиса пишите нашему администратору.
                 </div>
-                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => window.open('https://t.me/artemgavr1lov', '_blank')}>
-                  Написать в Telegram
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', padding: '16px', fontSize: '16px', borderRadius: '16px' }} 
+                  onClick={() => window.open('https://t.me/artemgavr1lov', '_blank')}
+                >
+                  <MessageCircle size={20} style={{ marginRight: '8px' }} /> Написать в Telegram
                 </button>
               </div>
             </motion.div>
@@ -430,11 +434,17 @@ export default function ChatApp() {
         )}
       </AnimatePresence>
 
-      {/* FULL-SCREEN IMAGE */}
+      {/* FULL-SCREEN IMAGE VIEW */}
       {activeImage && (
-        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.95)' }} onClick={() => setActiveImage(null)}>
-           <img src={activeImage} style={{ maxWidth: '100%', maxHeight: '100%' }} alt="full view" />
-           <X size={32} style={{ position: 'absolute', top: 20, right: 20, color: '#fff' }} className="clickable" />
+        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.95)', zIndex: 10000 }} onClick={() => setActiveImage(null)}>
+           <motion.img 
+             initial={{ scale: 0.9, opacity: 0 }} 
+             animate={{ scale: 1, opacity: 1 }} 
+             src={activeImage} 
+             style={{ maxWidth: '95%', maxHeight: '95%', borderRadius: '12px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }} 
+             alt="full view" 
+           />
+           <X size={32} style={{ position: 'absolute', top: 30, right: 30, color: '#fff', cursor: 'pointer' }} onClick={() => setActiveImage(null)} />
         </div>
       )}
 
