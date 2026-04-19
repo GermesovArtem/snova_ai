@@ -52,18 +52,22 @@ export default function ChatApp() {
 
   useEffect(() => {
     initApp();
-    document.documentElement.setAttribute('data-theme', theme);
-    
     fetchConfig();
     const pwaClosed = localStorage.getItem('pwa_closed');
     if (!pwaClosed) {
       setTimeout(() => setShowPwaPrompt(true), 3000);
     }
 
-    window.addEventListener('beforeinstallprompt', (e) => {
+    const handleBeforeInstall = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-    });
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   // No more localStorage persistence for messages, using server-side DB
