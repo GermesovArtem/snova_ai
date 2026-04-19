@@ -37,7 +37,7 @@ export default function ChatApp() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyTasks, setHistoryTasks] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | number | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const [activeImage, setActiveImage] = useState<string | null>(null);
@@ -145,7 +145,7 @@ export default function ChatApp() {
 
   const fixUrl = (url: string) => {
     if (!url) return '';
-    if (url.startsWith('http')) return url;
+    if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return url;
     return `/${url.replace(/^\//, '')}`;
   };
 
@@ -243,6 +243,7 @@ export default function ChatApp() {
 
   const updateBotMessage = (dbId: number, text: string) => {
     setMessages(prev => prev.map(m => m.db_id === dbId ? { ...m, text, isGenerating: false } : m));
+    api.updateMessage(dbId, text).catch(console.error);
   };
 
   const pollStatus = async (uuid: string, statusDbId: number) => {
@@ -322,12 +323,15 @@ export default function ChatApp() {
 
   const applySetting = async (key: string, value: string) => {
     if (!editingMsgId) return;
-    const msg = messages.find(m => m.db_id === editingMsgId);
+    const msg = messages.find(m => m.id === editingMsgId || m.db_id === editingMsgId);
     if (!msg || !msg.meta) return;
 
     const newMeta = { ...msg.meta, [key]: value };
-    setMessages(prev => prev.map(m => m.db_id === editingMsgId ? { ...m, meta: newMeta } : m));
-    await api.updateMessage(editingMsgId, undefined, newMeta);
+    setMessages(prev => prev.map(m => (m.id === editingMsgId || m.db_id === editingMsgId) ? { ...m, meta: newMeta } : m));
+    
+    if (msg.db_id) {
+       await api.updateMessage(msg.db_id, undefined, newMeta);
+    }
     haptic();
   };
 
@@ -386,8 +390,8 @@ export default function ChatApp() {
                     {['1:1', '16:9', '9:16', '3:4', '4:3', '21:9'].map(r => (
                       <button 
                         key={r}
-                        className={`tg-key-btn ${messages.find(m=>m.db_id===editingMsgId)?.meta?.aspect_ratio === r ? 'active' : ''}`}
-                        style={{ padding: '10px', fontSize: '12px', border: messages.find(m=>m.db_id===editingMsgId)?.meta?.aspect_ratio === r ? '2px solid var(--tg-accent)' : 'none' }}
+                        className={`tg-key-btn ${(messages.find(m=>m.id===editingMsgId || m.db_id===editingMsgId)?.meta?.aspect_ratio === r) ? 'active' : ''}`}
+                        style={{ padding: '10px', fontSize: '12px', border: (messages.find(m=>m.id===editingMsgId || m.db_id===editingMsgId)?.meta?.aspect_ratio === r) ? '2px solid var(--tg-accent)' : 'none' }}
                         onClick={() => applySetting('aspect_ratio', r)}
                       >
                         {r}
@@ -402,8 +406,8 @@ export default function ChatApp() {
                     {['png', 'jpg'].map(f => (
                       <button 
                         key={f}
-                        className={`tg-key-btn ${messages.find(m=>m.db_id===editingMsgId)?.meta?.output_format === f ? 'active' : ''}`}
-                        style={{ padding: '10px', fontSize: '12px', border: messages.find(m=>m.db_id===editingMsgId)?.meta?.output_format === f ? '2px solid var(--tg-accent)' : 'none' }}
+                        className={`tg-key-btn ${(messages.find(m=>m.id===editingMsgId || m.db_id===editingMsgId)?.meta?.output_format === f) ? 'active' : ''}`}
+                        style={{ padding: '10px', fontSize: '12px', border: (messages.find(m=>m.id===editingMsgId || m.db_id===editingMsgId)?.meta?.output_format === f) ? '2px solid var(--tg-accent)' : 'none' }}
                         onClick={() => applySetting('output_format', f)}
                       >
                         {f.toUpperCase()}
@@ -448,22 +452,22 @@ export default function ChatApp() {
 
               {msg.type === 'bot-confirm' && msg.meta && (
                 <div style={{ marginTop: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '10px' }}>
-                  <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
-                    ✨ **Ваш промпт почти готов!**<br/><br/>
-                    📝 Текст: `{msg.meta.prompt || "Без текста"}`<br/>
-                    🤖 Модель: **{getModelName(msg.meta.model)}**<br/>
-                    📐 Размер: **{msg.meta.aspect_ratio}** | 📁 **{msg.meta.output_format?.toUpperCase()}**<br/>
-                    💰 Стоимость: **{getCost(msg.meta.model)} ⚡️**
-                  </div>
-                  <div style={{ display: 'grid', gap: '6px' }}>
-                    <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
-                      🚀 Сгенерировать
-                    </button>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.db_id); setIsSettingsModalOpen(true); }}>
-                        ⚙️ Настройки
+                    <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
+                      ✨ <b>Ваш промпт почти готов!</b><br/><br/>
+                      📝 Текст: <code>{msg.meta.prompt || "Без текста"}</code><br/>
+                      🤖 Модель: **{getModelName(msg.meta.model)}**<br/>
+                      📐 Размер: **{msg.meta.aspect_ratio}** | 📁 **{msg.meta.output_format?.toUpperCase()}**<br/>
+                      💰 Стоимость: **{getCost(msg.meta.model)} ⚡️**
+                    </div>
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
+                        🚀 Сгенерировать
                       </button>
-                      <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id!); }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
+                          ⚙️ Настройки
+                        </button>
+                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id!); }}>
                         ❌ Отмена
                       </button>
                     </div>
