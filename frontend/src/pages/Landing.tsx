@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, ArrowRight, Zap, Target, Palette } from 'lucide-react';
+import { Sparkles, ArrowRight, Zap, Target, Palette, Cpu } from 'lucide-react';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -13,100 +13,95 @@ export default function Landing() {
   }, [navigate]);
 
   return (
-    <div className="landing-container" style={{
+    <div style={{
       height: '100vh',
       width: '100vw',
-      background: 'radial-gradient(circle at top right, #1a1a1a, #000)',
+      background: 'var(--bg-color)',
+      color: 'var(--text-color)',
       overflowY: 'auto',
-      padding: '20px'
+      display: 'flex',
+      flexDirection: 'column'
     }}>
-      <header style={{ padding: '20px 0', display: 'flex', justifyContent: 'center' }}>
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-1px' }}
-        >
-          S•NOVA <span style={{ color: 'var(--accent-soft)' }}>AI</span>
-        </motion.div>
+      <header style={{ 
+        height: '60px', 
+        background: 'var(--tg-header)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        <div style={{ fontWeight: 'bold', fontSize: '18px' }}>S • NOVA AI</div>
       </header>
 
-      <main style={{ maxWidth: '600px', margin: '40px auto', textAlign: 'center' }}>
-        <motion.h1 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          style={{ fontSize: '42px', fontWeight: 700, marginBottom: '20px', lineHeight: 1.1 }}
-        >
-          Нейро-магия в твоем кармане
-        </motion.h1>
+      <main style={{ maxWidth: '800px', margin: '0 auto', width: '100%', padding: '40px 20px' }}>
+        <section style={{ textAlign: 'center', marginBottom: '60px' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ marginBottom: '20px' }}
+          >
+            <h1 style={{ fontSize: '48px', fontWeight: 'bold', marginBottom: '16px', lineHeight: 1.1 }}>
+              Нейро-магия <br /> в твоем браузере
+            </h1>
+            <p style={{ fontSize: '18px', color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto' }}>
+              Редактируй фото, генерируй новые миры и создавай контент за секунды. Ультимативный AI помощник теперь в вебе.
+            </p>
+          </motion.div>
 
-        <motion.p 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          style={{ color: 'var(--accent-soft)', fontSize: '18px', marginBottom: '40px', padding: '0 20px' }}
-        >
-          Редактируй фото, генерируй новые миры и создавай контент за секунды. Ультимативный AI помощник теперь в вебе.
-        </motion.p>
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => navigate('/login')}
+            className="btn btn-primary"
+            style={{ padding: '16px 48px', fontSize: '18px', borderRadius: '12px' }}
+          >
+            Начать работу <ArrowRight size={22} style={{ marginLeft: '8px' }} />
+          </motion.button>
+        </section>
 
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '60px' }}
-        >
-          <button className="btn btn-primary" onClick={() => navigate('/login')} style={{ fontSize: '18px', padding: '16px 40px' }}>
-            Войти <ArrowRight size={22} />
-          </button>
-        </motion.div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', textAlign: 'left', padding: '0 10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
           <FeatureCard 
-            icon={<Sparkles size={24} color="#fff" />} 
-            title="Фото → Фото" 
-            desc="Меняй объекты, стиль и детали на своих снимках."
-            delay={0.4}
+            icon={<Sparkles size={24} color="var(--tg-accent)" />}
+            title="Фото → Фото"
+            desc="Меняй объекты, стиль и детали на своих снимках с помощью нейросетей."
           />
           <FeatureCard 
-            icon={<Palette size={24} color="#fff" />} 
-            title="Текст → Фото" 
-            desc="Воплощай любые идеи в высочайшем 4K качестве."
-            delay={0.5}
+            icon={<Palette size={24} color="var(--tg-accent)" />}
+            title="Текст → Фото"
+            desc="Воплощай любые идеи в высочайшем 4K качестве за считанные секунды."
           />
           <FeatureCard 
-            icon={<Zap size={24} />} 
-            title="Fast Engine" 
-            desc="Мгновенная обработка на лучших видеокартах мира."
-            delay={0.6}
+            icon={<Zap size={24} color="var(--tg-accent)" />}
+            title="Fast Engine"
+            desc="Мгновенная обработка на лучших видеокартах мира без очередей."
           />
           <FeatureCard 
-            icon={<Target size={24} />} 
-            title="Precise Control" 
-            desc="Настраивай размеры, качество и формат вывода."
-            delay={0.7}
+            icon={<Cpu size={24} color="var(--tg-accent)" />}
+            title="Precise Control"
+            desc="Настраивай размеры, качество и формат вывода под свои задачи."
           />
         </div>
       </main>
 
-      <footer style={{ marginTop: '80px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '12px', paddingBottom: '40px' }}>
-        © 2024 S•NOVA AI Project. <br /> All rights reserved.
+      <footer style={{ marginTop: 'auto', padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', borderTop: '1px solid var(--glass-border)' }}>
+        © 2024 S • NOVA AI. Все права защищены.
       </footer>
     </div>
   );
 }
 
-function FeatureCard({ icon, title, desc, delay }: any) {
+function FeatureCard({ icon, title, desc }: any) {
   return (
-    <motion.div 
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay }}
-      className="glass" 
-      style={{ padding: '20px', borderRadius: '24px' }}
-    >
-      <div style={{ marginBottom: '12px' }}>{icon}</div>
-      <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{title}</div>
-      <div style={{ fontSize: '13px', color: 'var(--accent-soft)', lineHeight: 1.4 }}>{desc}</div>
-    </motion.div>
+    <div style={{ 
+      background: 'var(--tg-header)', 
+      padding: '24px', 
+      borderRadius: '16px', 
+      border: '1px solid var(--glass-border)',
+      boxShadow: 'var(--shadow-sm)'
+    }}>
+      <div style={{ marginBottom: '16px' }}>{icon}</div>
+      <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>{title}</h3>
+      <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc}</p>
+    </div>
   );
 }

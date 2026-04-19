@@ -97,13 +97,12 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
           if (!container || container.children.length === 0) {
               setWidgetFailed(true);
           }
-      }, 6000); // Увеличиваем до 6 секунд
+      }, 6000); 
       return () => clearTimeout(timer);
     }
   }, [isTWA, handleAuth]);
 
   const handleFallbackLogin = () => {
-    // В крайнем случае отправляем в бота для авторизации
     window.location.href = `https://t.me/snovananobananabot?start=login`;
   };
 
@@ -112,46 +111,36 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#000', color: '#fff' }}>
-      <style>
-        {`
-          @keyframes customSpin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}
-      </style>
-      <header style={{ padding: '20px', display: 'flex', alignItems: 'center', zIndex: 10 }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-color)', color: 'var(--text-color)' }}>
+      <header style={{ padding: '20px', display: 'flex', alignItems: 'center' }}>
         <button
           onClick={() => navigate('/')}
-          style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+          style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
         >
           <ChevronLeft size={24} />
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex: 1, padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', maxWidth: '400px', margin: '0 auto', width: '100%' }}>
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          style={{ marginBottom: '40px' }}
+          style={{ marginBottom: '60px' }}
         >
-          <div style={{ fontSize: '18px', fontWeight: 600, color: 'rgba(255,255,255,0.6)' }}>
-            Добро пожаловать в
+          <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #64b5f6, #1976d2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '32px', margin: '0 auto 20px' }}>
+            S
           </div>
-          <div style={{ fontSize: '32px', fontWeight: 800 }}>S•NOVA AI</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold' }}>S•NOVA AI</div>
+          <div style={{ fontSize: '15px', color: 'var(--text-muted)', marginTop: '8px' }}>
+            Авторизуйтесь, чтобы продолжить
+          </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}
-        >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {isWebAppAuth ? (
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
-              <Loader2 size={32} color="#0088cc" style={{ animation: 'customSpin 1.5s linear infinite' }} />
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>Безопасный вход через Telegram...</span>
+              <Loader2 className="animate-spin" size={32} color="var(--tg-accent)" />
+              <span style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Безопасный вход через Telegram...</span>
             </div>
           ) : (
             <>
@@ -161,7 +150,7 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
                 <button 
                     className="btn btn-primary" 
                     onClick={handleFallbackLogin}
-                    style={{ width: '100%', maxWidth: '300px', background: '#0088cc', borderRadius: '30px', display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ background: 'var(--tg-accent)', width: '100%' }}
                 >
                   <MessageCircle size={20} /> Войти через Telegram
                 </button>
@@ -169,18 +158,18 @@ export default function Auth({ onLogin }: { onLogin: () => void }) {
             </>
           )}
 
-          <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '15px 0' }}></div>
+          <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.05)', margin: '10px 0' }}></div>
 
-          <button className="btn btn-secondary glass" onClick={() => handleOAuthPlaceholder('Yandex')} style={{ width: '100%', maxWidth: '300px', borderRadius: '30px' }}>
+          <button className="tg-key-btn" onClick={() => handleOAuthPlaceholder('Yandex')} style={{ width: '100%', background: 'rgba(255,255,255,0.03)' }}>
             <Cloud size={20} /> Yandex ID
           </button>
 
-          <button className="btn btn-secondary glass" onClick={() => handleOAuthPlaceholder('VK')} style={{ width: '100%', maxWidth: '300px', borderRadius: '30px' }}>
+          <button className="tg-key-btn" onClick={() => handleOAuthPlaceholder('VK')} style={{ width: '100%', background: 'rgba(255,255,255,0.03)' }}>
             <UserIcon size={20} /> VK ID
           </button>
-        </motion.div>
+        </div>
 
-        <p style={{ marginTop: 'auto', padding: '40px 0', fontSize: '12px', color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
+        <p style={{ marginTop: 'auto', padding: '40px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           Авторизуясь, вы подтверждаете <br />
           <u>Пользовательское соглашение</u> и <u>Политику конфиденциальности</u>.
         </p>
