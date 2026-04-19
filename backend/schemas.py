@@ -20,3 +20,15 @@ class GenerationRequest(BaseModel):
     aspect_ratio: Optional[str] = "1:1"
     resolution: Optional[str] = "1K"
     output_format: Optional[str] = "jpg"
+
+class MessageCreate(BaseModel):
+    role: str
+    text: Optional[str] = None
+    image_url: Optional[str] = None
+
+class MessageRead(BaseModel):
+    id: int
+    role: str
+    text: Optional[str] = None
+    image_url: Optional[str] = None
+    timestamp: str

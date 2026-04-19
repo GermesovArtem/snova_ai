@@ -117,6 +117,17 @@ async def update_model(model: schemas.ModelUpdate, user: models.User = Depends(g
     await db.commit()
     return {"success": True}
 
+# --- WEB CHAT MESSAGES ---
+@app.get("/api/v1/user/messages")
+async def get_messages(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    msgs = await services.get_web_messages(db, user.id)
+    return {"success": True, "data": msgs}
+
+@app.post("/api/v1/user/messages")
+async def add_message(msg: schemas.MessageCreate, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    new_msg = await services.save_web_message(db, user.id, msg.role, msg.text, msg.image_url)
+    return {"success": True, "data": new_msg}
+
 # --- PAYMENTS ---
 @app.post("/api/v1/payments/create")
 async def create_payment(pack_id: str, user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

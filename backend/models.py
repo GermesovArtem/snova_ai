@@ -54,3 +54,13 @@ class Referral(Base):
     invited_count = Column(Integer, default=0)
     available_to_convert = Column(Integer, default=0)
     total_earned = Column(Integer, default=0)
+
+class WebChatMessage(Base):
+    __tablename__ = "web_chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"))
+    role = Column(String) # user, bot
+    text = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    timestamp = Column(DateTime, server_default=func.now())

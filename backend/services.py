@@ -477,3 +477,23 @@ async def broadcast_to_all_users(db, text: str):
                 await asyncio.sleep(1)
                 
     logger.info("Broadcast completed.")
+
+async def save_web_message(db, user_id: int, role: str, text: str = None, image_url: str = None):
+    new_msg = models.WebChatMessage(
+        user_id=user_id,
+        role=role,
+        text=text,
+        image_url=image_url
+    )
+    db.add(new_msg)
+    await db.commit()
+    return new_msg
+
+async def get_web_messages(db, user_id: int, limit: int = 50):
+    res = await db.execute(
+        select(models.WebChatMessage)
+        .filter(models.WebChatMessage.user_id == user_id)
+        .order_by(models.WebChatMessage.timestamp.asc())
+        .limit(limit)
+    )
+    return res.scalars().all()

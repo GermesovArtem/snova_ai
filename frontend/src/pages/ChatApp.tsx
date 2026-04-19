@@ -21,10 +21,7 @@ const haptic = () => { if (typeof navigator !== 'undefined' && navigator.vibrate
 
 export default function ChatApp() {
   const [user, setUser] = useState<any>(null);
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('chat_messages');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -50,9 +47,7 @@ export default function ChatApp() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (messages.length === 0) {
-      initApp();
-    }
+    initApp();
     document.documentElement.setAttribute('data-theme', theme);
     
     fetchConfig();
@@ -67,10 +62,7 @@ export default function ChatApp() {
     });
   }, [theme]);
 
-  // Persist messages
-  useEffect(() => {
-    localStorage.setItem('chat_messages', JSON.stringify(messages));
-  }, [messages]);
+  // No more localStorage persistence for messages, using server-side DB
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -78,12 +70,25 @@ export default function ChatApp() {
 
   const initApp = async () => {
     fetchUserData();
-    setMessages([{ 
-      id: 'welcome', 
-      type: 'bot', 
-      text: `✨ **Добро пожаловать в S•NOVA AI!**\n\nЯ помогу тебе воплотить любую задумку в арт за считанные секунды.\n\n👇 **Просто отправь текст или фото ниже!**`, 
-      timestamp: new Date() 
-    }]);
+    try {
+      const res = await api.getMessages();
+      if (res.success && res.data.length > 0) {
+        setMessages(res.data.map((m: any) => ({
+          id: m.id.toString(),
+          type: m.role as any,
+          text: m.text,
+          image: m.image_url,
+          timestamp: new Date(m.timestamp)
+        })));
+      } else {
+        setMessages([{ 
+          id: 'welcome', 
+          type: 'bot', 
+          text: `✨ **Добро пожаловать в S•NOVA AI!**\n\nЯ помогу тебе воплотить любую задумку в арт за считанные секунды.\n\n👇 **Просто отправь текст или фото ниже!**`, 
+          timestamp: new Date() 
+        }]);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const fetchUserData = async () => {
@@ -135,13 +140,13 @@ export default function ChatApp() {
     localStorage.setItem('theme', newTheme);
   };
 
-  const handleInitiate = () => {
+  const handleInitiate = async () => {
     if (!input.trim() && selectedFiles.length === 0) return;
     haptic();
     const userMsgId = Date.now().toString() + '-user';
-    setMessages(prev => [...prev, {
-      id: userMsgId, type: 'user', text: input, image: previews[0], timestamp: new Date()
-    }]);
+    const msgObj: Message = { id: userMsgId, type: 'user', text: input, image: previews[0], timestamp: new Date() };
+    
+    setMessages(prev => [...prev, msgObj]);
     
     const confirmMsgId = Date.now().toString();
     setMessages(prev => [...prev, {
@@ -149,6 +154,11 @@ export default function ChatApp() {
       image: previews[0], timestamp: new Date(),
       meta: { prompt: input, files: [...selectedFiles], previews: [...previews], model: currentModel }
     }]);
+    
+    // Save user message to server (using previews[0] for the immediate image URL if needed, 
+    // but typically we'd wait for upload. Here we just save the text for now).
+    try { await api.saveMessage('user', input, previews[0]); } catch (e) {}
+    
     setInput(''); setSelectedFiles([]); setPreviews([]);
   };
 
@@ -197,8 +207,10 @@ export default function ChatApp() {
     }, 3000);
   };
 
-  const updateBotMessage = (id: string, text: string, imageUrl?: string) => {
+  const updateBotMessage = async (id: string, text: string, imageUrl?: string) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, text, image: imageUrl, isGenerating: false } : m));
+    // Save bot result to server
+    try { await api.saveMessage('bot', text, imageUrl); } catch (e) {}
   };
 
   const updateModel = async (m: string) => {
