@@ -65,22 +65,34 @@ body {
 /* Telegram Chat Layout */
 .chat-container {
   width: 100%;
-  max-width: 800px; /* Default for mobile/small tablet */
+  max-width: 800px; /* Base for tablets */
   height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-color);
   position: relative;
-  transition: max-width 0.3s ease;
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 600px) {
+  .chat-container {
+    max-width: 100%;
+  }
 }
 
 @media (min-width: 1024px) {
   .chat-container {
-    max-width: 1100px; /* Wider for Desktop */
-    box-shadow: 0 0 40px rgba(0,0,0,0.3);
+    max-width: 1400px; /* Significantly wider for Desktop */
+    margin: 20px 0;
+    height: calc(100dvh - 40px);
+    border-radius: 12px;
+    box-shadow: 0 10px 50px rgba(0,0,0,0.4);
+    overflow: hidden;
   }
   body {
-    background-color: #0b1118;
+    background-color: #080d14; /* Darker outside background */
+    padding: 20px;
+    align-items: center;
   }
 }
 
