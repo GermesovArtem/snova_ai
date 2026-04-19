@@ -239,7 +239,13 @@ export default function ChatApp() {
       }]);
       
       try {
-        const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
+        const res = await api.generateEdit(
+          msg.meta.prompt, 
+          msg.meta.files || [], 
+          msg.meta.model, 
+          msg.meta.aspect_ratio, 
+          msg.meta.output_format
+        );
         if (res.success) {
           pollStatus(res.data.task_uuid, statusRes.data.id);
         } else {
@@ -310,6 +316,21 @@ export default function ChatApp() {
     }
   };
 
+  const handleCancelAndNew = async (dbId?: number, localId?: string) => {
+    await deleteMessage(dbId, localId);
+    // Check if the filtered messages already have a welcome message as the last item
+    setMessages(prev => {
+      const visible = prev.filter(m => m.type !== 'user');
+      const last = visible[visible.length - 1];
+      if (last && last.id === 'welcome-session') return prev;
+      
+      // If not, we could add one, but the requirement was "оставить предыдущее собщение с приветсвием"
+      // Since it's always at the top, we don't need to add a new one if it's already visible.
+      return prev;
+    });
+    haptic();
+  };
+
   const handleStartEdit = async (msg: Message) => {
     haptic();
     const text = `✏️ Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!`;
@@ -368,7 +389,7 @@ export default function ChatApp() {
     <div className="chat-container">
       
       {/* HEADER */}
-      <header className="chat-header">
+      <header className="chat-header" style={{ borderRadius: '16px 16px 0 0', overflow: 'hidden' }}>
         <button 
           onClick={toggleTheme} 
           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '10px', display: 'flex' }}
@@ -485,7 +506,7 @@ export default function ChatApp() {
                         <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); setEditingMsgId(msg.id); setIsSettingsModalOpen(true); }}>
                           ⚙️ Настройки
                         </button>
-                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); sendWelcome(); }}>
+                        <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
                           ❌ Отмена
                         </button>
                     </div>
@@ -503,7 +524,7 @@ export default function ChatApp() {
               {msg.type === 'bot-edit-prompt' && (
                 <div style={{ display: 'grid', gap: '10px' }}>
                    <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
-                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => { haptic(); deleteMessage(msg.db_id, msg.id); sendWelcome(); }}>
+                   <button className="tg-key-btn" style={{ padding: '8px' }} onClick={() => handleCancelAndNew(msg.db_id, msg.id)}>
                      ❌ Отмена
                    </button>
                 </div>

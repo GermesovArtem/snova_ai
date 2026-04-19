@@ -25,21 +25,22 @@
 }
 
 [data-theme='light'] {
-  --bg-color: #f0f0f0;
+  --bg-color: #f4f4f5;
   --text-color: #000000;
   --text-muted: #828282;
   --tg-header: #ffffff;
   --tg-footer: #ffffff;
-  --tg-bg: #dbddbb; 
+  --tg-bg: #ececec; 
   --tg-bubble-bot: #ffffff;
-  --tg-bubble-user: #effdde;
-  --tg-bubble-user-text: #000000;
+  --tg-bubble-user: #3390ec;
+  --tg-bubble-user-text: #ffffff;
   --tg-button: #ffffff;
-  --tg-button-light: #f4f4f5;
-  --tg-button-hover: #e4e4e7;
+  --tg-button-light: #ffffff;
+  --tg-button-hover: #f1f1f2;
   --tg-accent: #3390ec;
   --tg-accent-hover: #2884d8;
   --tg-gray: #f4f4f5;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 * {
@@ -162,6 +163,10 @@ body {
 .tg-key-btn:active {
   background: var(--tg-button-hover);
   transform: scale(0.98);
+}
+
+.chat-header {
+  border-radius: 16px 16px 0 0;
 }
 
 /* Header */

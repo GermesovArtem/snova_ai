@@ -16,8 +16,7 @@ export const handleResponse = async (res: Response) => {
     try {
         return JSON.parse(text);
     } catch (e) {
-        console.error("JSON Parse Error. Body was:", text);
-        throw new Error("Server returned non-JSON response (likely HTML error page)");
+        throw new Error("Server returned non-JSON response");
     }
 };
 
@@ -41,19 +40,18 @@ export const api = {
         return handleResponse(res);
     },
 
-    async generateEdit(prompt: string, images: File[] = []) {
+    async generateEdit(prompt: string, images: File[] = [], model_id?: string, aspect_ratio?: string, output_format?: string) {
         const formData = new FormData();
         formData.append('prompt', prompt);
+        if (model_id) formData.append('model_id', model_id);
+        if (aspect_ratio) formData.append('aspect_ratio', aspect_ratio);
+        if (output_format) formData.append('output_format', output_format);
         images.forEach(img => formData.append('images', img));
 
         const token = localStorage.getItem('token');
-        if (!token) throw new Error("Unauthorized: Access token is missing");
-
         const res = await fetch(`${API_BASE}/generate/edit`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            },
+            headers: { 'Authorization': `Bearer ${token}` },
             body: formData
         });
         return handleResponse(res);
