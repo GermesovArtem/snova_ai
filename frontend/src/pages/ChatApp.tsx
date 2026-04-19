@@ -156,9 +156,16 @@ export default function ChatApp() {
     haptic();
     const msg = messages.find(m => m.id === msgId);
     if (!msg) return;
-    setMessages(prev => prev.filter(m => m.id !== msgId));
+
     const botMsgId = Date.now().toString();
-    setMessages(prev => [...prev, { id: botMsgId, type: 'bot', text: `🚀 Начинаю генерацию...`, isGenerating: true, timestamp: new Date() }]);
+    
+    // Batch update: remove confirmation bubble and add generating bubble in one go 
+    // to prevent hitting 0 messages and triggering a welcome reset.
+    setMessages(prev => [
+      ...prev.filter(m => m.id !== msgId),
+      { id: botMsgId, type: 'bot', text: `🚀 Начинаю генерацию...`, isGenerating: true, timestamp: new Date() }
+    ]);
+
     try {
       const res = await api.generateEdit(msg.meta.prompt, msg.meta.files);
       if (res.success) pollStatus(res.data.task_uuid, botMsgId);
@@ -422,8 +429,16 @@ export default function ChatApp() {
                   При возникновении трудностей или предложений по работе сервиса пишите нашему администратору.
                 </div>
                 <button 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', padding: '16px', fontSize: '16px', borderRadius: '16px' }} 
+                  className="btn" 
+                  style={{ 
+                    width: '100%', 
+                    padding: '16px', 
+                    fontSize: '16px', 
+                    borderRadius: '16px', 
+                    background: '#24A1DE', 
+                    color: '#fff',
+                    boxShadow: '0 4px 15px rgba(36, 161, 222, 0.3)'
+                  }} 
                   onClick={() => window.open('https://t.me/artemgavr1lov', '_blank')}
                 >
                   <MessageCircle size={20} style={{ marginRight: '8px' }} /> Написать в Telegram
