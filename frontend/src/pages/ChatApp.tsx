@@ -93,10 +93,13 @@ export default function ChatApp() {
           type: m.role as any,
           text: m.text,
           image: m.image_url,
-          meta: (typeof m.meta === 'string' && m.meta) ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } })() : m.meta,
+          meta: (typeof m.meta === 'string' && m.meta) ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } }) : m.meta,
           timestamp: new Date(m.timestamp)
         }));
-        setMessages([welcomeMsg, ...history]);
+        
+        // Only add static welcome if history doesn't already effectively have one
+        const hasHistoryWelcome = history.some((m: any) => m.text?.includes("нейростудия готова"));
+        setMessages(hasHistoryWelcome ? history : [welcomeMsg, ...history]);
       }
     } catch (e) {
       console.error("History fetch error:", e);
@@ -239,6 +242,11 @@ export default function ChatApp() {
       }]);
       
       try {
+        if (!msg.meta?.files?.length && !msg.image) {
+          alert("❌ Файл не найден. Пожалуйста, загрузите фото заново.");
+          return;
+        }
+
         const res = await api.generateEdit(
           msg.meta.prompt, 
           msg.meta.files || [], 
@@ -352,6 +360,10 @@ export default function ChatApp() {
 
   const getCost = (modelId: string) => {
     if (!modelId) return 1;
+    if (modelConfig?.credits_per_model?.[modelId]) {
+      return modelConfig.credits_per_model[modelId];
+    }
+    // Fallback logic for basic variants if config is not yet loaded or doesn't match
     if (modelId.includes('pro-4k')) return 3;
     if (modelId.includes('pro')) return 2;
     if (modelId.includes('4k')) return 2;
@@ -546,9 +558,6 @@ export default function ChatApp() {
 
               {['bot', 'bot-result'].includes(msg.type) && msg.image && (
                 <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
-                  <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap', marginBottom: '8px' }}>
-                    {renderText(msg.text)}
-                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                     <button className="tg-key-btn" style={{ padding: '8px', fontSize: '12px' }} onClick={() => window.open(msg.image, '_blank')}>
                       📥 Скачать результат
