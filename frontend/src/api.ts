@@ -169,6 +169,7 @@ export const api = {
             },
             body: JSON.stringify({ text, meta })
         });
+        if (res.status === 404) return { success: true }; // Silent ignore if already deleted or lost
         return handleResponse(res);
     },
 
@@ -177,6 +178,7 @@ export const api = {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
+        if (res.status === 404) return { success: true }; // Silent ignore
         return handleResponse(res);
     },
 

@@ -77,7 +77,7 @@ export default function ChatApp() {
   }, [messages]);
 
   const initApp = async () => {
-    // Start with a local welcome message immediately
+    // 1. Static Welcome
     const welcomeText = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
     const welcomeMsg: Message = {
       id: 'welcome-session',
@@ -85,37 +85,16 @@ export default function ChatApp() {
       text: welcomeText,
       timestamp: new Date()
     };
-    setMessages([welcomeMsg]);
-
-    fetchUserData();
     
-    // Check for active tasks to resume session persistence
-    try {
-      const activeRes = await api.getActiveTasks();
-      if (activeRes.success && activeRes.data.length > 0) {
-        const task = activeRes.data[0];
-        const statusText = `🚀 **Продолжаю генерацию...**`;
-        const targetMsgId = task.status_message_id || task.id; // Fallback to task.id if message_id was missing (old tasks)
-        
-        setMessages(prev => [...prev, {
-          id: targetMsgId.toString(),
-          db_id: targetMsgId,
-          type: 'bot-status',
-          text: statusText,
-          isGenerating: true,
-          timestamp: new Date(task.created_at)
-        }]);
-        
-        pollStatus(task.task_uuid, targetMsgId);
-      }
-    } catch (e) {
-      console.error("Active tasks fetch error:", e);
-    }
+    setMessages([welcomeMsg]);
+    fetchUserData();
 
     try {
+      // 2. Load History First (Foundation)
       const res = await api.getMessages();
+      let history: Message[] = [];
       if (res.success && res.data.length > 0) {
-        const history = res.data.map((m: any) => ({
+        history = res.data.map((m: any) => ({
           id: m.id.toString(),
           db_id: m.id,
           type: m.role as any,
@@ -124,13 +103,33 @@ export default function ChatApp() {
           meta: (typeof m.meta === 'string' && m.meta) ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } }) : m.meta,
           timestamp: new Date(m.timestamp)
         }));
-        
-        // Only add static welcome if history doesn't already effectively have one
-        const hasHistoryWelcome = history.some((m: any) => m.text?.includes("нейростудия готова"));
-        setMessages(hasHistoryWelcome ? history : [welcomeMsg, ...history]);
       }
+
+      // 3. Check Active Tasks and "Reanimate" existing history bubbles
+      const activeRes = await api.getActiveTasks();
+      const activeTaskMap = new Map();
+      if (activeRes.success) {
+        activeRes.data.forEach((task: any) => {
+          const targetId = task.status_message_id || task.id;
+          activeTaskMap.set(targetId, task);
+        });
+      }
+
+      const finalMessages = history.map(m => {
+        if (m.db_id && activeTaskMap.has(m.db_id)) {
+          const task = activeTaskMap.get(m.db_id);
+          pollStatus(task.task_uuid, m.db_id);
+          return { ...m, isGenerating: true, text: `🚀 **Продолжаю генерацию...**` };
+        }
+        return m;
+      });
+
+      // deduplicate welcome
+      const hasHistoryWelcome = finalMessages.some((m: any) => m.text?.includes("нейростудия готова"));
+      setMessages(hasHistoryWelcome ? finalMessages : [welcomeMsg, ...finalMessages]);
+
     } catch (e) {
-      console.error("History fetch error:", e);
+      console.error("Init app synchronization error:", e);
     }
   };
 
@@ -327,11 +326,9 @@ export default function ChatApp() {
         const res = await api.checkStatus(uuid);
         if (res.success && (res.data.state === 'success' || res.data.state === 'completed')) {
           clearInterval(interval);
-          // Step 3 Deletion: Delete the "Processing" bubble
+          // Delete status bubble and show result
           await api.deleteMessage(statusDbId);
           setMessages(prev => prev.filter(m => m.db_id !== statusDbId));
-          
-          // Step 4: Show Result
           deliverResult(res.data.image_url);
           fetchUserData();
         } else if (res.data.state === 'failed' || res.data.state === 'error') {
