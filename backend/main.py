@@ -167,6 +167,9 @@ app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 async def generate_edit(
     request: Request,
     prompt: str = Form(...),
+    model_id: Optional[str] = Form(None),
+    aspect_ratio: Optional[str] = Form(None),
+    output_format: Optional[str] = Form(None),
     images: List[UploadFile] = File(default=[]),
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -192,7 +195,11 @@ async def generate_edit(
 
     try:
         task_id = await services.start_generation_flow(
-            db, user.id, prompt, image_urls, user.model_preference, cost
+            db, user.id, prompt, image_urls, 
+            model_id=model_id or user.model_preference, 
+            cost=cost,
+            aspect_ratio=aspect_ratio or "auto",
+            output_format=output_format or "jpg"
         )
         return {"success": True, "data": {"task_uuid": task_id}}
     except Exception as e:

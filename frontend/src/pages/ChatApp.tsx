@@ -318,14 +318,16 @@ export default function ChatApp() {
 
   const handleCancelAndNew = async (dbId?: number, localId?: string) => {
     await deleteMessage(dbId, localId);
-    // Check if the filtered messages already have a welcome message as the last item
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    
+    // Check if the last bot message is already a welcome message
     setMessages(prev => {
       const visible = prev.filter(m => m.type !== 'user');
       const last = visible[visible.length - 1];
-      if (last && last.id === 'welcome-session') return prev;
+      if (last && (last.id === 'welcome-session' || last.id.startsWith('welcome-'))) return prev;
       
-      // If not, we could add one, but the requirement was "оставить предыдущее собщение с приветсвием"
-      // Since it's always at the top, we don't need to add a new one if it's already visible.
+      // If not, we could show a welcome message, but usually the user wants to return to the root.
+      // We'll just trigger sendWelcome if history is effectively empty or last is result.
       return prev;
     });
     haptic();
@@ -397,14 +399,8 @@ export default function ChatApp() {
           {theme === 'dark' ? <Sun size={22} /> : <Moon size={22} />}
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifyContent: 'center' }}>
-          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'linear-gradient(135deg, #64b5f6, #1976d2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px', color: '#fff' }}>
-            S
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-            <span style={{ fontWeight: '600', fontSize: '15px' }}>S • NOVA | НЕЙРОФОТО</span>
-            <span style={{ fontSize: '12px', color: 'var(--tg-accent)' }}>бот</span>
-          </div>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          <img src="/logo.png" alt="S•NOVA AI" onClick={() => window.location.reload()} style={{ cursor: 'pointer' }} />
         </div>
         
         <button 
@@ -494,9 +490,9 @@ export default function ChatApp() {
                     <div style={{ fontSize: '13px', marginBottom: '10px', opacity: 0.9 }}>
                       ✨ <b>Ваш промпт почти готов!</b><br/><br/>
                       📝 Текст: <code>{msg.meta.prompt || "Без текста"}</code><br/>
-                      🤖 Модель: **{getModelName(msg.meta.model)}**<br/>
-                      📐 Размер: **{msg.meta.aspect_ratio}** | 📁 **{msg.meta.output_format?.toUpperCase()}**<br/>
-                      💰 Стоимость: **{getCost(msg.meta.model)} ⚡️**
+                      🤖 Модель: {renderText(getModelName(msg.meta.model))}<br/>
+                      📐 Размер: {renderText(msg.meta.aspect_ratio)} | 📁 {renderText(msg.meta.output_format?.toUpperCase())}<br/>
+                      💰 Стоимость: {renderText(`${getCost(msg.meta.model)} ⚡️`)}
                     </div>
                     <div style={{ display: 'grid', gap: '6px' }}>
                       <button className="tg-key-btn" style={{ padding: '8px', background: 'var(--tg-accent)', color: '#fff' }} onClick={() => handleConfirmGen(msg)}>
