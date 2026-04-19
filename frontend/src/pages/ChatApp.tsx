@@ -31,6 +31,7 @@ export default function ChatApp() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [currentModel, setCurrentModel] = useState('nano-banana-2');
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
