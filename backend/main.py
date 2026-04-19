@@ -74,6 +74,7 @@ async def auth_telegram(data: schemas.TelegramAuth, db: AsyncSession = Depends(g
 @app.get("/api/v1/config/models")
 async def get_config_models():
     """Returns AVAILABLE_MODELS and CREDITS_PER_MODEL from .env"""
+    try:
         avail_str = os.getenv("AVAILABLE_MODELS", "{}")
         prices_str = os.getenv("CREDITS_PER_MODEL", "{}")
         packs_str = os.getenv("CREDIT_PACKS", '{"149": 10, "299": 25, "899": 100}')
