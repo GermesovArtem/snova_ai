@@ -2,6 +2,7 @@ import logging
 import os
 import json
 import traceback
+from typing import List
 from dotenv import load_dotenv
 import datetime
 from sqlalchemy import func, cast, Date, desc, select
