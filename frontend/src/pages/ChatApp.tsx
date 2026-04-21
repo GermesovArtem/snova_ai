@@ -138,6 +138,11 @@ export default function ChatApp() {
     
     // Ephemeral welcome message
     const tempId = `welcome-${Date.now()}`;
+    setMessages(prev => [...prev.filter(m => m.id !== 'welcome'), {
+      id: tempId,
+      type: 'bot',
+      text: text,
+      timestamp: new Date()
     }]);
   };
 
@@ -229,6 +234,8 @@ export default function ChatApp() {
             setMessages(prev => prev.map(m => [userTempId, confirmTempId].includes(m.id) ? { ...m, image: finalImageUrl, meta: { ...m.meta, s3_urls: [finalImageUrl] } } : m));
          }
        } catch (e) {
+         console.error("Image upload failed during initiation:", e);
+       }
     }
   };
 
