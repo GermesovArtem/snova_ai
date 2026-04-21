@@ -12,7 +12,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = "6930578591"  # Provided by User
 CHECK_INTERVAL_SECONDS = 60
-FAIL_THRESHOLD = 5  # Brute force alert threshold
+FAIL_THRESHOLD = 10  # Brute force alert threshold (acts as fail2ban watchdog)
 AUTH_LOG_PATH = "/var/log/auth.log"  # Mounted from host
 
 # --- SECURITY SIGNATURES ---
