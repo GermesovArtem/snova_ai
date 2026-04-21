@@ -62,27 +62,15 @@ body {
 
 .chat-container {
   width: 100%;
-  max-width: 1000px; /* Increased for better desktop experience */
-  margin: 10px auto;
-  height: calc(100dvh - 20px);
+  max-width: 100%;
+  margin: 0;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-color);
   position: relative;
   transition: all 0.3s ease;
-  border-radius: 28px;
-  box-shadow: var(--shadow-md);
   overflow: hidden;
-  border: 1px solid var(--glass-border);
-}
-
-@media (max-width: 1000px) {
-  .chat-container {
-    margin: 0;
-    height: 100dvh;
-    border-radius: 0;
-    max-width: 100%;
-  }
 }
 
 .chat-header {
