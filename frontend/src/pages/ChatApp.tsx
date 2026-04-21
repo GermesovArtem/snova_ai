@@ -230,7 +230,7 @@ export default function ChatApp() {
          const uploadRes = await api.uploadImage(selectedFiles[0]);
          if (uploadRes.success) {
             const finalImageUrl = uploadRes.data.url;
-            setMessages(prev => prev.map(m => [userTempId, confirmTempId].includes(m.id) ? { ...m, image: finalImageUrl, meta: { ...m.meta, s3_urls: [finalImageUrl] } } : m));
+             setMessages(prev => prev.map(m => [userTempId, confirmTempId].includes(m.id) ? { ...m, meta: { ...m.meta, s3_urls: [finalImageUrl] } } : m));
          }
        } catch (e) {
          console.error("Image upload failed during initiation:", e);
