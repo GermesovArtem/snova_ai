@@ -31,8 +31,13 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 Configuration.account_id = os.getenv("YOOKASSA_SHOP_ID")
 Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
 logging.basicConfig(level=logging.INFO)
+from aiogram.client.session.aiohttp import AiohttpSession
+
 logger = logging.getLogger(__name__)
-bot = Bot(token=BOT_TOKEN)
+
+proxy_url = os.getenv("TELEGRAM_PROXY")
+session = AiohttpSession(proxy=proxy_url) if proxy_url else None
+bot = Bot(token=BOT_TOKEN, session=session)
 dp = Dispatcher(storage=MemoryStorage())
 
 user_router = Router()
