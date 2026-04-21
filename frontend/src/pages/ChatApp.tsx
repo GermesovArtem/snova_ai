@@ -99,31 +99,22 @@ export default function ChatApp() {
           id: m.task_uuid || m.id.toString(),
           db_id: m.id,
           type: 'bot-result',
-          text: `🖼 **Результат:** ${m.prompt || 'Изображение'}\n🤖 Модель: ${getModelName(m.model)}\n📐 Размер: ${m.aspect_ratio || '1:1'} | ${m.output_format?.toUpperCase() || 'PNG'}\n💰 Стоимость: ${m.credits_cost} ⚡️`,
+          text: `🖼 **Результат:** ${m.prompt || 'Изображение'}`,
           image: m.image_url,
-          meta: { prompt: m.prompt, model: m.model, aspect_ratio: m.aspect_ratio, output_format: m.output_format },
+          meta: { 
+            prompt: m.prompt, 
+            model: m.model, 
+            aspect_ratio: m.aspect_ratio, 
+            output_format: m.output_format,
+            credits_cost: m.credits_cost 
+          },
           timestamp: new Date(m.created_at || Date.now())
         }));
       }
 
-      // 3. Check Active Tasks and "Reanimate" existing history bubbles
-      const activeRes = await api.getActiveTasks();
-      const activeTaskMap = new Map();
-      if (activeRes.success) {
-        activeRes.data.forEach((task: any) => {
-          const targetId = task.status_message_id || task.id;
-          activeTaskMap.set(targetId, task);
-        });
-      }
-
-      const finalMessages = history.map(m => {
-        if (m.db_id && activeTaskMap.has(m.db_id)) {
-          const task = activeTaskMap.get(m.db_id);
-          pollStatus(task.task_uuid, m.id); // m.id is the task_uuid or string ID
-          return { ...m, isGenerating: true, text: `🚀 **Продолжаю генерацию...**` };
-        }
-        return m;
-      });
+      // History is now ascending from backend (oldest first). 
+      // We want to keep it as is.
+      const finalMessages = [...history];
 
       // deduplicate welcome
       const hasHistoryWelcome = finalMessages.some((m: any) => m.text?.includes("нейростудия готова"));
@@ -259,19 +250,19 @@ export default function ChatApp() {
       id: tempStatusId,
       type: 'bot-status',
       text: statusText,
+      image: msg.image, // Carry over image to status bubble
       isGenerating: true,
+      meta: msg.meta, // Carry over meta to status bubble
       timestamp: new Date()
     }]);
-      
+
     try {
-      if (!msg.meta?.files?.length && !msg.image) {
+      if (!msg.meta?.files?.length && !msg.image && !msg.meta?.s3_urls?.length) {
         alert("❌ Файл не найден. Пожалуйста, загрузите фото заново.");
         return;
       }
-
-      // Use existing S3 URLs if available from the initiation phase
-      const s3Urls = msg.meta?.s3_urls || [];
       
+      const s3Urls = msg.meta?.s3_urls || [];
       const res = await api.generateEdit(
         msg.meta.prompt, 
         s3Urls.length > 0 ? [] : (msg.meta.files || []), 
@@ -279,10 +270,10 @@ export default function ChatApp() {
         msg.meta.aspect_ratio, 
         msg.meta.output_format,
         undefined,
-        s3Urls[0] || msg.image // Fallback to msg.image for Repeat
+        s3Urls[0] || msg.image
       );
       if (res.success) {
-        pollStatus(res.data.task_uuid, tempStatusId); // Pass local temp ID
+        pollStatus(res.data.task_uuid, tempStatusId, msg.meta); // Pass meta to pollStatus
       } else {
         alert(`Ошибка генерации: ${res.error || "Неизвестная ошибка"}`);
         // Remove the loading bubble if it failed
@@ -297,7 +288,7 @@ export default function ChatApp() {
     setMessages(prev => prev.map(m => m.id === localId ? { ...m, text, isGenerating: false } : m));
   };
 
-  const pollStatus = async (uuid: string, localStatusId: string) => {
+  const pollStatus = async (uuid: string, localStatusId: string, meta?: any) => {
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
@@ -308,7 +299,7 @@ export default function ChatApp() {
           // Remove status bubble locally
           setMessages(prev => prev.filter(m => m.id !== localStatusId));
           // Show result locally
-          deliverResult(res.data.image_url, uuid);
+          deliverResult(res.data.image_url, uuid, meta);
           fetchUserData();
         } else if (res.data.state === 'failed' || res.data.state === 'error') {
           clearInterval(interval);
@@ -322,15 +313,14 @@ export default function ChatApp() {
     }, 3000);
   };
 
-  const deliverResult = async (imageUrl: string, uuid: string) => {
+  const deliverResult = async (imageUrl: string, uuid: string, meta?: any) => {
     const text = `🔥 **Результат готов!**`;
-    // We don't save this to WebChatMessage anymore. 
-    // It will be loaded from GenerationTask history on next refresh.
     setMessages(prev => [...prev, {
       id: uuid,
       type: 'bot-result',
       text: text,
       image: imageUrl,
+      meta: meta, // Carry over meta to result!
       timestamp: new Date()
     }]);
   };

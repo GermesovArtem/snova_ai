@@ -484,7 +484,7 @@ async def get_user_history(db, user_id: int):
         .filter(models.GenerationTask.user_id == user_id)
         .filter(models.GenerationTask.status == "completed")
         .filter(models.GenerationTask.image_url.isnot(None))
-        .order_by(models.GenerationTask.created_at.desc())
+        .order_by(models.GenerationTask.created_at.asc())
         .limit(50)
     )
     return res.scalars().all()

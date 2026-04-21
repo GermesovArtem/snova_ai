@@ -60,10 +60,9 @@ body {
   width: 100%;
 }
 
-/* Telegram Chat Layout */
 .chat-container {
   width: 100%;
-  max-width: 800px; /* Base for tablets */
+  max-width: 800px;
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -78,97 +77,72 @@ body {
   }
 }
 
-@media (min-width: 1024px) {
-  .chat-container {
-    max-width: 100%; 
-    margin: 0;
-    height: 100dvh;
-    border-radius: 0;
-    box-shadow: none;
-    overflow: hidden;
-  }
-}
-
-/* Bubbles */
 .bubble {
-  max-width: 85%;
+  max-width: 90%;
   padding: 10px 14px;
   border-radius: 16px;
   position: relative;
   font-size: 15px;
   line-height: 1.5;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .bubble-bot {
   background: var(--tg-bubble-bot);
   color: var(--text-color);
-  align-self: center;
-  margin: 8px auto;
-  width: fit-content;
-  max-width: 95%; /* Increased for wide side-by-side */
-  text-align: left; /* Changed from center to allow side-by-side text to align properly */
+  align-self: flex-start;
+  margin: 6px 0;
+  width: auto;
+  max-width: 95%;
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--glass-border);
 }
 
-/* Side-by-Side Flex Layout for Bot Bubbles */
 .bubble-content-flex {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap; 
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
 }
 
 .bubble-image-side {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  max-height: 400px;
+  width: 140px;
+  height: 140px;
   border-radius: 12px;
-  object-fit: contain;
+  object-fit: cover;
+  flex-shrink: 0;
   cursor: pointer;
   background: rgba(0,0,0,0.2);
-  flex-shrink: 0;
 }
 
 .bubble-text-side {
   flex: 1;
-  min-width: 240px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
 }
 
-.result-details {
+.result-details-grid {
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.4;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .clickable-prompt {
   cursor: pointer;
-  padding: 4px 8px;
   background: rgba(255,255,255,0.05);
+  padding: 6px 10px;
   border-radius: 8px;
+  font-size: 14px;
   border: 1px dashed var(--glass-border);
-  transition: all 0.2s;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-}
-
-.clickable-prompt:hover {
-  background: rgba(255,255,255,0.1);
-  border-color: var(--tg-accent);
-}
-
-.clickable-prompt:active {
-  transform: scale(0.98);
+  overflow: hidden;
 }
 
 .bubble-user {
@@ -178,14 +152,13 @@ body {
   align-self: flex-end;
 }
 
-/* Detached Input Footer */
 .chat-footer {
-  background: transparent;
   padding: 10px 16px;
+  background: var(--tg-footer);
+  border-top: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 10;
 }
 
 .floating-input-wrap {
@@ -194,98 +167,80 @@ body {
   display: flex;
   align-items: center;
   padding: 4px 12px;
-  box-shadow: var(--shadow-md);
   border: 1px solid var(--glass-border);
 }
 
-/* Custom Keyboard (Bots) */
 .tg-keyboard {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  padding: 0;
 }
 
 .tg-key-btn {
   background: var(--tg-button-light);
   color: var(--text-color);
   border: none;
-  padding: 14px;
-  border-radius: 16px; /* High rounding */
-  font-size: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  transition: all 0.2s;
-  box-shadow: var(--shadow-sm);
+  gap: 8px;
 }
 
 .tg-key-btn:active {
   background: var(--tg-button-hover);
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
-.chat-header {
-  border-radius: 16px 16px 0 0;
-}
-
-/* Header */
 .chat-header {
   height: 60px;
   background: var(--tg-header);
   display: flex;
   align-items: center;
   padding: 0 16px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   z-index: 100;
-  margin: 10px 10px 8px 10px;
-  border-radius: 20px;
-  width: auto;
-  border: 1px solid var(--glass-border);
 }
 
 .chat-header img {
-  height: 42px;
+  height: 38px;
   width: auto;
-  object-fit: contain;
 }
 
-/* Modals */
+.loader-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 50%;
+  border-top-color: var(--tg-accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 20px;
   backdrop-filter: blur(4px);
+  padding: 20px;
 }
 
 .modal-content {
   background: var(--tg-header);
-  width: 100%;
-  max-width: 420px;
   border-radius: 24px;
+  width: 100%;
+  max-width: 440px;
   overflow: hidden;
-  box-shadow: var(--shadow-md);
-  animation: modalIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes modalIn {
-  from { opacity: 0; transform: translateY(20px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.08);
-  border-radius: 10px;
+  border: 1px solid var(--glass-border);
 }
