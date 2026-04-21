@@ -138,13 +138,9 @@ export default function ChatApp() {
     
     // Ephemeral welcome message
     const tempId = `welcome-${Date.now()}`;
-    setMessages(prev => [...prev.filter(m => m.id !== 'welcome'), {
-      id: tempId,
-      type: 'bot',
-      text: text,
-      timestamp: new Date()
     }]);
   };
+
   const fetchUserData = async () => {
     try {
       const res = await api.getMe();
@@ -233,10 +229,9 @@ export default function ChatApp() {
             setMessages(prev => prev.map(m => [userTempId, confirmTempId].includes(m.id) ? { ...m, image: finalImageUrl, meta: { ...m.meta, s3_urls: [finalImageUrl] } } : m));
          }
        } catch (e) {
-         console.error("Image upload failed during initiation:", e);
-       }
     }
   };
+
   const handleConfirmGen = async (msg: Message) => {
     haptic();
     const modelName = getModelName(msg.meta.model);
@@ -573,6 +568,12 @@ export default function ChatApp() {
           ))}
         </AnimatePresence>
         
+        {messages.some(m => m.isGenerating) && (
+          <div className="bubble bubble-bot" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Loader2 className="animate-spin" size={14} />
+            <span style={{ fontSize: '13px' }}>Создаю шедевр...</span>
+          </div>
+        )}
         <div ref={chatEndRef} />
       </main>
 

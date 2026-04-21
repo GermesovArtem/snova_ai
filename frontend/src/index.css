@@ -1,195 +1,256 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-
 :root {
-  --tg-bg: #0b0c10;
-  --tg-card: #14161a;
-  --tg-accent: #facc15;
-  --tg-text: #ffffff;
-  --tg-text-muted: #94a3b8;
-  --tg-button: #1e293b;
-  --tg-button-light: #334155;
-  --glass-bg: rgba(20, 22, 26, 0.7);
+  --bg-color: #0e1621;
+  --text-color: #f5f5f5;
+  --text-muted: #708499;
+  
+  --tg-header: #242f3d;
+  --tg-footer: #242f3d;
+  --tg-bg: #0e1621;
+  --tg-bubble-bot: #182533;
+  --tg-bubble-user: #2b5278;
+  --tg-bubble-user-text: #ffffff;
+  --tg-button: #242f3d;
+  --tg-button-light: #2c3a4a;
+  --tg-button-hover: #324254;
+  --tg-accent: #64b5f6;
+  --tg-accent-hover: #4dabf5;
+  --tg-gray: #111e2b;
+  
+  --glass-bg: #182533;
   --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-color: #64b5f6;
+  
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+[data-theme='light'] {
+  --bg-color: #f4f4f5;
+  --text-color: #000000;
+  --text-muted: #828282;
+  --tg-header: #ffffff;
+  --tg-footer: #ffffff;
+  --tg-bg: #ececec; 
+  --tg-bubble-bot: #ffffff;
+  --tg-bubble-user: #3390ec;
+  --tg-bubble-user-text: #ffffff;
+  --tg-button: #ffffff;
+  --tg-button-light: #ffffff;
+  --tg-button-hover: #f1f1f2;
+  --tg-accent: #3390ec;
+  --tg-accent-hover: #2884d8;
+  --tg-gray: #f4f4f5;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
   -webkit-tap-highlight-color: transparent;
+  outline: none;
 }
 
 body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: var(--tg-bg);
-  color: var(--tg-text);
-  overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
 }
 
+/* Telegram Chat Layout */
 .chat-container {
+  width: 100%;
+  max-width: 800px; /* Base for tablets */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  background: var(--bg-color);
   position: relative;
-  max-width: 600px;
-  margin: 0 auto;
-  border-left: 1px solid var(--glass-border);
-  border-right: 1px solid var(--glass-border);
+  transition: all 0.3s ease;
 }
 
-.chat-header {
-  padding: 12px 16px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(15px);
-  border-bottom: 1px solid var(--glass-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 100;
+@media (max-width: 600px) {
+  .chat-container {
+    max-width: 100%;
+  }
 }
 
-.chat-header img {
-  height: 32px;
+@media (min-width: 1024px) {
+  .chat-container {
+    max-width: 100%; 
+    margin: 0;
+    height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: hidden;
+  }
 }
 
+/* Bubbles */
 .bubble {
-  max-width: 90%;
-  padding: 12px 16px;
-  border-radius: 20px;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  position: relative;
   font-size: 15px;
   line-height: 1.5;
-  position: relative;
-  animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 6px;
 }
 
 .bubble-bot {
-  align-self: flex-start;
-  background: var(--tg-card);
-  border-bottom-left-radius: 4px;
-  border: 1px solid var(--glass-border);
+  background: var(--tg-bubble-bot);
+  color: var(--text-color);
+  align-self: center;
+  margin: 8px auto;
+  width: fit-content;
+  max-width: 95%; /* Increased for wide side-by-side */
+  text-align: left; /* Changed from center to allow side-by-side text to align properly */
 }
 
-.bubble-user {
-  align-self: flex-end;
-  background: var(--tg-accent);
-  color: #000;
-  border-bottom-right-radius: 4px;
-  margin-left: auto;
-}
-
+/* Side-by-Side Flex Layout for Bot Bubbles */
 .bubble-content-flex {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap; 
+  align-items: flex-start;
   gap: 12px;
 }
 
 .bubble-image-side {
-  width: 100%;
-  max-height: 50vh;
-  border-radius: 12px;
+  max-width: 280px;
+  max-height: 320px;
+  border-radius: 8px;
   object-fit: contain;
-  cursor: pointer;
-  background: rgba(0,0,0,0.2);
+  flex-shrink: 0;
 }
 
-.tg-key-btn {
-  background: var(--tg-button);
-  border: 1px solid var(--glass-border);
-  color: var(--tg-text);
-  border-radius: 14px;
-  padding: 12px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
-}
-
-.tg-key-btn:active {
-  transform: scale(0.96);
-  background: var(--tg-button-light);
-}
-
-.tg-key-btn.active {
-  background: var(--tg-accent);
-  color: #000;
-  border-color: var(--tg-accent);
-}
-
-.chat-footer {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  padding: 16px;
-  border-top: 1px solid var(--glass-border);
+.bubble-text-side {
+  flex: 1;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+}
+
+.bubble-user {
+  background: var(--tg-bubble-user);
+  color: var(--tg-bubble-user-text);
+  border-bottom-right-radius: 4px;
+  align-self: flex-end;
+}
+
+/* Detached Input Footer */
+.chat-footer {
+  background: transparent;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
 }
 
 .floating-input-wrap {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--glass-border);
+  background: var(--tg-header);
   border-radius: 24px;
-  padding: 4px 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  padding: 4px 12px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--glass-border);
 }
 
+/* Custom Keyboard (Bots) */
 .tg-keyboard {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+  padding: 0;
 }
 
-.clickable {
+.tg-key-btn {
+  background: var(--tg-button-light);
+  color: var(--text-color);
+  border: none;
+  padding: 14px;
+  border-radius: 16px; /* High rounding */
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
 }
 
-.loader-small {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255,255,255,0.2);
-  border-top-color: var(--tg-accent);
-  border-radius: 50%;
-  animation: rotate 1s linear infinite;
+.tg-key-btn:active {
+  background: var(--tg-button-hover);
+  transform: scale(0.98);
 }
 
-@keyframes rotate {
-  to { transform: rotate(360deg); }
+.chat-header {
+  border-radius: 16px 16px 0 0;
 }
 
+/* Header */
+.chat-header {
+  height: 60px;
+  background: var(--tg-header);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  z-index: 100;
+  margin: 10px 10px 8px 10px;
+  border-radius: 20px;
+  width: auto;
+  border: 1px solid var(--glass-border);
+}
+
+.chat-header img {
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+}
+
+/* Modals */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.8);
-  z-index: 1000;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
 }
 
 .modal-content {
-  background: var(--tg-card);
+  background: var(--tg-header);
   width: 100%;
-  border-radius: 24px 24px 0 0;
-  border-top: 1px solid var(--glass-border);
-  max-height: 85vh;
-  overflow-y: auto;
+  max-width: 420px;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  animation: modalIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@media (max-width: 600px) {
-  .bubble { font-size: 14px; }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+  border-radius: 10px;
 }
