@@ -257,6 +257,7 @@ async def start_generation_flow(
         
         if not isinstance(kie_result, dict) or not kie_result.get("success"):
             error_msg = kie_result.get("error") if isinstance(kie_result, dict) else "Unknown API response"
+            if not error_msg: error_msg = "Unknown API Error (Empty response)"
             raise ValueError(f"KIE API Error: {error_msg}")
             
         kie_task_id = kie_result["taskId"]

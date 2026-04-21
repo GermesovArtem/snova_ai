@@ -573,12 +573,6 @@ export default function ChatApp() {
           ))}
         </AnimatePresence>
         
-        {messages.some(m => m.isGenerating) && (
-          <div className="bubble bubble-bot" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Loader2 className="animate-spin" size={14} />
-            <span style={{ fontSize: '13px' }}>Создаю шедевр...</span>
-          </div>
-        )}
         <div ref={chatEndRef} />
       </main>
 
