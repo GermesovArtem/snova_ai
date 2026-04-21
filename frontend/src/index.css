@@ -62,7 +62,8 @@ body {
 
 .chat-container {
   width: 100%;
-  max-width: 800px;
+  max-width: 100%;
+  margin: 0;
   height: 100dvh;
   display: flex;
   flex-direction: column;

@@ -9,6 +9,7 @@ from sqlalchemy import func, cast, Date, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models
 from .kie_api import create_task, get_task_info
+from .s3_service import get_presigned_url
 import uuid
 
 load_dotenv()
@@ -244,11 +245,26 @@ async def start_generation_flow(
     await db.commit()
     await db.refresh(new_task)
 
-    # 5. Call KIE AI
+    # 5. Call KIE AI (Using Presigned URLs for accessibility)
     try:
+        kie_image_urls = []
+        for url in image_paths:
+            # If it's your S3 URL, generate a presigned one
+            if "storage.selcloud.ru" in url:
+                try:
+                    filename = url.split("/")[-1]
+                    # Generate a signed URL valid for 1 hour (plenty for KIE)
+                    presigned = await get_presigned_url(filename, expires_in=3600)
+                    kie_image_urls.append(presigned)
+                except Exception as ex:
+                    logger.warning(f"Presign failed for {url}: {ex}")
+                    kie_image_urls.append(url)
+            else:
+                kie_image_urls.append(url)
+
         kie_result = await create_task(
             prompt=prompt, 
-            image_urls=image_paths, 
+            image_urls=kie_image_urls, 
             model=model_id, 
             aspect_ratio=aspect_ratio, 
             resolution=resolution,
