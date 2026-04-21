@@ -158,7 +158,7 @@ async def get_or_create_user(db, user_id: int, name: str = None, username: str =
     created = False
     if not user:
         # Initial balance and model for new users
-        starting_balance = float(os.getenv("STARTING_BALANCE", 5.0))
+        starting_balance = float(os.getenv("STARTING_BALANCE", 3.0))
         default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2-1k")
         user = models.User(
             id=user_id, 

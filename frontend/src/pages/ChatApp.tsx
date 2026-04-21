@@ -144,7 +144,7 @@ export default function ChatApp() {
       text: text,
       timestamp: new Date()
     }]);
-
+  };
   const fetchUserData = async () => {
     try {
       const res = await api.getMe();
@@ -155,7 +155,7 @@ export default function ChatApp() {
     } catch (e) { console.error(e); }
   };
 
-  const getModelLimit = (model: string) => 5;
+  const getModelLimit = (model: string) => 3;
 
   const getModelName = (id: string) => {
     if (!id) return 'Nano Banana 2';
@@ -236,7 +236,7 @@ export default function ChatApp() {
          console.error("Image upload failed during initiation:", e);
        }
     }
-
+  };
   const handleConfirmGen = async (msg: Message) => {
     haptic();
     const modelName = getModelName(msg.meta.model);

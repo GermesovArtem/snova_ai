@@ -1,256 +1,190 @@
-:root {
-  --bg-color: #0e1621;
-  --text-color: #f5f5f5;
-  --text-muted: #708499;
-  
-  --tg-header: #242f3d;
-  --tg-footer: #242f3d;
-  --tg-bg: #0e1621;
-  --tg-bubble-bot: #182533;
-  --tg-bubble-user: #2b5278;
-  --tg-bubble-user-text: #ffffff;
-  --tg-button: #242f3d;
-  --tg-button-light: #2c3a4a;
-  --tg-button-hover: #324254;
-  --tg-accent: #64b5f6;
-  --tg-accent-hover: #4dabf5;
-  --tg-gray: #111e2b;
-  
-  --glass-bg: #182533;
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --accent-color: #64b5f6;
-  
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
-}
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
-[data-theme='light'] {
-  --bg-color: #f4f4f5;
-  --text-color: #000000;
-  --text-muted: #828282;
-  --tg-header: #ffffff;
-  --tg-footer: #ffffff;
-  --tg-bg: #ececec; 
-  --tg-bubble-bot: #ffffff;
-  --tg-bubble-user: #3390ec;
-  --tg-bubble-user-text: #ffffff;
-  --tg-button: #ffffff;
-  --tg-button-light: #ffffff;
-  --tg-button-hover: #f1f1f2;
-  --tg-accent: #3390ec;
-  --tg-accent-hover: #2884d8;
-  --tg-gray: #f4f4f5;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+:root {
+  --tg-bg: #0b0c10;
+  --tg-card: #14161a;
+  --tg-accent: #facc15;
+  --tg-text: #ffffff;
+  --tg-text-muted: #94a3b8;
+  --tg-button: #1e293b;
+  --tg-button-light: #334155;
+  --glass-bg: rgba(20, 22, 26, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
 }
 
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   -webkit-tap-highlight-color: transparent;
-  outline: none;
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  min-height: 100vh;
-  min-height: 100dvh;
-  width: 100%;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--tg-bg);
+  color: var(--tg-text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
 }
 
-/* Telegram Chat Layout */
 .chat-container {
-  width: 100%;
-  max-width: 800px; /* Base for tablets */
-  height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-color);
+  height: 100vh;
   position: relative;
-  transition: all 0.3s ease;
 }
 
-@media (max-width: 600px) {
-  .chat-container {
-    max-width: 100%;
-  }
+.chat-header {
+  padding: 12px 16px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(15px);
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 100;
 }
 
-@media (min-width: 1024px) {
-  .chat-container {
-    max-width: 100%; 
-    margin: 0;
-    height: 100dvh;
-    border-radius: 0;
-    box-shadow: none;
-    overflow: hidden;
-  }
+.chat-header img {
+  height: 32px;
 }
 
-/* Bubbles */
 .bubble {
-  max-width: 85%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  position: relative;
+  max-width: 90%;
+  padding: 12px 16px;
+  border-radius: 20px;
   font-size: 15px;
   line-height: 1.5;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 6px;
+  position: relative;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .bubble-bot {
-  background: var(--tg-bubble-bot);
-  color: var(--text-color);
-  align-self: center;
-  margin: 8px auto;
-  width: fit-content;
-  max-width: 95%; /* Increased for wide side-by-side */
-  text-align: left; /* Changed from center to allow side-by-side text to align properly */
+  align-self: flex-start;
+  background: var(--tg-card);
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--glass-border);
 }
 
-/* Side-by-Side Flex Layout for Bot Bubbles */
+.bubble-user {
+  align-self: flex-end;
+  background: var(--tg-accent);
+  color: #000;
+  border-bottom-right-radius: 4px;
+  margin-left: auto;
+}
+
 .bubble-content-flex {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap; 
-  align-items: flex-start;
+  flex-direction: column;
   gap: 12px;
 }
 
 .bubble-image-side {
-  max-width: 280px;
-  max-height: 320px;
-  border-radius: 8px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-.bubble-text-side {
-  flex: 1;
-  min-width: 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.bubble-user {
-  background: var(--tg-bubble-user);
-  color: var(--tg-bubble-user-text);
-  border-bottom-right-radius: 4px;
-  align-self: flex-end;
-}
-
-/* Detached Input Footer */
-.chat-footer {
-  background: transparent;
-  padding: 10px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 10;
-}
-
-.floating-input-wrap {
-  background: var(--tg-header);
-  border-radius: 24px;
-  display: flex;
-  align-items: center;
-  padding: 4px 12px;
-  box-shadow: var(--shadow-md);
-  border: 1px solid var(--glass-border);
-}
-
-/* Custom Keyboard (Bots) */
-.tg-keyboard {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 0;
+  width: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  cursor: pointer;
+  background: #000;
 }
 
 .tg-key-btn {
-  background: var(--tg-button-light);
-  color: var(--text-color);
-  border: none;
-  padding: 14px;
-  border-radius: 16px; /* High rounding */
+  background: var(--tg-button);
+  border: 1px solid var(--glass-border);
+  color: var(--tg-text);
+  border-radius: 14px;
+  padding: 12px;
+  font-family: inherit;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 8px;
   transition: all 0.2s;
-  box-shadow: var(--shadow-sm);
 }
 
 .tg-key-btn:active {
-  background: var(--tg-button-hover);
-  transform: scale(0.98);
+  transform: scale(0.96);
+  background: var(--tg-button-light);
 }
 
-.chat-header {
-  border-radius: 16px 16px 0 0;
+.tg-key-btn.active {
+  background: var(--tg-accent);
+  color: #000;
+  border-color: var(--tg-accent);
 }
 
-/* Header */
-.chat-header {
-  height: 60px;
-  background: var(--tg-header);
+.chat-footer {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  padding: 16px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.floating-input-wrap {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  padding: 4px 12px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-  z-index: 100;
-  margin: 10px 10px 8px 10px;
-  border-radius: 20px;
-  width: auto;
-  border: 1px solid var(--glass-border);
+  gap: 10px;
 }
 
-.chat-header img {
-  height: 42px;
-  width: auto;
-  object-fit: contain;
+.tg-keyboard {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
 }
 
-/* Modals */
+.clickable {
+  cursor: pointer;
+}
+
+.loader-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: var(--tg-accent);
+  border-radius: 50%;
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  to { transform: rotate(360deg); }
+}
+
 .modal-overlay {
   position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.8);
   z-index: 1000;
-  padding: 20px;
-  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
 }
 
 .modal-content {
-  background: var(--tg-header);
+  background: var(--tg-card);
   width: 100%;
-  max-width: 420px;
-  border-radius: 24px;
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
-  animation: modalIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--glass-border);
+  max-height: 85vh;
+  overflow-y: auto;
 }
 
-@keyframes modalIn {
-  from { opacity: 0; transform: translateY(20px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.08);
-  border-radius: 10px;
+@media (max-width: 600px) {
+  .bubble { font-size: 14px; }
 }
