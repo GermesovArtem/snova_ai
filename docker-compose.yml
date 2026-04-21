@@ -51,6 +51,29 @@ services:
     command: sh -c "sleep 5 && python -m bot.main"
     <<: *default-logging
 
+  guardian:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    command: python -m scripts.guardian
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/auth.log:/var/log/auth.log:ro
+    network_mode: "host"
+    pid: "host"
+    <<: *default-logging
+
+  backup-manager:
+    build: .
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    command: python -m scripts.backup_manager
+    <<: *default-logging
+
   caddy:
     image: caddy:alpine
     restart: always
