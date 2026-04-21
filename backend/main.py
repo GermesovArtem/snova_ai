@@ -202,22 +202,17 @@ async def generate_edit(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        # 1. Upload files and get URLs (Pre-signed for KIE AI)
+        # 1. Upload files and get URLs (Using Direct Public URLs for KIE AI stability)
         image_urls = []
         if s3_url:
-            # Use already uploaded S3 URL
-            # We still need to convert it to a pre-signed URL for KIE safety
-            filename = s3_url.split('/')[-1]
-            presigned = await s3_service.get_presigned_url(filename)
-            image_urls.append(presigned)
+            # Use already uploaded S3 URL (assumed to be public)
+            image_urls.append(s3_url)
         
         for img in images:
             content = await img.read()
             ext = os.path.splitext(img.filename)[1]
             public_url = await s3_service.upload_file_to_s3(content, ext)
-            filename = public_url.split('/')[-1]
-            presigned_url = await s3_service.get_presigned_url(filename)
-            image_urls.append(presigned_url)
+            image_urls.append(public_url)
             
         # 2. Get cost
         model = services.normalize_model_id(model_id or user.model_preference)

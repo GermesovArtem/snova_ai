@@ -41,6 +41,7 @@ export default function ChatApp() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [baseImageURL, setBaseImageURL] = useState<string | null>(null);
  
   const [historyLightboxTask, setHistoryLightboxTask] = useState<any>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -219,10 +220,17 @@ export default function ChatApp() {
       type: 'bot-confirm',
       image: userImage,
       timestamp: new Date(),
-      meta: { prompt: userText, files: [...selectedFiles], previews: [...previews], ...settings }
+      meta: { 
+        prompt: userText, 
+        files: [...selectedFiles], 
+        previews: [...previews], 
+        s3_urls: baseImageURL ? [baseImageURL] : [],
+        ...settings 
+      }
     }]);
 
     setInput(''); setSelectedFiles([]); setPreviews([]);
+    setBaseImageURL(null); // Clear edit base after use
 
     // 4. No DB Sync for Text Messages
     // Keep it ephemeral, DB will only store GenerationTasks
@@ -266,12 +274,12 @@ export default function ChatApp() {
       
       const res = await api.generateEdit(
         msg.meta.prompt, 
-        s3Urls.length > 0 ? [] : (msg.meta.files || []), // If we have S3 URLs, we don't need to re-upload files
+        s3Urls.length > 0 ? [] : (msg.meta.files || []), 
         msg.meta.model, 
         msg.meta.aspect_ratio, 
         msg.meta.output_format,
-        undefined, // NO status_message_id
-        s3Urls[0]
+        undefined,
+        s3Urls[0] || msg.image // Fallback to msg.image for Repeat
       );
       if (res.success) {
         pollStatus(res.data.task_uuid, tempStatusId); // Pass local temp ID
@@ -358,9 +366,13 @@ export default function ChatApp() {
 
   const handleStartEdit = async (msg: Message) => {
     haptic();
+    if (msg.image) {
+      setPreviews([fixUrl(msg.image)]);
+      setBaseImageURL(msg.image);
+    }
     const text = `✏️ Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!`;
     const tempId = `edit-prompt-${Date.now()}`;
-    setMessages(prev => [...prev, {
+    setMessages(prev => [...prev.map(m => m.id === msg.id ? { ...m, isGenerating: false } : m), {
       id: tempId,
       type: 'bot-edit-prompt',
       text: text,
@@ -515,7 +527,26 @@ export default function ChatApp() {
                     )}
 
                     {!['bot-confirm', 'bot-status'].includes(msg.type) && (
-                      <div style={{ fontSize: '15px', whiteSpace: 'pre-wrap' }}>{renderText(msg.text)}</div>
+                      <div className="result-details">
+                         {msg.type === 'bot-result' && (
+                           <div style={{ marginBottom: '8px', opacity: 0.8, fontSize: '12px' }}>
+                             🤖 {getModelName(msg.meta?.model)} | ⚡ {getCost(msg.meta?.model)} кр.
+                           </div>
+                         )}
+                         <div 
+                           className="clickable-prompt" 
+                           title="Нажмите, чтобы скопировать промпт"
+                           onClick={() => {
+                             if (msg.meta?.prompt) {
+                               navigator.clipboard.writeText(msg.meta.prompt);
+                               haptic();
+                               alert("Промпт скопирован!");
+                             }
+                           }}
+                         >
+                           {renderText(msg.text || msg.meta?.prompt || "")}
+                         </div>
+                      </div>
                     )}
                     
                     {msg.type === 'bot-status' && (
