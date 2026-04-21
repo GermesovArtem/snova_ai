@@ -246,7 +246,7 @@ async def start_generation_flow(
 
     # 5. Call KIE AI
     try:
-        kie_task_id = await create_task(
+        kie_result = await create_task(
             prompt=prompt, 
             image_urls=image_paths, 
             model=model_id, 
@@ -254,6 +254,13 @@ async def start_generation_flow(
             resolution=resolution,
             output_format=output_format
         )
+        
+        if not isinstance(kie_result, dict) or not kie_result.get("success"):
+            error_msg = kie_result.get("error") if isinstance(kie_result, dict) else "Unknown API response"
+            raise ValueError(f"KIE API Error: {error_msg}")
+            
+        kie_task_id = kie_result["taskId"]
+        
         # Link UUIDs
         new_task.task_uuid = kie_task_id
         await db.commit()
