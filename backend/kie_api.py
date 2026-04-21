@@ -18,8 +18,10 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
                       aspect_ratio: str = "auto", resolution: str = "1K", 
                       output_format: str = "png"):
     url = f"{KIE_BASE_URL}/api/v1/jobs/createTask"
+    # KIE API expects base model name without resolution suffixes
+    api_model = model.replace("-1k", "").replace("-2k", "").replace("-4k", "")
     payload: dict[str, Any] = {
-        "model": model, 
+        "model": api_model, 
         "input": {
             "prompt": prompt,
             "aspect_ratio": aspect_ratio,
