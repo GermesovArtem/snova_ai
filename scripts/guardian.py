@@ -65,7 +65,7 @@ def check_docker_logs(service_name: str, signatures: list, label: str):
         
         for sig in signatures:
             matches = re.findall(sig, logs, re.IGNORECASE)
-             if matches:
+            if matches:
                 msg = f"Detected **{label}** threat in `{service_name}` logs!\nPattern: `{sig}`\nCount: {len(matches)}"
                 # send_telegram_alert(msg) # Disabled spam as per user request
                 print(f"[SILENCED ALERT] {msg}")
