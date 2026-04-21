@@ -3,6 +3,7 @@ import uuid
 import logging
 import aioboto3
 from dotenv import load_dotenv
+from botocore.config import Config
 
 load_dotenv()
 
@@ -29,12 +30,16 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
     session = aioboto3.Session()
     
     # Убираем '/ru-3' из endpoint_url и указываем регион явно, если необходимо.
+    # Настройка для использования Path-Style (https://hostname/bucket/key)
+    config = Config(s3={'addressing_style': 'path'})
+
     try:
         async with session.client(
             's3',
             endpoint_url=S3_ENDPOINT_URL,
             aws_access_key_id=S3_ACCESS_KEY,
-            aws_secret_access_key=S3_SECRET_KEY
+            aws_secret_access_key=S3_SECRET_KEY,
+            config=config
         ) as s3_client:
             
             # Определяем Content-Type
@@ -78,11 +83,13 @@ async def get_presigned_url(filename: str, expires_in: int = 3600) -> str:
         raise ValueError("S3 config incomplete")
 
     session = aioboto3.Session()
+    config = Config(s3={'addressing_style': 'path'})
     async with session.client(
         's3',
         endpoint_url=S3_ENDPOINT_URL,
         aws_access_key_id=S3_ACCESS_KEY,
-        aws_secret_access_key=S3_SECRET_KEY
+        aws_secret_access_key=S3_SECRET_KEY,
+        config=config
     ) as s3_client:
         url = await s3_client.generate_presigned_url(
             'get_object',

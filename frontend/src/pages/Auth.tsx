@@ -22,7 +22,7 @@ function TelegramWidget({ onAuth, onLoaded }: { onAuth: (user: any) => void, onL
     if (containerRef.current) {
         containerRef.current.innerHTML = '';
         const script = document.createElement('script');
-        script.src = 'https://telegram.org/js/telegram-widget.js?22';
+        script.src = '/telegram-widget.js';
         script.setAttribute('data-telegram-login', 'snovananobananabot');
         script.setAttribute('data-size', 'large');
         script.setAttribute('data-onauth', 'onTelegramAuth(user)');
