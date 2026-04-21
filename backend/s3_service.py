@@ -29,9 +29,12 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
 
     session = aioboto3.Session()
     
-    # Убираем '/ru-3' из endpoint_url и указываем регион явно, если необходимо.
-    # Настройка для использования Path-Style (https://hostname/bucket/key)
+    # Настройка для использования Path-Style и SSL-сертификата Selectel
     config = Config(s3={'addressing_style': 'path'})
+    
+    # Путь к сертификату GlobalSign Root R6 (из вашей инструкции)
+    cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'certs', 'root.crt')
+    verify_ssl = cert_path if os.path.exists(cert_path) else True
 
     try:
         async with session.client(
@@ -39,7 +42,8 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
             endpoint_url=S3_ENDPOINT_URL,
             aws_access_key_id=S3_ACCESS_KEY,
             aws_secret_access_key=S3_SECRET_KEY,
-            config=config
+            config=config,
+            verify=verify_ssl
         ) as s3_client:
             
             # Определяем Content-Type
@@ -79,17 +83,18 @@ async def get_presigned_url(filename: str, expires_in: int = 3600) -> str:
     Генерирует временную (pre-signed) ссылку для доступа к приватному объекту в S3.
     Это надежнее публичных ссылок для KIE AI.
     """
-    if not all([S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET_NAME]):
-        raise ValueError("S3 config incomplete")
-
-    session = aioboto3.Session()
+    # SSL Сертификат из инструкции
+    cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'certs', 'root.crt')
+    verify_ssl = cert_path if os.path.exists(cert_path) else True
+    
     config = Config(s3={'addressing_style': 'path'})
     async with session.client(
         's3',
         endpoint_url=S3_ENDPOINT_URL,
         aws_access_key_id=S3_ACCESS_KEY,
         aws_secret_access_key=S3_SECRET_KEY,
-        config=config
+        config=config,
+        verify=verify_ssl
     ) as s3_client:
         url = await s3_client.generate_presigned_url(
             'get_object',
