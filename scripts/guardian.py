@@ -37,6 +37,7 @@ API_THREATS = [
 # --- STATE ---
 IP_FAILURES = {} # IP -> count
 LAST_CHECKED_LOG_TIME = datetime.now() - timedelta(minutes=5)
+AUTH_LOG_SEEK = 0
 
 def send_telegram_alert(message: str):
     print(f"[SECURITY] Sending Telegram Alert: {message}")
@@ -71,13 +72,23 @@ def check_docker_logs(service_name: str, signatures: list, label: str):
         print(f"[ERROR] Failed to check docker logs for {service_name}: {e}")
 
 def check_ssh_logs():
+    global AUTH_LOG_SEEK
     if not os.path.exists(AUTH_LOG_PATH):
         return
     
     try:
-        # Check last 50 lines of auth.log
         with open(AUTH_LOG_PATH, "r") as f:
-            lines = f.readlines()[-50:]
+            f.seek(0, 2)
+            file_size = f.tell()
+            
+            # If first run or log rotated
+            if AUTH_LOG_SEEK == 0 or file_size < AUTH_LOG_SEEK:
+                AUTH_LOG_SEEK = file_size
+                return
+                
+            f.seek(AUTH_LOG_SEEK)
+            lines = f.readlines()
+            AUTH_LOG_SEEK = f.tell()
             
         for line in lines:
             # Check for failed password
@@ -87,8 +98,8 @@ def check_ssh_logs():
                 if ip_match:
                     ip = ip_match.group(1)
                     IP_FAILURES[ip] = IP_FAILURES.get(ip, 0) + 1
-                    if IP_FAILURES[ip] == FAIL_THRESHOLD:
-                        send_telegram_alert(f"🔥 **SSH Brute Force Detected!**\nIP: `{ip}`\nFailed attempts: {IP_FAILURES[ip]}")
+                    if IP_FAILURES[ip] % FAIL_THRESHOLD == 0:
+                        send_telegram_alert(f"🔥 **SSH Brute Force Detected!**\nIP: `{ip}`\nFailed attempts: {IP_FAILURES[ip]}\nРекомендуется заблокировать IP.")
             
             # Check for successful login
             if "Accepted password" in line or "Accepted publickey" in line:
