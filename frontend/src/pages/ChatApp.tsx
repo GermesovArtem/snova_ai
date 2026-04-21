@@ -91,17 +91,17 @@ export default function ChatApp() {
 
     try {
       // 2. Load History First (Foundation)
-      const res = await api.getMessages();
+      const res = await api.getHistory();
       let history: Message[] = [];
       if (res.success && res.data.length > 0) {
         history = res.data.map((m: any) => ({
-          id: m.id.toString(),
+          id: m.task_uuid || m.id.toString(),
           db_id: m.id,
-          type: m.role as any,
-          text: m.text,
+          type: 'bot-result',
+          text: `🖼 **Результат:** ${m.prompt || 'Изображение'}\n🤖 Модель: ${getModelName(m.model)}\n📐 Размер: ${m.aspect_ratio || '1:1'} | ${m.output_format?.toUpperCase() || 'PNG'}\n💰 Стоимость: ${m.credits_cost} ⚡️`,
           image: m.image_url,
-          meta: (typeof m.meta === 'string' && m.meta) ? (() => { try { return JSON.parse(m.meta); } catch(e) { return null; } }) : m.meta,
-          timestamp: new Date(m.timestamp)
+          meta: { prompt: m.prompt, model: m.model, aspect_ratio: m.aspect_ratio, output_format: m.output_format },
+          timestamp: new Date(m.created_at || Date.now())
         }));
       }
 
@@ -118,7 +118,7 @@ export default function ChatApp() {
       const finalMessages = history.map(m => {
         if (m.db_id && activeTaskMap.has(m.db_id)) {
           const task = activeTaskMap.get(m.db_id);
-          pollStatus(task.task_uuid, m.db_id);
+          pollStatus(task.task_uuid, m.id); // m.id is the task_uuid or string ID
           return { ...m, isGenerating: true, text: `🚀 **Продолжаю генерацию...**` };
         }
         return m;
@@ -136,7 +136,7 @@ export default function ChatApp() {
   const sendWelcome = async () => {
     const text = `✨ **Твоя нейростудия готова к новым шедеврам!**\n\nСегодня отличное время, чтобы обновить аватарку в 4K! 🚀\n\n**Что делаем сегодня?**\n📸 Просто скинь новое фото (до ${getModelLimit(currentModel)} шт.)\n⌨️ И (или) опиши свою идею текстом 👇`;
     
-    // UI optimistic
+    // Ephemeral welcome message
     const tempId = `welcome-${Date.now()}`;
     setMessages(prev => [...prev.filter(m => m.id !== 'welcome'), {
       id: tempId,
@@ -144,16 +144,6 @@ export default function ChatApp() {
       text: text,
       timestamp: new Date()
     }]);
-
-    try {
-      const res = await api.saveMessage('bot', text);
-      if (res.success) {
-        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: res.data.id.toString(), db_id: res.data.id } : m));
-      }
-    } catch (e) {
-      console.error("Failed to save welcome message to DB, but keeping in UI.");
-    }
-  };
 
   const fetchUserData = async () => {
     try {
@@ -233,92 +223,71 @@ export default function ChatApp() {
 
     setInput(''); setSelectedFiles([]); setPreviews([]);
 
-    // 4. Background Sync with DB (Wait for IDs)
-    try {
-      let finalImageUrl = undefined;
-      let finalFiles = [...selectedFiles];
-      
-      // If we have files, upload them immediately to ensure they persist in history
-      if (selectedFiles.length > 0) {
-         try {
-           const uploadRes = await api.uploadImage(selectedFiles[0]);
-           if (uploadRes.success) {
-              finalImageUrl = uploadRes.data.url;
-           }
-         } catch (e) {
-           console.error("Image upload failed during initiation:", e);
+    // 4. No DB Sync for Text Messages
+    // Keep it ephemeral, DB will only store GenerationTasks
+    if (selectedFiles.length > 0) {
+       try {
+         const uploadRes = await api.uploadImage(selectedFiles[0]);
+         if (uploadRes.success) {
+            const finalImageUrl = uploadRes.data.url;
+            setMessages(prev => prev.map(m => [userTempId, confirmTempId].includes(m.id) ? { ...m, image: finalImageUrl, meta: { ...m.meta, s3_urls: [finalImageUrl] } } : m));
          }
-      }
-
-      const userRes = await api.saveMessage('user', userText, finalImageUrl); 
-      if (userRes.success) {
-        setMessages(prev => prev.map(m => m.id === userTempId ? { ...m, id: userRes.data.id.toString(), db_id: userRes.data.id, image: finalImageUrl || m.image } : m));
-      }
-      
-      const confirmRes = await api.saveMessage('bot-confirm', "", finalImageUrl, { prompt: userText, ...settings, s3_urls: finalImageUrl ? [finalImageUrl] : [] });
-      if (confirmRes.success) {
-        setMessages(prev => prev.map(m => m.id === confirmTempId ? { ...m, id: confirmRes.data.id.toString(), db_id: confirmRes.data.id, image: finalImageUrl || m.image, meta: { ...m.meta, s3_urls: finalImageUrl ? [finalImageUrl] : [] } } : m));
-      }
-    } catch (e) {
-      console.error("DB Sync failed, but UI remains updated.");
+       } catch (e) {
+         console.error("Image upload failed during initiation:", e);
+       }
     }
-  };
 
   const handleConfirmGen = async (msg: Message) => {
     haptic();
     const modelName = getModelName(msg.meta.model);
     
-    // Add "Request confirmed" message (Step 3)
+    // Add "Request confirmed" message
     const statusText = `🚀 **Запрос подтвержден!** Начинаю генерацию [ **${modelName}** ]`;
-    const statusRes = await api.saveMessage('bot-status', statusText);
+    const tempStatusId = `status-${Date.now()}`;
     
-    if (statusRes.success) {
-      setMessages(prev => [...prev, {
-        id: statusRes.data.id.toString(),
-        db_id: statusRes.data.id,
-        type: 'bot-status',
-        text: statusText,
-        isGenerating: true,
-        timestamp: new Date()
-      }]);
+    setMessages(prev => [...prev, {
+      id: tempStatusId,
+      type: 'bot-status',
+      text: statusText,
+      isGenerating: true,
+      timestamp: new Date()
+    }]);
       
-      try {
-        if (!msg.meta?.files?.length && !msg.image) {
-          alert("❌ Файл не найден. Пожалуйста, загрузите фото заново.");
-          return;
-        }
-
-        // Use existing S3 URLs if available from the initiation phase
-        const s3Urls = msg.meta?.s3_urls || [];
-        
-        const res = await api.generateEdit(
-          msg.meta.prompt, 
-          s3Urls.length > 0 ? [] : (msg.meta.files || []), // If we have S3 URLs, we don't need to re-upload files
-          msg.meta.model, 
-          msg.meta.aspect_ratio, 
-          msg.meta.output_format,
-          statusRes.data.id,
-          s3Urls[0]
-        );
-        if (res.success) {
-          pollStatus(res.data.task_uuid, statusRes.data.id);
-        } else {
-          alert(`Ошибка генерации: ${res.error || "Неизвестная ошибка"}`);
-          // Remove the loading bubble if it failed
-          setMessages(prev => prev.filter(m => m.id !== statusRes.data.id.toString()));
-        }
-      } catch (e: any) { 
-        updateBotMessage(statusRes.data.id, `❌ Ошибка соединения`); 
+    try {
+      if (!msg.meta?.files?.length && !msg.image) {
+        alert("❌ Файл не найден. Пожалуйста, загрузите фото заново.");
+        return;
       }
+
+      // Use existing S3 URLs if available from the initiation phase
+      const s3Urls = msg.meta?.s3_urls || [];
+      
+      const res = await api.generateEdit(
+        msg.meta.prompt, 
+        s3Urls.length > 0 ? [] : (msg.meta.files || []), // If we have S3 URLs, we don't need to re-upload files
+        msg.meta.model, 
+        msg.meta.aspect_ratio, 
+        msg.meta.output_format,
+        undefined, // NO status_message_id
+        s3Urls[0]
+      );
+      if (res.success) {
+        pollStatus(res.data.task_uuid, tempStatusId); // Pass local temp ID
+      } else {
+        alert(`Ошибка генерации: ${res.error || "Неизвестная ошибка"}`);
+        // Remove the loading bubble if it failed
+        setMessages(prev => prev.filter(m => m.id !== tempStatusId));
+      }
+    } catch (e: any) { 
+      updateBotMessage(tempStatusId, `❌ Ошибка соединения`); 
     }
   };
 
-  const updateBotMessage = (dbId: number, text: string) => {
-    setMessages(prev => prev.map(m => m.db_id === dbId ? { ...m, text, isGenerating: false } : m));
-    api.updateMessage(dbId, text).catch(console.error);
+  const updateBotMessage = (localId: string, text: string) => {
+    setMessages(prev => prev.map(m => m.id === localId ? { ...m, text, isGenerating: false } : m));
   };
 
-  const pollStatus = async (uuid: string, statusDbId: number) => {
+  const pollStatus = async (uuid: string, localStatusId: string) => {
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
@@ -326,36 +295,34 @@ export default function ChatApp() {
         const res = await api.checkStatus(uuid);
         if (res.success && (res.data.state === 'success' || res.data.state === 'completed')) {
           clearInterval(interval);
-          // Delete status bubble and show result
-          await api.deleteMessage(statusDbId);
-          setMessages(prev => prev.filter(m => m.db_id !== statusDbId));
-          deliverResult(res.data.image_url);
+          // Remove status bubble locally
+          setMessages(prev => prev.filter(m => m.id !== localStatusId));
+          // Show result locally
+          deliverResult(res.data.image_url, uuid);
           fetchUserData();
         } else if (res.data.state === 'failed' || res.data.state === 'error') {
           clearInterval(interval);
-          updateBotMessage(statusDbId, `❌ **Ошибка:** ${res.data.error || "Генерация не удалась"}`);
+          updateBotMessage(localStatusId, `❌ **Ошибка:** ${res.data.error || "Генерация не удалась"}`);
           fetchUserData();
         } else if (attempts > 120) {
           clearInterval(interval);
-          updateBotMessage(statusDbId, `⚠️ **Тайм-аут.** Проверьте историю позже.`);
+          updateBotMessage(localStatusId, `⚠️ **Тайм-аут.** Проверьте историю позже.`);
         }
       } catch (e) { console.error(e); }
     }, 3000);
   };
 
-  const deliverResult = async (imageUrl: string) => {
+  const deliverResult = async (imageUrl: string, uuid: string) => {
     const text = `🔥 **Результат готов!**`;
-    const res = await api.saveMessage('bot-result', text, imageUrl);
-    if (res.success) {
-      setMessages(prev => [...prev, {
-        id: res.data.id.toString(),
-        db_id: res.data.id,
-        type: 'bot-result',
-        text: text,
-        image: imageUrl,
-        timestamp: new Date()
-      }]);
-    }
+    // We don't save this to WebChatMessage anymore. 
+    // It will be loaded from GenerationTask history on next refresh.
+    setMessages(prev => [...prev, {
+      id: uuid,
+      type: 'bot-result',
+      text: text,
+      image: imageUrl,
+      timestamp: new Date()
+    }]);
   };
 
   const handleRepeat = async (msg: Message) => {
@@ -390,16 +357,13 @@ export default function ChatApp() {
   const handleStartEdit = async (msg: Message) => {
     haptic();
     const text = `✏️ Чтобы изменить или дополнить эту картинку, просто отправь новый текст прямо сейчас!`;
-    const res = await api.saveMessage('bot-edit-prompt', text);
-    if (res.success) {
-      setMessages(prev => [...prev, {
-        id: res.data.id.toString(),
-        db_id: res.data.id,
-        type: 'bot-edit-prompt',
-        text: text,
-        timestamp: new Date()
-      }]);
-    }
+    const tempId = `edit-prompt-${Date.now()}`;
+    setMessages(prev => [...prev, {
+      id: tempId,
+      type: 'bot-edit-prompt',
+      text: text,
+      timestamp: new Date()
+    }]);
   };
 
   const getCost = (modelId: string) => {

@@ -44,6 +44,8 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
             elif ext.lower() in ['.webp']:
                 content_type = 'image/webp'
             
+            logger.info(f"Uploading {filename} to S3 bucket {S3_BUCKET_NAME} with Content-Type: {content_type}")
+            
             await s3_client.put_object(
                 Bucket=S3_BUCKET_NAME,
                 Key=filename,
@@ -55,12 +57,16 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
             # Используем ПУТЬ (path-style): https://endpoint/bucket/file
             # Это более надежно для публичного доступа в Selectel
             clean_endpoint = S3_ENDPOINT_URL.rstrip('/')
+            if 'storage.selcloud.ru' in clean_endpoint and not clean_endpoint.startswith('https://'):
+                 clean_endpoint = f"https://{clean_endpoint}"
+                 
             public_url = f"{clean_endpoint}/{S3_BUCKET_NAME}/{filename}"
+            logger.info(f"Successfully uploaded to S3. Public URL: {public_url}")
             
             return public_url
             
     except Exception as e:
-        logger.error(f"Failed to upload to S3: {e}")
+        logger.error(f"S3 Upload Failed! Endpoint: {S3_ENDPOINT_URL}, Bucket: {S3_BUCKET_NAME}, Error: {e}", exc_info=True)
         raise e
 
 async def get_presigned_url(filename: str, expires_in: int = 3600) -> str:
