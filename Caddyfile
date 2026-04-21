@@ -1,4 +1,3 @@
 fragmentx.tech {
     reverse_proxy /api/* api:8000
-    reverse_proxy * frontend:80
 }
