@@ -248,7 +248,7 @@ async def start_generation_flow(
     try:
         kie_task_id = await create_task(
             prompt=prompt, 
-            images=image_paths, 
+            image_urls=image_paths, 
             model=model_id, 
             aspect_ratio=aspect_ratio, 
             resolution=resolution,
