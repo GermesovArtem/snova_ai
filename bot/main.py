@@ -342,30 +342,16 @@ async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_i
             payment_info = Payment.find_one(payment_id)
             if payment_info.status == 'succeeded':
                 async with AsyncSessionLocal() as db:
-                    # BLOCKING CHECK: Ensure we don't double count if Webhook already did it
-                    from sqlalchemy import select
-                    res = await db.execute(
-                        select(models.Payment)
-                        .filter_by(provider_payment_id=payment_id)
-                        .with_for_update()
-                    )
-                    db_payment = res.scalars().first()
-                    
-                    if db_payment and db_payment.status != "succeeded":
-                        # Mark as succeeded in DB first
-                        db_payment.status = "succeeded"
-                        # Then add balance
-                        await services.update_user_balance(db, user_id, amount)
-                        await db.commit()
-                        logger.info(f"Poller confirmed payment {payment_id}. Added {amount} credits.")
-                        
+                    # Centralized atomic processing
+                    success = await services.process_successful_payment(db, payment_id)
+                    if success:
                         try:
-                            await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
+                            await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Баланс пополнен.", parse_mode="Markdown")
                         except: pass
                         return
                     else:
-                        logger.info(f"Poller saw success for {payment_id}, but it was already processed by Webhook.")
-                        return # Already handled
+                        # If payment was already handled by Webhook, just exit poller silently
+                        return 
             elif payment_info.status == 'canceled':
                 break
         except Exception as e:

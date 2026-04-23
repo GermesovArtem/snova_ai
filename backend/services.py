@@ -634,11 +634,54 @@ async def delete_web_message(db, user_id: int, msg_id: int):
         return True
     return False
 
-async def get_web_messages(db, user_id: int, limit: int = 50):
+async def process_successful_payment(db: AsyncSession, provider_payment_id: str) -> bool:
+    """
+    Атомарно обрабатывает успешный платеж. 
+    Возвращает True если кредиты были начислены, False если платеж уже был обработан.
+    """
+    from sqlalchemy import select, update
+    
+    # 1. Блокируем строку платежа
     res = await db.execute(
-        select(models.WebChatMessage)
-        .filter(models.WebChatMessage.user_id == user_id)
-        .order_by(models.WebChatMessage.timestamp.asc())
-        .limit(limit)
+        select(models.Payment)
+        .filter_by(provider_payment_id=provider_payment_id)
+        .with_for_update()
     )
-    return res.scalars().all()
+    db_payment = res.scalars().first()
+    
+    if not db_payment or db_payment.status == "succeeded":
+        logger.info(f"Payment {provider_payment_id} already processed or not found.")
+        return False
+        
+    # 2. Помечаем как успешный
+    db_payment.status = "succeeded"
+    
+    # 3. Рассчитываем кредиты (Берем логику из настроек)
+    amount_rub = db_payment.amount_rub
+    packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
+    try:
+        packs = json.loads(packs_str)
+    except:
+        packs = {"149": 30, "299": 65, "990": 270}
+    
+    credits_to_add = 0
+    for p_str, cr in packs.items():
+        if abs(float(p_str) - amount_rub) < 1.0:
+            credits_to_add = cr
+            break
+    
+    if credits_to_add == 0:
+        ratios = [cr/float(p) for p, cr in packs.items() if float(p) > 0]
+        best_ratio = max(ratios) if ratios else 0.2
+        credits_to_add = int(amount_rub * best_ratio)
+        
+    # 4. Начисляем пользователю
+    await db.execute(
+        update(models.User)
+        .where(models.User.id == db_payment.user_id)
+        .values(balance=models.User.balance + credits_to_add)
+    )
+    
+    await db.commit()
+    logger.info(f"Successfully processed payment {provider_payment_id}. Added {credits_to_add} to user {db_payment.user_id}")
+    return True
