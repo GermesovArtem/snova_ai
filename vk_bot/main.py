@@ -71,8 +71,18 @@ async def start_handler(message: Message):
         else:
             text = messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
             
+        # Forces the keyboard to appear
         await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.set(message.from_id, BotState.IDLE)
+
+@bot.on.message(payload_map=[("cmd", str)])
+async def menu_cmd_handler(message: Message):
+    cmd = message.get_payload_json()["cmd"]
+    if cmd == "create": await cmd_create_handler(message)
+    elif cmd == "model": await model_menu_handler(message)
+    elif cmd == "balance": await balance_handler(message)
+    elif cmd == "contacts": await contacts_handler(message)
+    elif cmd == "main": await start_handler(message)
 
 @bot.on.message(text="✨ Создать")
 async def cmd_create_handler(message: Message):

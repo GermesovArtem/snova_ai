@@ -2,26 +2,24 @@ from vkbottle import Keyboard, KeyboardButtonColor, Text
 
 def build_reply_kb():
     return (
-        Keyboard(one_time=False, resize_keyboard=True)
-        .add(Text("✨ Создать"), color=KeyboardButtonColor.PRIMARY)
-        .add(Text("🤖 Модель"), color=KeyboardButtonColor.PRIMARY)
+        Keyboard(one_time=False)
+        .add(Text("✨ Создать", payload={"cmd": "create"}), color=KeyboardButtonColor.PRIMARY)
+        .add(Text("🤖 Модель", payload={"cmd": "model"}), color=KeyboardButtonColor.PRIMARY)
         .row()
-        .add(Text("💳 Баланс"), color=KeyboardButtonColor.POSITIVE)
-        .add(Text("📬 Контакты"), color=KeyboardButtonColor.SECONDARY)
+        .add(Text("💳 Баланс", payload={"cmd": "balance"}), color=KeyboardButtonColor.POSITIVE)
+        .add(Text("📬 Контакты", payload={"cmd": "contacts"}), color=KeyboardButtonColor.SECONDARY)
         .get_json()
     )
 
 def build_model_menu_kb(models, current_model, costs):
     kb = Keyboard(inline=True)
-    # Using a list to ensure order and avoid dictionary key issues
     items = list(models.items())
     for i, (name, mm) in enumerate(items):
         cost = int(costs.get(mm, 1))
         prefix = "✅ " if mm == current_model else ""
         button_text = f"{prefix}{name} ({cost} ⚡)"
         kb.add(Text(button_text, payload={"set_model": mm}))
-        if (i + 1) % 1 == 0: # One per row for clarity
-             kb.row()
+        kb.row()
     return kb.get_json()
 
 def build_buy_kb(packs):
