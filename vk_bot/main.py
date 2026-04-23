@@ -194,8 +194,10 @@ async def confirmation_handler(message: Message):
 @bot.on.message() # Fallback for EVERYTHING else (Prompts)
 async def generation_init_handler(message: Message):
     if not message.text and not message.attachments: return
-    # Filter menu names
-    if message.text in ["✨ Создать", "🤖 Модель", "💳 Баланс", "📬 Контакты"]: return
+    # Filter menu names and system commands to prevent them from being treated as prompts
+    cmd = (message.text or "").lower().strip()
+    if cmd in ["✨ создать", "🤖 модель", "💳 баланс", "📬 контакты", "начать", "start", "/start", "назад"]: 
+        return
 
     # Process photo
     image_urls = []
