@@ -182,43 +182,33 @@ async def generic_handler(message: Message):
     image_urls = []
     for att in message.attachments:
         url = None
-        if att.photo:
-            url = att.photo.sizes[-1].url
-        elif att.doc and att.doc.type == 1: # Image document
-            url = att.doc.url
+        if att.photo: url = att.photo.sizes[-1].url
+        elif att.doc and att.doc.type == 1: url = att.doc.url
             
         if url:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    s3_path = f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg"
-                    s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", s3_path)
-                    if s3_url: image_urls.append(s3_url)
+                try:
+                    resp = await client.get(url, timeout=30.0)
+                    if resp.status_code == 200:
+                        s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg")
+                        if s3_url: image_urls.append(s3_url)
+                except Exception as e:
+                    logger.error(f"S3 Upload fail: {e}")
 
     prompt = (message.text or "").strip()
-    if not prompt and not image_urls: 
-        if image_processed_msg: await bot.api.messages.delete(cmids=[image_processed_msg.conversation_message_id], peer_id=message.from_id, delete_for_all=True)
-        return
+    if not prompt and not image_urls: return
 
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
-        if len(image_urls) > limit:
-             image_urls = image_urls[:limit]
+        if len(image_urls) > limit: image_urls = image_urls[:limit]
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    
-    confirm_text = messages.MSG_CONFIRMATION.format(
-        header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
-        safe_prompt=prompt[:100] or "(без текста)",
-        img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "",
-        human_name=human_model_name(user.model_preference),
-        ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
-    )
-    await message.answer(clean_markdown(confirm_text), keyboard=keyboards.build_confirm_kb())
+    await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(без текста)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
+    logger.info(f"START GEN for VK:{vk_p_id}")
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
@@ -228,36 +218,53 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         generation_committed = False
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
-            for _ in range(150):
+            logger.info(f"Task {task_id} started for {vk_p_id}")
+            for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
-                if info.get("state") in ["success", "completed"]:
+                status = info.get("state")
+                logger.debug(f"Polling task {task_id}: {status}") 
+                if status in ["success", "completed"]:
                     img_url = info.get("image_url")
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
+                    logger.info(f"Task {task_id} success. Delivering to {vk_p_id}...")
+                    
                     async with httpx.AsyncClient() as client:
-                        r = await client.get(img_url)
+                        r = await client.get(img_url, timeout=60.0)
                         if r.status_code == 200:
                             img_data = io.BytesIO(r.content)
                             img_data.name = "result.png"
                             photo_att = await uploader.upload(img_data, peer_id=int(vk_p_id))
                             img_data.seek(0)
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
+                            
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            atts = []
-                            if photo_att: atts.append(str(photo_att))
-                            if doc_att: atts.append(str(doc_att))
-                            await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": clean_markdown(text), "attachment": ",".join(atts), "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_after_gen_kb()})
+                            
+                            await bot.api.request("messages.send", {
+                                "peer_id": int(vk_p_id),
+                                "message": clean_markdown(text),
+                                "attachment": f"{photo_att},{doc_att}",
+                                "random_id": random.randint(1, 2**31),
+                                "keyboard": keyboards.build_after_gen_kb()
+                            })
+                            logger.info(f"Task {task_id} delivered successfully.")
                             return
-                elif info.get("state") in ["failed", "error"]:
+                elif status in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
-            raise Exception("Timeout")
+            raise Exception("Timeout (более 10 минут)")
         except Exception as e:
-            logger.error(f"GEN ERROR: {e}")
+            logger.error(f"GEN ERROR for {vk_p_id}: {e}")
             if not generation_committed:
-                await services.refund_frozen_credits(db, user_id, cost)
-                await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": f"❌ Ошибка: {str(e)}", "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_reply_kb()})
+                try: await services.refund_frozen_credits(db, user_id, cost)
+                except: pass
+            await bot.api.request("messages.send", {
+                "peer_id": int(vk_p_id),
+                "message": f"❌ Ошибка: {str(e)}",
+                "random_id": random.randint(1, 2**31),
+                "keyboard": keyboards.build_reply_kb()
+            })
 
 if __name__ == "__main__":
     bot.run_forever()
