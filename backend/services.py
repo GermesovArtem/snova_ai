@@ -246,10 +246,11 @@ async def start_generation_flow(
     
     # 2. Check balance
     user = await get_user_by_id(db, user_id)
-    if not user or (user.balance - user.frozen_balance) < cost:
+    if not user or user.balance < cost:
         raise Exception("insufficient_funds")
 
     # 3. Freeze credits
+    user.balance -= cost
     user.frozen_balance += cost
     db.add(user)
     
