@@ -17,7 +17,7 @@ from vk_bot import keyboards
 
 load_dotenv()
 
-# Logger setup - using print for mega-visibility
+# Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,7 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
         try:
              text = self.event.text or ""
              payload = self.event.payload or ""
-             # USING PRINT FOR ABSOLUTE VISIBILITY IN DOCKER
-             print(f"\n[!!!] NEW EVENT DETECTED [!!!]")
-             print(f"DEBUG FROM: {self.event.from_id}")
-             print(f"DEBUG TEXT: '{text}'")
-             print(f"DEBUG PAYLOAD: '{payload}'")
+             print(f"\n[!!!] NEW EVENT DETECTED [!!!] FROM: {self.event.from_id} TEXT: '{text}' PAYLOAD: '{payload}'")
              
              cmd = text.strip().lower()
              payload_data = self.event.get_payload_json() or {}
@@ -57,27 +53,30 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
 
 bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
 
-# --- STARTUP CHECK ---
+# --- ROBUST STARTUP CHECK ---
 async def startup_check():
     async with httpx.AsyncClient() as client:
-        # Check which group this token belongs to
-        resp = await client.post("https://api.vk.com/method/groups.getById", data={
-            "access_token": VK_TOKEN,
-            "v": "5.199"
-        })
-        data = resp.json()
-        print("\n" + "="*50)
-        if "response" in data:
-            group = data["response"][0]
-            print(f">>> BOT STARTUP SUCCESSFUL <<<")
-            print(f">>> LISTENING TO GROUP: {group['name']} (ID: {group['id']})")
-            print(f">>> SCREEN NAME: {group.get('screen_name')}")
-        else:
-            print(f"!!! STARTUP ERROR: TOKEN INVALID OR NO ACCESS !!!")
-            print(f"API RESPONSE: {data}")
-        print("="*50 + "\n")
+        try:
+            print("\n" + "="*50)
+            print(">>> VERIFYING GROUP TOKEN...")
+            resp = await client.post("https://api.vk.com/method/groups.getById", data={
+                "access_token": VK_TOKEN,
+                "v": "5.199"
+            })
+            data = resp.json()
+            if "response" in data and len(data["response"]) > 0:
+                group = data["response"][0]
+                print(f">>> BOT STARTUP SUCCESSFUL <<<")
+                print(f">>> LISTENING TO GROUP: {group['name']} (ID: {group['id']})")
+            else:
+                print(f"!!! STARTUP WARNING: COULD NOT GET GROUP INFO !!!")
+                print(f"!!! VK API ANSWER: {data}")
+            print("="*50 + "\n")
+        except Exception as e:
+            print(f"!!! STARTUP CHECK EXCEPTION: {e}")
 
-# --- UTILS ---
+# [Utils and Handlers remain same...]
+
 def clean_markdown(text: str) -> str:
     if not text: return ""
     text = text.replace("**", "").replace("`", "").replace("_", "")
@@ -127,8 +126,6 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
             if "error" in res_json: print(f"VK API ERROR LOG: {res_json['error']}")
         except Exception as e: print(f"VK SEND EXCEPTION: {e}")
 
-# --- HANDLERS ---
-
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
     print(f"START_HANDLER EXECUTING FOR {message.from_id}")
@@ -151,9 +148,6 @@ async def menu_cmd_handler(message: Message):
     elif cmd == "contacts": await contacts_handler(message)
     elif cmd == "main": await start_handler(message)
 
-# [Remaining handlers omitted for brevity, keeping actual logic...]
-# (The rest of the file follows same logic but using print where needed)
-
 @bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
     async with AsyncSessionLocal() as db:
@@ -164,7 +158,7 @@ async def cmd_create_handler(message: Message):
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
     async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_user.id if hasattr(message, 'from_user') else message.from_id, platform="vk")
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
@@ -178,7 +172,6 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
          if state_data: asyncio.create_task(run_vk_generation(message.from_id, state_data["last_prompt"], state_data["last_images"]))
          return
     if payload.get("action") == "reset_gen": await start_handler(message); return
-    # ... logic continues ...
     image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
     if message.attachments:
         for att in message.attachments:
@@ -190,12 +183,10 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
                  url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                  if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
             if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
-    # [Briefly omitting internal generation calls for output limit, but keep existing ones]
     prompt = (message.text or "").strip()
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
-         premium_msg = "✨ **Загрузка завершена!**\n\nВы прислали **{} фото**\nНапишите задание 👇".format(len(image_urls))
-         await safe_vk_send(message.from_id, clean_markdown(premium_msg), attachment=",".join(vk_attachment_strs))
+         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs))
          return
     if not prompt and not image_urls: return
     async with AsyncSessionLocal() as db:
