@@ -183,6 +183,8 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         user = res.scalars().first()
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
+        
+        generation_committed = False
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
             for _ in range(150):
@@ -191,6 +193,8 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                 if info.get("state") in ["success", "completed"]:
                     img_url = info.get("image_url")
                     await services.commit_frozen_credits(db, user_id, cost)
+                    generation_committed = True
+                    
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url)
                         if r.status_code == 200:
@@ -202,7 +206,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
                             
-                            # BUILD ATTACHMENT STRING SAFELY
                             atts = []
                             if photo_att: atts.append(str(photo_att))
                             if doc_att: atts.append(str(doc_att))
@@ -220,13 +223,15 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
             raise Exception("Timeout")
         except Exception as e:
             logger.error(f"GEN ERROR: {e}")
-            await services.refund_frozen_credits(db, user_id, cost)
-            await bot.api.request("messages.send", {
-                "peer_id": int(vk_p_id),
-                "message": f"❌ Ошибка: {str(e)}",
-                "random_id": random.randint(1, 2**31),
-                "keyboard": keyboards.build_reply_kb()
-            })
+            # ONLY refund if the credits haven't been committed yet
+            if not generation_committed:
+                await services.refund_frozen_credits(db, user_id, cost)
+                await bot.api.request("messages.send", {
+                    "peer_id": int(vk_p_id),
+                    "message": f"❌ Ошибка: {str(e)}",
+                    "random_id": random.randint(1, 2**31),
+                    "keyboard": keyboards.build_reply_kb()
+                })
 
 if __name__ == "__main__":
     bot.run_forever()
