@@ -50,17 +50,37 @@ async def safe_clear_state(peer_id: int):
     except:
         pass
 
+async def get_vk_user_name(user_id: int) -> str:
+    try:
+        users = await bot.api.users.get(user_ids=[user_id])
+        if users:
+            return users[0].first_name
+    except:
+        pass
+    return ""
+
 # --- HANDLERS ---
 
 @bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
 async def start_handler(message: Message):
     await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
+        real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(
-            db, platform_id=message.from_id, name=f"VK_{message.from_id}", platform="vk"
+            db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk"
         )
+        
+        # Update name if it was generic before
+        if not created and real_name and (not user.name or "VK_" in user.name):
+             user.name = real_name
+             await db.commit()
+
         limit = 1 if "1k" in user.model_preference.lower() else 2
-        text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
+        if created:
+            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit)
+        else:
+            text = messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
+            
     await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
 @bot.on.message(payload_map=[("cmd", str)])
@@ -102,7 +122,12 @@ async def balance_handler(message: Message):
 @bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
 async def contacts_handler(message: Message):
     await safe_clear_state(message.from_id)
-    await message.answer(clean_markdown(messages.MSG_CONTACTS))
+    vk_contacts = (
+        "🆘 Техподдержка: @artemgavr\n"
+        "👤 Менеджер: @doloreees_s\n\n"
+        "Пишите нам по любым вопросам!"
+    )
+    await message.answer(clean_markdown(vk_contacts))
 
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):
@@ -134,14 +159,11 @@ async def confirmation_handler(message: Message):
         await message.answer(clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
     else:
-        # If it's NOT a button action, check if it's a command that should break the flow
         cmd = (message.text or "").strip().lower()
         if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
              await safe_clear_state(message.from_id)
-             # Vkbottle will re-dispatch this message or we can manually call start
              if "начать" in cmd or "start" in cmd: await start_handler(message)
              return
-             
         await message.answer("Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message()
