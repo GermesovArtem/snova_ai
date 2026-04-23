@@ -34,21 +34,24 @@ class BotState(BaseStateGroup):
     WAIT_PROMPT = 2
     POST_GEN = 3
 
-# --- DEBUG MIDDLEWARE (LOG EVERYTHING) ---
+# --- DIAGNOSTIC MIDDLEWARE ---
 class DiagnosticMiddleware(BaseMiddleware[Message]):
     async def pre(self):
-        text = self.event.text or ""
-        payload = self.event.payload or ""
-        logger.info(f"RECEIVED EVENT: text='{text}', payload='{payload}', from_id={self.event.from_id}")
-        
-        # Check start command explicitly
-        cmd = text.strip().lower()
-        payload_data = self.event.get_payload_json() or {}
-        is_start = cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start"
-        
-        if is_start:
-             logger.info(f"!!! START COMMAND RESET FOR {self.event.from_id} !!!")
-             await bot.state_dispenser.delete(self.event.from_id)
+        try:
+             text = self.event.text or ""
+             payload = self.event.payload or ""
+             logger.info(f"\n[!!!] NEW EVENT [!!!]")
+             logger.info(f"FROM: {self.event.from_id}")
+             logger.info(f"TEXT: '{text}'")
+             logger.info(f"PAYLOAD: '{payload}'")
+             
+             cmd = text.strip().lower()
+             payload_data = self.event.get_payload_json() or {}
+             if cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start":
+                  logger.info("-> DETECTED START COMMAND. CLEARING STATE.")
+                  await bot.state_dispenser.delete(self.event.from_id)
+        except Exception as e:
+             logger.error(f"MIDDLEWARE ERROR: {e}")
         return True
 
 bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
@@ -105,10 +108,9 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 # --- HANDLERS ---
 
-# 1. ULTIMATE CATCH-ALL START HANDLER
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
-    logger.info(f"SUCCESS: start_handler called for {message.from_id}")
+    logger.info(f"EXECUTING START_HANDLER FOR {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
