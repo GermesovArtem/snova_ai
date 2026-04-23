@@ -5,6 +5,7 @@ import json
 import httpx
 import io
 import re
+import random
 from vkbottle.bot import Bot, Message
 from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
 from dotenv import load_dotenv
@@ -69,18 +70,12 @@ async def start_handler(message: Message):
         user, created = await services.get_or_create_user(
             db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk"
         )
-        
-        # Update name if it was generic before
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
 
         limit = 1 if "1k" in user.model_preference.lower() else 2
-        if created:
-            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit)
-        else:
-            text = messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
-            
+        text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
 @bot.on.message(payload_map=[("cmd", str)])
@@ -122,11 +117,7 @@ async def balance_handler(message: Message):
 @bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
 async def contacts_handler(message: Message):
     await safe_clear_state(message.from_id)
-    vk_contacts = (
-        "🆘 Техподдержка: @artemgavr\n"
-        "👤 Менеджер: @doloreees_s\n\n"
-        "Пишите нам по любым вопросам!"
-    )
+    vk_contacts = "🆘 Техподдержка: @artemgavr\n👤 Менеджер: @doloreees_s\n\nПишите нам по любым вопросам!"
     await message.answer(clean_markdown(vk_contacts))
 
 @bot.on.message(payload_map=[("buy", str)])
@@ -141,7 +132,6 @@ async def buy_handler(message: Message):
 async def confirmation_handler(message: Message):
     payload = message.get_payload_json() or {}
     action = payload.get("action")
-    
     if action == "confirm_gen":
         state_data = message.state_peer.payload
         async with AsyncSessionLocal() as db:
@@ -151,7 +141,6 @@ async def confirmation_handler(message: Message):
                   await message.answer(clean_markdown(messages.MSG_ERR_FUNDS.format(cost=int(cost), balance=int(user.balance))))
                   await bot.state_dispenser.delete(message.from_id)
                   return
-
         await message.answer(clean_markdown(messages.MSG_GEN_STARTING.format(model_name=human_model_name(user.model_preference))))
         asyncio.create_task(run_vk_generation(message.from_id, state_data["prompt"], state_data["images"]))
         await bot.state_dispenser.delete(message.from_id)
@@ -170,9 +159,7 @@ async def confirmation_handler(message: Message):
 async def generic_handler(message: Message):
     if not message.text and not message.attachments: return
     cmd = (message.text or "").strip().lower()
-    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]): 
-        return
-    
+    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]): return
     image_urls = []
     for att in message.attachments:
         if att.photo:
@@ -180,17 +167,13 @@ async def generic_handler(message: Message):
             async with httpx.AsyncClient() as client:
                 resp = await client.get(photo.url)
                 if resp.status_code == 200:
-                    s3_path = f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg"
-                    s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", s3_path)
+                    s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg")
                     if s3_url: image_urls.append(s3_url)
-
-    prompt = message.text or ""
+    prompt = (message.text or "").strip()
     if not prompt and not image_urls: return
-
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         cost = services.get_model_cost(user.model_preference)
-
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
     await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW, safe_prompt=prompt[:100], img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
 
@@ -201,7 +184,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         user = res.scalars().first()
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
-        
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
             for _ in range(150):
@@ -220,7 +202,14 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=vk_p_id)
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            await bot.api.messages.send(peer_id=vk_p_id, message=clean_markdown(text), attachment=[photo_att, doc_att], random_id=0, keyboard=keyboards.build_after_gen_kb())
+                            # CRITICAL: Use unique random_id and ensure peer_id is handled correctly
+                            await bot.api.messages.send(
+                                peer_id=vk_p_id, 
+                                message=clean_markdown(text), 
+                                attachment=f"{photo_att},{doc_att}", 
+                                random_id=random.getrandbits(32), 
+                                keyboard=keyboards.build_after_gen_kb()
+                            )
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
@@ -228,7 +217,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         except Exception as e:
             logger.error(f"GEN ERROR: {e}")
             await services.refund_frozen_credits(db, user_id, cost)
-            await bot.api.messages.send(peer_id=vk_p_id, message=f"❌ Ошибка: {e}", random_id=0, keyboard=keyboards.build_reply_kb())
+            await bot.api.messages.send(peer_id=vk_p_id, message=f"❌ Ошибка: {e}", random_id=random.getrandbits(32), keyboard=keyboards.build_reply_kb())
 
 if __name__ == "__main__":
     bot.run_forever()
