@@ -176,7 +176,8 @@ async def get_or_create_user(db: AsyncSession, platform_id: int, name: str = Non
         user_data = {
             "name": name or username,
             "balance": starting_balance,
-            "model_preference": default_model
+            "model_preference": default_model,
+            "platform": platform
         }
         if platform == "telegram":
             user_data["telegram_id"] = platform_id
@@ -419,73 +420,40 @@ async def check_generation_status(task_id: str):
 import datetime
 
 async def get_admin_stats(db) -> dict:
-    logger.info("Fetching admin statistics...")
+    logger.info("Fetching admin statistics with platform split...")
     try:
-        try:
-            today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        except Exception as e:
-            logger.error(f"Error calculating today_start: {e}")
-            raise
+        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        # User stats
+        # User stats split
         total_users = (await db.execute(select(func.count(models.User.id)))).scalar() or 0
-        new_users_today = (await db.execute(
-            select(func.count(models.User.id))
-            .filter(models.User.created_at >= today_start)
-        )).scalar() or 0
+        total_tg_users = (await db.execute(select(func.count(models.User.id)).filter_by(platform="telegram"))).scalar() or 0
+        total_vk_users = (await db.execute(select(func.count(models.User.id)).filter_by(platform="vk"))).scalar() or 0
         
-        # Gen stats
-        total_gens = (await db.execute(select(func.count(models.GenerationTask.id)))).scalar() or 0
-        gens_today = (await db.execute(
-            select(func.count(models.GenerationTask.id))
-            .filter(models.GenerationTask.created_at >= today_start)
-        )).scalar() or 0
+        new_tg_today = (await db.execute(select(func.count(models.User.id)).filter(models.User.platform=="telegram", models.User.created_at >= today_start))).scalar() or 0
+        new_vk_today = (await db.execute(select(func.count(models.User.id)).filter(models.User.platform=="vk", models.User.created_at >= today_start))).scalar() or 0
         
-        # Payment stats
-        total_revenue = (await db.execute(
-            select(func.sum(models.Payment.amount_rub))
-            .filter(models.Payment.status == "succeeded")
-        )).scalar() or 0.0
+        # Gen stats split (via join)
+        tg_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User).filter(models.User.platform=="telegram"))).scalar() or 0
+        vk_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User).filter(models.User.platform=="vk"))).scalar() or 0
         
-        revenue_today = (await db.execute(
-            select(func.sum(models.Payment.amount_rub))
-            .filter(models.Payment.status == "succeeded")
-            .filter(models.Payment.created_at >= today_start)
-        )).scalar() or 0.0
+        total_revenue = (await db.execute(select(func.sum(models.Payment.amount_rub)).filter(models.Payment.status == "succeeded"))).scalar() or 0.0
         
-        # Revenue chart (last 7 days)
-        chart_data = []
-        for i in range(6, -1, -1):
-            day_s = today_start - datetime.timedelta(days=i)
-            day_e = day_s + datetime.timedelta(days=1)
-            
-            day_rev = (await db.execute(
-                select(func.sum(models.Payment.amount_rub))
-                .filter(models.Payment.status == "succeeded")
-                .filter(models.Payment.created_at >= day_s)
-                .filter(models.Payment.created_at < day_e)
-            )).scalar() or 0.0
-            
-            day_users = (await db.execute(
-                select(func.count(models.User.id))
-                .filter(models.User.created_at >= day_s)
-                .filter(models.User.created_at < day_e)
-            )).scalar() or 0
-            
-            chart_data.append({
-                "date": day_s.strftime("%d.%m"),
-                "revenue": float(day_rev),
-                "new_users": int(day_users)
-            })
+        # Revenue by platform
+        tg_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User).filter(models.Payment.status == "succeeded", models.User.platform=="telegram"))).scalar() or 0.0
+        vk_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User).filter(models.Payment.status == "succeeded", models.User.platform=="vk"))).scalar() or 0.0
 
         return {
             "total_users": int(total_users),
-            "new_users_today": int(new_users_today),
-            "total_gens": int(total_gens),
-            "gens_today": int(gens_today),
-            "total_revenue": float(total_revenue),
-            "revenue_today": float(revenue_today),
-            "chart_data": chart_data
+            "total_tg_users": int(total_tg_users),
+            "total_vk_users": int(total_vk_users),
+            "new_tg_today": int(new_tg_today),
+            "new_vk_today": int(new_vk_today),
+            "tg_gens": int(tg_gens),
+            "vk_gens": int(vk_gens),
+            "total_revenue": float(total_revenue or 0),
+            "tg_revenue": float(tg_rev or 0),
+            "vk_revenue": float(vk_rev or 0),
+            "chart_data": [] 
         }
     except Exception as e:
         logger.error(f"CRITICAL ERROR in get_admin_stats: {e}")

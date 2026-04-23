@@ -167,10 +167,13 @@ const Admin: React.FC = () => {
     );
   }
 
-  const filteredUsers = users.filter(u => 
-    String(u.id).includes(search) || 
-    (u.name && u.name.toLowerCase().includes(search.toLowerCase()))
-  );
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'telegram' | 'vk'>('all');
+
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = String(u.id).includes(search) || (u.name && u.name.toLowerCase().includes(search.toLowerCase()));
+    const matchesPlatform = platformFilter === 'all' || u.platform === platformFilter;
+    return matchesSearch && matchesPlatform;
+  });
 
   return (
     <div className="admin-container">
@@ -252,21 +255,35 @@ const Admin: React.FC = () => {
                 <div className="stats-grid">
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
-                    <div className="stat-value">{stats?.total_users || 0}</div>
-                    <div className="stat-label">Всего пользователей</div>
-                    <div className="stat-sublabel">+{stats?.new_users_today || 0} сегодня</div>
+                    <div className="stat-value">{stats?.total_tg_users || 0}</div>
+                    <div className="stat-label">Пользователи Telegram</div>
+                    <div className="stat-sublabel">+{stats?.new_tg_today || 0} сегодня</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-blue" style={{background: 'linear-gradient(135deg, #447bba, #2787e5)'}}><Users size={20} /></div>
+                    <div className="stat-value">{stats?.total_vk_users || 0}</div>
+                    <div className="stat-label">Пользователи VK</div>
+                    <div className="stat-sublabel">+{stats?.new_vk_today || 0} сегодня</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
-                    <div className="stat-value">{stats?.total_gens || 0}</div>
-                    <div className="stat-label">Генераций выполнено</div>
-                    <div className="stat-sublabel">+{stats?.gens_today || 0} сегодня</div>
+                    <div className="stat-value">{stats?.tg_gens || 0}</div>
+                    <div className="stat-label">Генераций (TG)</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
+                    <div className="stat-value">{stats?.vk_gens || 0}</div>
+                    <div className="stat-label">Генераций (VK)</div>
                   </div>
                   <div className="stat-card">
                     <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
-                    <div className="stat-value">{Math.round(stats?.total_revenue || 0)} ₽</div>
-                    <div className="stat-label">Общая выручка</div>
-                    <div className="stat-sublabel">+{Math.round(stats?.revenue_today || 0)} ₽ сегодня</div>
+                    <div className="stat-value">{Math.round(stats?.tg_revenue || 0)} ₽</div>
+                    <div className="stat-label">Выручка Telegram</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
+                    <div className="stat-value">{Math.round(stats?.vk_revenue || 0)} ₽</div>
+                    <div className="stat-label">Выручка VK</div>
                   </div>
                 </div>
 
@@ -333,6 +350,17 @@ const Admin: React.FC = () => {
                     <h2>Пользователи</h2>
                     <p>Управление {users.length} аккаунтами</p>
                   </div>
+                  <div className="platform-filters">
+                      {['all', 'telegram', 'vk'].map(p => (
+                        <button 
+                          key={p} 
+                          onClick={() => setPlatformFilter(p as any)}
+                          className={`filter-tab ${platformFilter === p ? 'active' : ''}`}
+                        >
+                          {p === 'all' ? 'Все' : p === 'telegram' ? 'Telegram' : 'VK'}
+                        </button>
+                      ))}
+                  </div>
                   <div className="search-wrapper">
                     <Search className="search-icon" size={16} />
                     <input 
@@ -351,6 +379,7 @@ const Admin: React.FC = () => {
                       <thead>
                         <tr>
                           <th>ID / ИМЯ</th>
+                          <th>ПЛАТФОРМА</th>
                           <th>БАЛАНС</th>
                           <th>РЕГИСТРАЦИЯ</th>
                           <th style={{textAlign: 'right'}}>ДЕЙСТВИЯ</th>
@@ -363,14 +392,20 @@ const Admin: React.FC = () => {
                               <div className="user-info">
                                 <div className="user-name">{user.name || 'Неизвестно'}</div>
                                 <div className="user-id">{user.id}</div>
+                                <div className="user-platform-tag">{user.platform || 'tg'}</div>
                               </div>
+                            </td>
+                            <td>
+                              <span className={`platform-badge ${user.platform}`}>
+                                {user.platform === 'vk' ? 'VK' : 'Telegram'}
+                              </span>
                             </td>
                             <td>
                               <span className={`balance-badge ${user.balance > 0 ? 'balance-positive' : 'balance-zero'}`}>
                                 {Math.floor(user.balance || 0)} ⚡
                               </span>
                             </td>
-                            <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{new Date(user.created_at).toLocaleDateString()}</span></td>
+                            <td><span style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>{user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}</span></td>
                             <td style={{textAlign: 'right'}}>
                               <button 
                                 onClick={() => {

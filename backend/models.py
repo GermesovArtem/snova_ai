@@ -11,6 +11,7 @@ class User(Base):
     telegram_id = Column(BigInteger, unique=True, index=True, nullable=True)
     yandex_id = Column(String, unique=True, index=True, nullable=True)
     vk_id = Column(BigInteger, unique=True, index=True, nullable=True)
+    platform = Column(String, default="telegram")
     name = Column(String, nullable=True)
     photo_url = Column(String, nullable=True)
     role = Column(String, default="user")

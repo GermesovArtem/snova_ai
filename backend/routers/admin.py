@@ -70,6 +70,7 @@ async def list_users(db: AsyncSession = Depends(get_db), admin: str = Depends(ve
         safe_users.append({
             "id": u.id,
             "name": u.name,
+            "platform": u.platform,
             "balance": u.balance,
             "created_at": u.created_at.isoformat() if u.created_at else None
         })
