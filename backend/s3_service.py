@@ -34,10 +34,11 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
     
     # Путь к сертификату GlobalSign Root R6 (из вашей инструкции)
     cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'certs', 'root.crt')
-    if os.path.exists(cert_path):
+    if os.path.isfile(cert_path):
         verify_ssl = cert_path
+        logger.info(f"S3: Using custom certificate file at {cert_path}")
     else:
-        logger.warning(f"Cert file not found at {cert_path}, disabling SSL verification for S3.")
+        logger.warning(f"S3: Cert file NOT FOUND at {cert_path}, DISABLING SSL verification.")
         verify_ssl = False
 
     try:
