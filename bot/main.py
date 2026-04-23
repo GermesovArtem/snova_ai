@@ -342,11 +342,30 @@ async def auto_check_payment(user_id: int, payment_id: str, amount: float, msg_i
             payment_info = Payment.find_one(payment_id)
             if payment_info.status == 'succeeded':
                 async with AsyncSessionLocal() as db:
-                    await services.update_user_balance(db, user_id, amount)
-                try:
-                    await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
-                except: pass
-                return
+                    # BLOCKING CHECK: Ensure we don't double count if Webhook already did it
+                    from sqlalchemy import select
+                    res = await db.execute(
+                        select(models.Payment)
+                        .filter_by(provider_payment_id=payment_id)
+                        .with_for_update()
+                    )
+                    db_payment = res.scalars().first()
+                    
+                    if db_payment and db_payment.status != "succeeded":
+                        # Mark as succeeded in DB first
+                        db_payment.status = "succeeded"
+                        # Then add balance
+                        await services.update_user_balance(db, user_id, amount)
+                        await db.commit()
+                        logger.info(f"Poller confirmed payment {payment_id}. Added {amount} credits.")
+                        
+                        try:
+                            await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
+                        except: pass
+                        return
+                    else:
+                        logger.info(f"Poller saw success for {payment_id}, but it was already processed by Webhook.")
+                        return # Already handled
             elif payment_info.status == 'canceled':
                 break
         except Exception as e:
@@ -918,7 +937,14 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                 return
                 
             elif kie_status in ["failed", "error", "cancelled"]:
-                err_text = info.get("error", "Неизвестная ошибка на стороне нейросети.")
+                # Check if it is a real failure (confirmed by status 'failed') or just a network fluke
+                if not info.get("success") and info.get("state") == "error":
+                    # This is likely a network timeout/ConnectError during polling
+                    # We should NOT abort. Just log and continue.
+                    logger.warning(f"Task {kie_task_id} polling error (Network?), retrying... Error: {info.get('error')}")
+                    continue 
+
+                err_text = info.get("error") or "Неизвестная ошибка на стороне нейросети."
                 # services.check_generation_status already translated it to RU if possible
                 raise Exception(err_text)
                 

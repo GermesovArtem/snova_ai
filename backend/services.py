@@ -42,8 +42,9 @@ def translate_error(error_msg: str) -> str:
         if key.lower() in error_msg_lower:
             return val
             
-    if "db" in error_msg_lower or "database" in error_msg_lower:
-        return "Ошибка базы данных. Повторите попытку позже."
+    # Avoid recursive prefixes
+    if error_msg_lower.startswith("ошибка:") or error_msg_lower.startswith("ошибка"):
+        return error_msg
         
     return f"Ошибка: {error_msg}"
 
@@ -373,15 +374,20 @@ async def check_generation_status(task_id: str):
     is_failed = state in ["fail", "failed", "failure", "error", "cancelled", "rejected", "blocked"] or not info.get("success")
     
     if is_failed:
-        err = info.get("error", "Unknown error")
+        err = info.get("error")
+        # If the error is an empty string, don't leave empty parentheses
+        if not err:
+            err = "Не удалось сгенерировать"
+            
         # Translate the error if possible
         for key, val in ERRORS_RU.items():
             if key.lower() in str(err).lower():
                 info["error"] = val
                 break
         else:
-            info["error"] = f"Ошибка ({err})"
-        
+            # Just store the raw error without prefix here, let translate_error handle formatting
+            info["error"] = str(err)
+            
         # Ensure state is 'failed' for consistent handling in bot/frontend
         if state not in ["error", "failed"]:
             info["state"] = "failed"
