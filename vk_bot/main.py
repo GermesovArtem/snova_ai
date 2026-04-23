@@ -35,7 +35,6 @@ class BotState(BaseStateGroup):
 
 # --- UTILS ---
 def clean_markdown(text: str) -> str:
-    """Removes Markdown formatting for VK."""
     if not text: return ""
     text = text.replace("**", "").replace("`", "").replace("_", "")
     text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
@@ -45,21 +44,28 @@ def human_model_name(model_id):
     models_map = services.get_available_models()
     return next((name for name, mid in models_map.items() if mid == model_id), model_id)
 
+async def safe_clear_state(peer_id: int):
+    try:
+        await bot.state_dispenser.delete(peer_id)
+    except:
+        pass
+
 # --- HANDLERS ---
 
 @bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
 async def start_handler(message: Message):
+    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, created = await services.get_or_create_user(
             db, platform_id=message.from_id, name=f"VK_{message.from_id}", platform="vk"
         )
         limit = 1 if "1k" in user.model_preference.lower() else 2
         text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
-        
     await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
+    await safe_clear_state(message.from_id)
     cmd = message.get_payload_json()["cmd"]
     if cmd == "create": await cmd_create_handler(message)
     elif cmd == "model": await model_menu_handler(message)
@@ -69,6 +75,7 @@ async def menu_cmd_handler(message: Message):
 
 @bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
+    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = 1 if "1k" in user.model_preference.lower() else 2
@@ -76,6 +83,7 @@ async def cmd_create_handler(message: Message):
 
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
+    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
@@ -84,6 +92,7 @@ async def model_menu_handler(message: Message):
 
 @bot.on.message(text=["💳 баланс", "💳 Баланс", "Баланс", "баланс"])
 async def balance_handler(message: Message):
+    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
@@ -92,6 +101,7 @@ async def balance_handler(message: Message):
 
 @bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
 async def contacts_handler(message: Message):
+    await safe_clear_state(message.from_id)
     await message.answer(clean_markdown(messages.MSG_CONTACTS))
 
 @bot.on.message(payload_map=[("buy", str)])
@@ -124,12 +134,19 @@ async def confirmation_handler(message: Message):
         await message.answer(clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
     else:
+        # If it's NOT a button action, check if it's a command that should break the flow
+        cmd = (message.text or "").strip().lower()
+        if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
+             await safe_clear_state(message.from_id)
+             # Vkbottle will re-dispatch this message or we can manually call start
+             if "начать" in cmd or "start" in cmd: await start_handler(message)
+             return
+             
         await message.answer("Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message()
 async def generic_handler(message: Message):
     if not message.text and not message.attachments: return
-    
     cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]): 
         return
@@ -153,15 +170,7 @@ async def generic_handler(message: Message):
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    
-    confirm_text = messages.MSG_CONFIRMATION.format(
-        header=messages.MSG_CONFIRM_HEADER_NEW,
-        safe_prompt=prompt[:100],
-        img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "",
-        human_name=human_model_name(user.model_preference),
-        ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
-    )
-    await message.answer(clean_markdown(confirm_text), keyboard=keyboards.build_confirm_kb())
+    await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW, safe_prompt=prompt[:100], img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
     async with AsyncSessionLocal() as db:
@@ -187,7 +196,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             photo_att = await uploader.upload(img_data, peer_id=vk_p_id)
                             img_data.seek(0)
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=vk_p_id)
-                            
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
                             await bot.api.messages.send(peer_id=vk_p_id, message=clean_markdown(text), attachment=[photo_att, doc_att], random_id=0, keyboard=keyboards.build_after_gen_kb())
