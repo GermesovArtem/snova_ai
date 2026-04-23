@@ -40,15 +40,8 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
         try:
              text = self.event.text or ""
              payload = self.event.payload or ""
-             logger.warning(f"--- EVENT --- From: {self.event.from_id} | Text: '{text}' | Payload: '{payload}'")
-             
-             cmd = text.strip().lower()
-             payload_data = self.event.get_payload_json() or {}
-             if cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start":
-                  logger.warning(f"ACTION: START RECEIVED. CLEARED STATE FOR {self.event.from_id}")
-                  await bot.state_dispenser.delete(self.event.from_id)
-        except Exception as e:
-             logger.error(f"MIDDLEWARE ERROR: {e}")
+             logger.warning(f"[!!!] EVENT RECEIVED! from_id={self.event.from_id} text='{text}'")
+        except: pass
         return True
 
 bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
@@ -57,22 +50,31 @@ bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
 async def startup_check():
     async with httpx.AsyncClient() as client:
         try:
-            logger.warning(">>> STARTING IDENTITY VERIFICATION...")
-            resp = await client.post("https://api.vk.com/method/groups.getById", data={
-                "access_token": VK_TOKEN,
-                "v": "5.199"
-            })
+            logger.warning(">>> VERIFYING TOKEN WITH VK API...")
+            params = {"access_token": VK_TOKEN, "v": "5.131"}
+            if GROUP_ID and GROUP_ID.isdigit():
+                params["group_ids"] = GROUP_ID
+                
+            resp = await client.post("https://api.vk.com/method/groups.getById", data=params)
+            raw_data = resp.text
+            logger.warning(f">>> RAW VIEW OF VK RESPONSE: {raw_data}")
+            
             data = resp.json()
-            if "response" in data and len(data["response"]) > 0:
-                group = data["response"][0]
-                logger.warning(f"SUCCESS! Bot is listening to: {group['name']} (ID: {group['id']})")
-                logger.warning(f"Group Screen Name: {group.get('screen_name')}")
+            if "response" in data:
+                res = data["response"]
+                if isinstance(res, list) and len(res) > 0:
+                    group = res[0]
+                    logger.warning(f"SUCCESS: Listening to group '{group.get('name')}' (ID: {group.get('id')})")
+                elif isinstance(res, dict):
+                    logger.warning(f"SUCCESS (DICT): Group Info: {res}")
+                else:
+                    logger.warning(f"UNEXPECTED RESPONSE FORMAT: {res}")
             else:
-                logger.warning(f"CRITICAL: Failed to get group info. API Answer: {data}")
+                logger.warning(f"ERROR IN API ANSWER: {data}")
         except Exception as e:
-            logger.error(f"IDENTITY CHECK FAILED: {e}")
+            logger.error(f"STARTUP FATAL ERROR: {str(e)}")
 
-# [Utils and Handlers remain same...]
+# [Utils and Handlers follow - keeping them intact as per existing logic]
 
 def clean_markdown(text: str) -> str:
     if not text: return ""
@@ -98,14 +100,14 @@ def get_limit_for_model(model_name: str) -> int:
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
     async with httpx.AsyncClient() as client:
-        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.199"})
+        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.131"})
         data = resp.json()
         if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
         upload_url = data["response"]["upload_url"]
         files = {"photo": ("photo.jpg", image_bytes, "image/jpeg")}
         resp = await client.post(upload_url, files=files)
         upload_data = resp.json()
-        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={"photo": upload_data["photo"], "server": upload_data["server"], "hash": upload_data["hash"], "access_token": VK_TOKEN, "v": "5.199"})
+        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={"photo": upload_data["photo"], "server": upload_data["server"], "hash": upload_data["hash"], "access_token": VK_TOKEN, "v": "5.131"})
         photo_resp = resp.json()
         if "error" in photo_resp: raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
         photo = photo_resp["response"][0]
@@ -113,7 +115,7 @@ async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
     url = "https://api.vk.com/method/messages.send"
-    params = {"peer_id": str(peer_id), "message": message, "random_id": str(random.randint(1, 2**31)), "access_token": VK_TOKEN, "v": "5.199"}
+    params = {"peer_id": str(peer_id), "message": message, "random_id": str(random.randint(1, 2**31)), "access_token": VK_TOKEN, "v": "5.131"}
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
     async with httpx.AsyncClient() as client:
@@ -183,7 +185,7 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
     prompt = (message.text or "").strip()
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
-         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs))
+         await safe_vk_send(message.from_id, "Фото получили! Напишите задание 👇", attachment=",".join(vk_attachment_strs))
          return
     if not prompt and not image_urls: return
     async with AsyncSessionLocal() as db:
