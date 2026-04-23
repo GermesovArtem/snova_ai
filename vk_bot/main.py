@@ -153,8 +153,8 @@ async def buy_handler(message: Message):
         payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
         
     await message.answer(
-        f"⏳ Счёт на {price} руб. ({amount} ⚡) создан!\n\nОплатите по ссылке:\n{payment_url}",
-        keyboard=keyboards.build_reply_kb()
+        f"⏳ Счёт на {price} руб. ({amount} ⚡) создан! Нажмите на кнопку ниже для оплаты:",
+        keyboard=keyboards.build_pay_link_kb(payment_url)
     )
 
 @bot.on.message(payload_map=[("action", "repeat_gen")])

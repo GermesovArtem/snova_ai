@@ -1,4 +1,4 @@
-from vkbottle import Keyboard, KeyboardButtonColor, Text
+from vkbottle import Keyboard, KeyboardButtonColor, Text, OpenLink
 
 def build_reply_kb():
     return (
@@ -45,5 +45,12 @@ def build_after_gen_kb():
         .add(Text("🔄 Повторить", payload={"action": "repeat_gen"}), color=KeyboardButtonColor.PRIMARY)
         .row()
         .add(Text("🖼 Начать заново", payload={"menu": "main"}), color=KeyboardButtonColor.SECONDARY)
+        .get_json()
+    )
+
+def build_pay_link_kb(url):
+    return (
+        Keyboard(inline=True)
+        .add(OpenLink(label="💳 Оплатить", link=url))
         .get_json()
     )
