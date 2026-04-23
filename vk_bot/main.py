@@ -151,8 +151,10 @@ async def buy_handler(message: Message):
     amount = payload["amount"]
     
     async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         description = f"Пополнение {amount} ⚡ (VK:{message.from_id})"
-        payment_url = await services.create_yookassa_payment(db, message.from_id, float(price), description)
+        # Use user.id (Internal PK) instead of message.from_id (VK Platform ID)
+        payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
         
     await message.answer(
         f"⏳ Счёт на {price} руб. ({amount} ⚡) создан!\n\nОплатите по ссылке:\n{payment_url}",
