@@ -66,9 +66,6 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
-    """
-    ULTIMATE DIRECT SENDER: Bypasses library serialization issues by calling VK API directly via HTTP.
-    """
     url = "https://api.vk.com/method/messages.send"
     params = {
         "peer_id": str(peer_id),
@@ -79,17 +76,12 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
     }
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
-    
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.post(url, data=params)
             res_json = resp.json()
-            if "error" in res_json:
-                 logger.error(f"VK API DIRECT ERROR: {res_json['error']}")
-            else:
-                 logger.info(f"VK DIRECT SEND SUCCESS for {peer_id}")
-        except Exception as e:
-            logger.error(f"VK DIRECT HTTP ERROR: {e}")
+            if "error" in res_json: logger.error(f"VK API DIRECT ERROR: {res_json['error']}")
+        except Exception as e: logger.error(f"VK DIRECT HTTP ERROR: {e}")
 
 # --- HANDLERS ---
 
@@ -209,10 +201,7 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
     if not message.text and not message.attachments and not existing_images: return
     cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
-    
-    image_urls = existing_images or []
-    vk_attachment_strs = existing_vk_atts or []
-    
+    image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
     if message.attachments:
         for att in message.attachments:
             url, vk_id = None, ""
@@ -224,40 +213,21 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
                  url = att.doc.url
                  vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                  if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
-            if url:
-                vk_attachment_strs.append(vk_id)
-                image_urls.append(url)
-
+            if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
     prompt = (message.text or "").strip()
-    
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
-         premium_msg = (
-             "✨ **Загрузка завершена!**\n\n"
-             f"Вы прислали **{len(image_urls)} фото** (см. выше 👆)\n"
-             "Теперь напишите, пожалуйста, **задание** для нейросети: что именно нужно сделать? 👇"
-         )
+         premium_msg = "✨ **Загрузка завершена!**\n\nВы прислали **{} фото** (см. выше 👆)\nТеперь напишите, пожалуйста, **задание** для нейросети: что именно нужно сделать? 👇".format(len(image_urls))
          await safe_vk_send(message.from_id, clean_markdown(premium_msg), attachment=",".join(vk_attachment_strs))
          return
-
     if not prompt and not image_urls: return
-
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
-        if len(image_urls) > limit: 
-             image_urls = image_urls[:limit]
-             vk_attachment_strs = vk_attachment_strs[:limit]
+        if len(image_urls) > limit: image_urls = image_urls[:limit]; vk_attachment_strs = vk_attachment_strs[:limit]
         cost = services.get_model_cost(user.model_preference)
-
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    confirm_text = messages.MSG_CONFIRMATION.format(
-        header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
-        safe_prompt=prompt[:100] or "(без текста)",
-        img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "",
-        human_name=human_model_name(user.model_preference),
-        ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
-    )
+    confirm_text = messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(без текста)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
@@ -276,16 +246,19 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                 status = info.get("state")
                 if status in ["success", "completed"]:
                     img_url = info.get("image_url")
+                    
+                    # DEFENSIVE: If it is a list, take the first one
+                    if isinstance(img_url, list) and len(img_url) > 0:
+                         img_url = img_url[0]
+                    
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url, timeout=60.0)
                         if r.status_code == 200:
-                            img_data = io.BytesIO(r.content)
-                            img_data.name = "result.png"
+                            img_data = io.BytesIO(r.content); img_data.name = "result.png"
                             photo_att = await uploader.upload(img_data, peer_id=int(vk_p_id))
-                            img_data.seek(0)
-                            doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
+                            img_data.seek(0); doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
                             await safe_vk_send(vk_p_id, clean_markdown(text), attachment=f"{photo_att},{doc_att}", keyboard=keyboards.build_after_gen_kb())
