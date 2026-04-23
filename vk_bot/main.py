@@ -67,7 +67,7 @@ async def start_handler(message: Message):
         )
         
         if created:
-            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=2)
+            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=1 if "1k" in user.model_preference else 2)
         else:
             text = messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
             
@@ -91,8 +91,12 @@ async def menu_cmd_handler(message: Message):
 
 @bot.on.message(text="✨ Создать")
 async def cmd_create_handler(message: Message):
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        limit = 1 if "1k" in user.model_preference.lower() else 2
+        
     await message.answer(
-        clean_markdown(messages.MSG_GEN_PROMPT.format(limit=2)),
+        clean_markdown(messages.MSG_GEN_PROMPT.format(limit=limit)),
         keyboard=keyboards.build_reply_kb()
     )
 
@@ -137,7 +141,8 @@ async def set_model_handler(message: Message):
         await db.commit()
     
     await message.answer(clean_markdown(messages.MSG_MODEL_SET_SUCCESS), keyboard=keyboards.build_reply_kb())
-    await message.answer(clean_markdown(messages.MSG_MODEL_SET_NEXT.format(limit=2)))
+    limit = 1 if "1k" in model.lower() else 2
+    await message.answer(clean_markdown(messages.MSG_MODEL_SET_NEXT.format(limit=limit)))
 
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):
@@ -208,7 +213,10 @@ async def confirmation_handler(message: Message):
 
 @bot.on.message() # Fallback for EVERYTHING else (Prompts)
 async def generation_init_handler(message: Message):
-    if not message.text and not message.attachments: return
+    # CRITICAL: If message has payload, it's a button click, NOT a prompt.
+    if message.payload or (not message.text and not message.attachments): 
+        return
+        
     # Filter menu names and system commands to prevent them from being treated as prompts
     cmd = (message.text or "").lower().strip()
     if cmd in ["✨ создать", "🤖 модель", "💳 баланс", "📬 контакты", "начать", "start", "/start", "назад"]: 
