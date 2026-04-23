@@ -967,13 +967,19 @@ async def on_startup():
                     await conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE BIGINT;"))
                 except: pass
 
-            # 1. Ensure telegram_id exists
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;"))
-            await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_id ON users (telegram_id);"))
+            # 1. Ensure telegram_id exists and is BIGINT
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;"))
+                await conn.execute(text("ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT;"))
+                await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_id ON users (telegram_id);"))
+            except Exception as e: print(f"TG migration warn: {e}")
             
-            # 2. Ensure vk_id exists
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS vk_id BIGINT;"))
-            await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_vk_id ON users (vk_id);"))
+            # 2. Ensure vk_id exists and is BIGINT
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS vk_id BIGINT;"))
+                await conn.execute(text("ALTER TABLE users ALTER COLUMN vk_id TYPE BIGINT USING vk_id::BIGINT;"))
+                await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_vk_id ON users (vk_id);"))
+            except Exception as e: print(f"VK migration warn: {e}")
 
             # 3. Migrate old users
             await conn.execute(text("UPDATE users SET telegram_id = id WHERE telegram_id IS NULL;"))
