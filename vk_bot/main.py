@@ -36,11 +36,16 @@ class BotState(BaseStateGroup):
 
 # --- MIDDLEWARE ---
 class StateResetMiddleware(BaseMiddleware[Message]):
-    """Force reset state on core commands."""
     async def pre(self):
-        cmd = (self.event.text or "").strip().lower()
-        core_commands = ["начать", "назад", "start", "✨ создать", "🤖 модель", "💳 баланс", "📬 контакты"]
-        if any(x == cmd or x in cmd for x in core_commands):
+        text = (self.event.text or "").strip().lower()
+        payload = self.event.get_payload_json() or {}
+        
+        # Check for core commands in text OR payload
+        is_start = text in ["начать", "начни", "старт", "/start"] or payload.get("command") == "start" or payload.get("cmd") == "main"
+        core_commands = ["назад", "✨ создать", "🤖 модель", "💳 баланс", "📬 контакты"]
+        
+        if is_start or any(x in text for x in core_commands):
+             logger.info(f"CORE COMMAND DETECTED: {text or payload}. Resetting state for {self.event.from_id}")
              await bot.state_dispenser.delete(self.event.from_id)
         return True
 
@@ -66,10 +71,8 @@ async def safe_clear_state(peer_id: int):
 async def get_vk_user_name(user_id: int) -> str:
     try:
         users = await bot.api.users.get(user_ids=[user_id])
-        if users:
-            return users[0].first_name
-    except:
-        pass
+        if users: return users[0].first_name
+    except: pass
     return ""
 
 def get_limit_for_model(model_name: str) -> int:
@@ -102,8 +105,10 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 # --- HANDLERS ---
 
-@bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
+# Absolute Start Handler: catches anything that looks like a start command
+@bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
+    logger.info(f"START HANDLER TRIGGERED for {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -148,27 +153,6 @@ async def set_model_handler(message: Message):
     await message.answer(f"✅ Модель успешно изменена на: {human_model_name(new_model)}")
     await cmd_create_handler(message)
 
-@bot.on.message(text=["💳 баланс", "💳 Баланс", "Баланс", "баланс"])
-async def balance_handler(message: Message):
-    async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
-        text = messages.MSG_BUY_MENU.format(balance=int(user.balance))
-    await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_buy_kb(json.loads(packs_str)))
-
-@bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
-async def contacts_handler(message: Message):
-    vk_contacts = "🆘 Техподдержка: @artemgavr\n👤 Менеджер: @doloreees_s\n\nПишите нам по любым вопросам!"
-    await safe_vk_send(message.from_id, clean_markdown(vk_contacts))
-
-@bot.on.message(payload_map=[("buy", str)])
-async def buy_handler(message: Message):
-    payload = message.get_payload_json()
-    async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        payment_url = await services.create_yookassa_payment(db, user.id, float(payload["buy"]), f"Buy {payload['amount']} credits (VK:{message.from_id})")
-    await safe_vk_send(message.from_id, f"⏳ Счёт на {payload['buy']} руб. создан! Нажмите кнопку ниже для оплаты:", keyboard=keyboards.build_pay_link_kb(payment_url))
-
 # --- STATE HANDLERS ---
 
 @bot.on.message(state=BotState.CONFIRM_GEN)
@@ -187,7 +171,7 @@ async def confirmation_handler(message: Message):
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_GEN_STARTING.format(model_name=human_model_name(user.model_preference))))
         asyncio.create_task(run_vk_generation(message.from_id, state_data["prompt"], state_data["images"]))
         await bot.state_dispenser.delete(message.from_id)
-    elif action == "edit_gen" or message.text == "❌ Отмена":
+    elif action == "edit_gen" or (message.text or "").strip().lower() == "❌ отмена":
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
     else:
@@ -204,21 +188,14 @@ async def wait_prompt_handler(message: Message):
 @bot.on.message()
 async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
     if not message.text and not message.attachments and not existing_images: return
-    
     payload = message.get_payload_json() or {}
-    action = payload.get("action")
-    if action == "repeat_gen":
+    if payload.get("action") == "repeat_gen":
          state_data = message.state_peer.payload
-         if state_data:
-              asyncio.create_task(run_vk_generation(message.from_id, state_data["last_prompt"], state_data["last_images"]))
-              return
-    if action == "reset_gen":
-         await start_handler(message)
+         if state_data: asyncio.create_task(run_vk_generation(message.from_id, state_data["last_prompt"], state_data["last_images"]))
          return
+    if payload.get("action") == "reset_gen": await start_handler(message); return
 
     cmd = (message.text or "").strip().lower()
-    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
-    
     image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
     current_state = await bot.state_dispenser.get(message.from_id)
     if current_state and current_state.state == BotState.POST_GEN and message.text and not message.attachments:
@@ -282,8 +259,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             await safe_vk_send(vk_p_id, clean_markdown(text), attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
                             await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return
-                elif info.get("state") in ["failed", "error"]:
-                    raise Exception(info.get("error", "KIE Error"))
+                elif info.get("state") in ["failed", "error"]: raise Exception(info.get("error", "KIE Error"))
             raise Exception("Timeout")
         except Exception as e:
             logger.error(f"GEN ERROR: {e}")
