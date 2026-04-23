@@ -65,19 +65,15 @@ async def start_handler(message: Message):
         user, created = await services.get_or_create_user(
             db, platform_id=message.from_id, name=f"VK_{message.from_id}", platform="vk"
         )
+        # Determine actual limit for current model
+        limit = 1 if "1k" in user.model_preference.lower() else 2
         
         if created:
-            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=1 if "1k" in user.model_preference else 2)
+            text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit)
         else:
             text = messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
             
-        # Forces the keyboard to appear using direct API call
-        await bot.api.messages.send(
-            peer_id=message.from_id,
-            message=clean_markdown(text),
-            keyboard=keyboards.build_reply_kb(),
-            random_id=0
-        )
+        await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.set(message.from_id, BotState.IDLE)
 
 @bot.on.message(payload_map=[("cmd", str)])

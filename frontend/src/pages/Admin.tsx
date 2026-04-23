@@ -252,38 +252,53 @@ const Admin: React.FC = () => {
                   </div>
                 )}
 
-                <div className="stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
-                    <div className="stat-value">{stats?.total_tg_users || 0}</div>
-                    <div className="stat-label">Пользователи Telegram</div>
-                    <div className="stat-sublabel">+{stats?.new_tg_today || 0} сегодня</div>
+                <div className="platform-stats-section">
+                  <div className="section-header">
+                    <img src="/tg-icon.png" style={{width: '20px', marginRight: '8px'}} alt="" /> 
+                    <h3>Статистика Telegram</h3>
                   </div>
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-blue" style={{background: 'linear-gradient(135deg, #447bba, #2787e5)'}}><Users size={20} /></div>
-                    <div className="stat-value">{stats?.total_vk_users || 0}</div>
-                    <div className="stat-label">Пользователи VK</div>
-                    <div className="stat-sublabel">+{stats?.new_vk_today || 0} сегодня</div>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-blue"><Users size={20} /></div>
+                      <div className="stat-value">{stats?.total_tg_users || 0}</div>
+                      <div className="stat-label">Пользователи</div>
+                      <div className="stat-sublabel">+{stats?.new_tg_today || 0} сегодня</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
+                      <div className="stat-value">{stats?.tg_gens || 0}</div>
+                      <div className="stat-label">Генераций</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
+                      <div className="stat-value">{Math.round(stats?.tg_revenue || 0)} ₽</div>
+                      <div className="stat-label">Выручка</div>
+                    </div>
                   </div>
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
-                    <div className="stat-value">{stats?.tg_gens || 0}</div>
-                    <div className="stat-label">Генераций (TG)</div>
+                </div>
+
+                <div className="platform-stats-section" style={{marginTop: '32px'}}>
+                  <div className="section-header">
+                    <img src="/vk-icon.png" style={{width: '20px', marginRight: '8px'}} alt="" />
+                    <h3>Статистика VK</h3>
                   </div>
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
-                    <div className="stat-value">{stats?.vk_gens || 0}</div>
-                    <div className="stat-label">Генераций (VK)</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
-                    <div className="stat-value">{Math.round(stats?.tg_revenue || 0)} ₽</div>
-                    <div className="stat-label">Выручка Telegram</div>
-                  </div>
-                  <div className="stat-card">
-                    <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
-                    <div className="stat-value">{Math.round(stats?.vk_revenue || 0)} ₽</div>
-                    <div className="stat-label">Выручка VK</div>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-blue" style={{background: 'linear-gradient(135deg, #447bba, #2787e5)'}}><Users size={20} /></div>
+                      <div className="stat-value">{stats?.total_vk_users || 0}</div>
+                      <div className="stat-label">Пользователи</div>
+                      <div className="stat-sublabel">+{stats?.new_vk_today || 0} сегодня</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-yellow"><Zap size={20} /></div>
+                      <div className="stat-value">{stats?.vk_gens || 0}</div>
+                      <div className="stat-label">Генераций</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon-wrapper stat-green"><CreditCard size={20} /></div>
+                      <div className="stat-value">{Math.round(stats?.vk_revenue || 0)} ₽</div>
+                      <div className="stat-label">Выручка</div>
+                    </div>
                   </div>
                 </div>
 
