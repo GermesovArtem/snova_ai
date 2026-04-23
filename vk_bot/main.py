@@ -63,7 +63,6 @@ async def get_vk_user_name(user_id: int) -> str:
 def get_limit_for_model(model_name: str) -> int:
     mn = model_name.lower()
     if "pro" in mn: return 8
-    # All other V2 models (including 1K and generic Banana 2) allow up to 14 photos
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
@@ -89,7 +88,7 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
             if "error" in res_json: logger.error(f"VK API DIRECT ERROR: {res_json['error']}")
         except Exception as e: logger.error(f"VK DIRECT HTTP ERROR: {e}")
 
-# --- HANDLERS ---
+# --- HANDLERS (STATE-AGNOSTIC) ---
 
 @bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
 async def start_handler(message: Message):
@@ -165,6 +164,8 @@ async def buy_handler(message: Message):
         payment_url = await services.create_yookassa_payment(db, user.id, float(payload["buy"]), f"Buy {payload['amount']} credits (VK:{message.from_id})")
     await safe_vk_send(message.from_id, f"⏳ Счёт на {payload['buy']} руб. создан! Нажмите кнопку ниже для оплаты:", keyboard=keyboards.build_pay_link_kb(payment_url))
 
+# --- HANDLERS (STATE-SPECIFIC) ---
+
 @bot.on.message(state=BotState.CONFIRM_GEN)
 async def confirmation_handler(message: Message):
     payload = message.get_payload_json() or {}
@@ -185,15 +186,27 @@ async def confirmation_handler(message: Message):
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
     else:
+        # Check for core commands even in state
         cmd = (message.text or "").strip().lower()
         if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
              await safe_clear_state(message.from_id)
              if "начать" in cmd or "start" in cmd: await start_handler(message)
+             elif "создать" in cmd: await cmd_create_handler(message)
+             elif "модель" in cmd: await model_menu_handler(message)
+             elif "баланс" in cmd: await balance_handler(message)
              return
         await safe_vk_send(message.from_id, "Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message(state=BotState.WAIT_PROMPT)
 async def wait_prompt_handler(message: Message):
+    cmd = (message.text or "").strip().lower()
+    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
+         await safe_clear_state(message.from_id)
+         if "начать" in cmd or "start" in cmd: await start_handler(message)
+         elif "создать" in cmd: await cmd_create_handler(message)
+         elif "модель" in cmd: await model_menu_handler(message)
+         elif "баланс" in cmd: await balance_handler(message)
+         return
     if not message.text:
          await message.answer("Пожалуйста, введите задание текстом 👇")
          return
@@ -203,7 +216,6 @@ async def wait_prompt_handler(message: Message):
 @bot.on.message()
 async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
     if not message.text and not message.attachments and not existing_images: return
-    cmd = (message.text or "").strip().lower()
     
     # Handle direct action buttons after gen
     payload = message.get_payload_json() or {}
@@ -217,18 +229,14 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
          await start_handler(message)
          return
 
+    cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
     
     image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
-    
-    # Check if we are in POST_GEN state to use refinement
     current_state = await bot.state_dispenser.get(message.from_id)
     if current_state and current_state.state == BotState.POST_GEN and message.text and not message.attachments:
-         # Refinement: add last result to images
          last_url = current_state.payload.get("last_url")
-         if last_url:
-              image_urls = [last_url]
-              # We don't have VK att for last URL normally, but it's okay for confirmation
+         if last_url: image_urls = [last_url]
 
     if message.attachments:
         for att in message.attachments:
@@ -256,7 +264,7 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
         if len(image_urls) > limit: image_urls = image_urls[:limit]; vk_attachment_strs = vk_attachment_strs[:limit]
         cost = services.get_model_cost(user.model_preference)
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    confirm_text = messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(без текста)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))
+    confirm_text = messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(description)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
@@ -285,7 +293,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
                             await safe_vk_send(vk_p_id, clean_markdown(text), attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
-                            # Save state for refinement and repeat
                             await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return
                 elif info.get("state") in ["failed", "error"]:
