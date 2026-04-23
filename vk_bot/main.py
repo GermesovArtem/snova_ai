@@ -60,6 +60,11 @@ async def get_vk_user_name(user_id: int) -> str:
         pass
     return ""
 
+def get_limit_for_model(model_name: str) -> int:
+    # 1 photo for Basic 1K, up to 14 for others as requested (8-14 range)
+    if "1k" in model_name.lower(): return 1
+    return 14
+
 # --- HANDLERS ---
 
 @bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
@@ -73,7 +78,7 @@ async def start_handler(message: Message):
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
-        limit = 1 if "1k" in user.model_preference.lower() else 2
+        limit = get_limit_for_model(user.model_preference)
         text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
@@ -92,7 +97,7 @@ async def cmd_create_handler(message: Message):
     await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        limit = 1 if "1k" in user.model_preference.lower() else 2
+        limit = get_limit_for_model(user.model_preference)
     await message.answer(clean_markdown(messages.MSG_GEN_PROMPT.format(limit=limit)), keyboard=keyboards.build_reply_kb())
 
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
@@ -101,8 +106,19 @@ async def model_menu_handler(message: Message):
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
-        text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=1 if "1k" in user.model_preference.lower() else 2, balance=int(user.balance))
+        text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
+
+@bot.on.message(payload_map=[("set_model", str)])
+async def set_model_handler(message: Message):
+    await safe_clear_state(message.from_id)
+    new_model = message.get_payload_json()["set_model"]
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        user.model_preference = new_model
+        await db.commit()
+    await message.answer(f"✅ Модель успешно изменена на: {human_model_name(new_model)}")
+    await cmd_create_handler(message)
 
 @bot.on.message(text=["💳 баланс", "💳 Баланс", "Баланс", "баланс"])
 async def balance_handler(message: Message):
@@ -158,7 +174,8 @@ async def confirmation_handler(message: Message):
 async def generic_handler(message: Message):
     if not message.text and not message.attachments: return
     cmd = (message.text or "").strip().lower()
-    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]): return
+    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
+    
     image_urls = []
     for att in message.attachments:
         if att.photo:
@@ -166,12 +183,17 @@ async def generic_handler(message: Message):
             async with httpx.AsyncClient() as client:
                 resp = await client.get(photo.url)
                 if resp.status_code == 200:
-                    s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg")
+                    s3_path = f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg"
+                    s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", s3_path)
                     if s3_url: image_urls.append(s3_url)
     prompt = (message.text or "").strip()
     if not prompt and not image_urls: return
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        limit = get_limit_for_model(user.model_preference)
+        if len(image_urls) > limit:
+             await message.answer(f"⚠️ Вы загрузили {len(image_urls)} фото, но текущая модель поддерживает только {limit}. Мы используем первые {limit}.")
+             image_urls = image_urls[:limit]
         cost = services.get_model_cost(user.model_preference)
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
     await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW, safe_prompt=prompt[:100], img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
@@ -183,7 +205,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         user = res.scalars().first()
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
-        
         generation_committed = False
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
@@ -194,7 +215,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                     img_url = info.get("image_url")
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
-                    
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url)
                         if r.status_code == 200:
@@ -205,33 +225,19 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            
                             atts = []
                             if photo_att: atts.append(str(photo_att))
                             if doc_att: atts.append(str(doc_att))
-                            
-                            await bot.api.request("messages.send", {
-                                "peer_id": int(vk_p_id),
-                                "message": clean_markdown(text),
-                                "attachment": ",".join(atts),
-                                "random_id": random.randint(1, 2**31),
-                                "keyboard": keyboards.build_after_gen_kb()
-                            })
+                            await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": clean_markdown(text), "attachment": ",".join(atts), "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_after_gen_kb()})
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
             raise Exception("Timeout")
         except Exception as e:
             logger.error(f"GEN ERROR: {e}")
-            # ONLY refund if the credits haven't been committed yet
             if not generation_committed:
                 await services.refund_frozen_credits(db, user_id, cost)
-                await bot.api.request("messages.send", {
-                    "peer_id": int(vk_p_id),
-                    "message": f"❌ Ошибка: {str(e)}",
-                    "random_id": random.randint(1, 2**31),
-                    "keyboard": keyboards.build_reply_kb()
-                })
+                await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": f"❌ Ошибка: {str(e)}", "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_reply_kb()})
 
 if __name__ == "__main__":
     bot.run_forever()
