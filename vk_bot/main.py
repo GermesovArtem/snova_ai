@@ -6,8 +6,8 @@ import httpx
 import io
 import re
 import random
-from vkbottle.bot import Bot, Message, BaseMiddleware
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
+from vkbottle.bot import Bot, Message
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink, BaseMiddleware
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
