@@ -61,8 +61,11 @@ def human_model_name(model_id):
 
 @bot.on.message(text=["начать", "start", "/start"])
 async def start_handler(message: Message):
-    # CRITICAL: Clear any stuck states
-    await bot.state_dispenser.delete(message.from_id)
+    # CRITICAL: Clear any stuck states safely
+    try:
+        await bot.state_dispenser.delete(message.from_id)
+    except:
+        pass
     
     async with AsyncSessionLocal() as db:
         user, created = await services.get_or_create_user(
@@ -81,8 +84,11 @@ async def start_handler(message: Message):
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
-    # Also clear state for menu buttons
-    await bot.state_dispenser.delete(message.from_id)
+    # Also clear state for menu buttons safely
+    try:
+        await bot.state_dispenser.delete(message.from_id)
+    except:
+        pass
     cmd = message.get_payload_json()["cmd"]
     if cmd == "create": await cmd_create_handler(message)
     elif cmd == "model": await model_menu_handler(message)
