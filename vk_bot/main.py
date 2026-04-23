@@ -32,6 +32,7 @@ class BotState(BaseStateGroup):
     IDLE = 0
     CONFIRM_GEN = 1
     WAIT_PROMPT = 2
+    POST_GEN = 3
 
 # --- UTILS ---
 def clean_markdown(text: str) -> str:
@@ -60,45 +61,25 @@ async def get_vk_user_name(user_id: int) -> str:
     return ""
 
 def get_limit_for_model(model_name: str) -> int:
-    if "1k" in model_name.lower(): return 1
+    mn = model_name.lower()
+    if "pro" in mn: return 8
+    if "1k" in mn: return 1
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
-    """Directly uploads photo to VK without using library uploaders."""
     async with httpx.AsyncClient() as client:
-        # 1. Get upload server
-        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={
-            "peer_id": str(peer_id),
-            "access_token": VK_TOKEN,
-            "v": "5.131"
-        })
+        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.131"})
         upload_url = resp.json()["response"]["upload_url"]
-        
-        # 2. Upload file
         files = {"photo": ("photo.jpg", image_bytes, "image/jpeg")}
         resp = await client.post(upload_url, files=files)
         upload_data = resp.json()
-        
-        # 3. Save photo
-        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
-            "photo": upload_data["photo"],
-            "server": upload_data["server"],
-            "hash": upload_data["hash"],
-            "access_token": VK_TOKEN,
-            "v": "5.131"
-        })
+        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={"photo": upload_data["photo"], "server": upload_data["server"], "hash": upload_data["hash"], "access_token": VK_TOKEN, "v": "5.131"})
         photo = resp.json()["response"][0]
         return f"photo{photo['owner_id']}_{photo['id']}"
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
     url = "https://api.vk.com/method/messages.send"
-    params = {
-        "peer_id": str(peer_id),
-        "message": message,
-        "random_id": str(random.randint(1, 2**31)),
-        "access_token": VK_TOKEN,
-        "v": "5.131"
-    }
+    params = {"peer_id": str(peer_id), "message": message, "random_id": str(random.randint(1, 2**31)), "access_token": VK_TOKEN, "v": "5.131"}
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
     async with httpx.AsyncClient() as client:
@@ -115,9 +96,7 @@ async def start_handler(message: Message):
     await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
-        user, created = await services.get_or_create_user(
-            db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk"
-        )
+        user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
@@ -225,8 +204,32 @@ async def wait_prompt_handler(message: Message):
 async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
     if not message.text and not message.attachments and not existing_images: return
     cmd = (message.text or "").strip().lower()
+    
+    # Handle direct action buttons after gen
+    payload = message.get_payload_json() or {}
+    action = payload.get("action")
+    if action == "repeat_gen":
+         state_data = message.state_peer.payload
+         if state_data:
+              asyncio.create_task(run_vk_generation(message.from_id, state_data["last_prompt"], state_data["last_images"]))
+              return
+    if action == "reset_gen":
+         await start_handler(message)
+         return
+
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
+    
     image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
+    
+    # Check if we are in POST_GEN state to use refinement
+    current_state = await bot.state_dispenser.get(message.from_id)
+    if current_state and current_state.state == BotState.POST_GEN and message.text and not message.attachments:
+         # Refinement: add last result to images
+         last_url = current_state.payload.get("last_url")
+         if last_url:
+              image_urls = [last_url]
+              # We don't have VK att for last URL normally, but it's okay for confirmation
+
     if message.attachments:
         for att in message.attachments:
             url, vk_id = None, ""
@@ -239,6 +242,7 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
                  vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                  if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
             if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
+
     prompt = (message.text or "").strip()
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
@@ -281,6 +285,8 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
                             await safe_vk_send(vk_p_id, clean_markdown(text), attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
+                            # Save state for refinement and repeat
+                            await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))

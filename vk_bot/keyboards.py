@@ -44,7 +44,7 @@ def build_after_gen_kb():
         Keyboard(inline=True)
         .add(Text("🔄 Повторить", payload={"action": "repeat_gen"}), color=KeyboardButtonColor.PRIMARY)
         .row()
-        .add(Text("🖼 Начать заново", payload={"menu": "main"}), color=KeyboardButtonColor.SECONDARY)
+        .add(Text("🗑 Начать заново", payload={"action": "reset_gen"}), color=KeyboardButtonColor.SECONDARY)
         .get_json()
     )
 
