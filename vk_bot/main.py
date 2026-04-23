@@ -17,9 +17,9 @@ from vk_bot import keyboards
 
 load_dotenv()
 
-# Logger setup
+# Strict logging setup
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("VK_BOT")
 
 # VK Config
 VK_TOKEN = os.getenv("VK_API_TOKEN")
@@ -40,15 +40,15 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
         try:
              text = self.event.text or ""
              payload = self.event.payload or ""
-             print(f"\n[!!!] NEW EVENT DETECTED [!!!] FROM: {self.event.from_id} TEXT: '{text}' PAYLOAD: '{payload}'")
+             logger.warning(f"--- EVENT --- From: {self.event.from_id} | Text: '{text}' | Payload: '{payload}'")
              
              cmd = text.strip().lower()
              payload_data = self.event.get_payload_json() or {}
              if cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start":
-                  print("-> TRIGGER: START COMMAND. RESETTING STATE.")
+                  logger.warning(f"ACTION: START RECEIVED. CLEARED STATE FOR {self.event.from_id}")
                   await bot.state_dispenser.delete(self.event.from_id)
         except Exception as e:
-             print(f"ERROR IN MIDDLEWARE: {e}")
+             logger.error(f"MIDDLEWARE ERROR: {e}")
         return True
 
 bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
@@ -57,8 +57,7 @@ bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
 async def startup_check():
     async with httpx.AsyncClient() as client:
         try:
-            print("\n" + "="*50)
-            print(">>> VERIFYING GROUP TOKEN...")
+            logger.warning(">>> STARTING IDENTITY VERIFICATION...")
             resp = await client.post("https://api.vk.com/method/groups.getById", data={
                 "access_token": VK_TOKEN,
                 "v": "5.199"
@@ -66,14 +65,12 @@ async def startup_check():
             data = resp.json()
             if "response" in data and len(data["response"]) > 0:
                 group = data["response"][0]
-                print(f">>> BOT STARTUP SUCCESSFUL <<<")
-                print(f">>> LISTENING TO GROUP: {group['name']} (ID: {group['id']})")
+                logger.warning(f"SUCCESS! Bot is listening to: {group['name']} (ID: {group['id']})")
+                logger.warning(f"Group Screen Name: {group.get('screen_name')}")
             else:
-                print(f"!!! STARTUP WARNING: COULD NOT GET GROUP INFO !!!")
-                print(f"!!! VK API ANSWER: {data}")
-            print("="*50 + "\n")
+                logger.warning(f"CRITICAL: Failed to get group info. API Answer: {data}")
         except Exception as e:
-            print(f"!!! STARTUP CHECK EXCEPTION: {e}")
+            logger.error(f"IDENTITY CHECK FAILED: {e}")
 
 # [Utils and Handlers remain same...]
 
@@ -123,12 +120,12 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
         try:
             resp = await client.post(url, data=params)
             res_json = resp.json()
-            if "error" in res_json: print(f"VK API ERROR LOG: {res_json['error']}")
-        except Exception as e: print(f"VK SEND EXCEPTION: {e}")
+            if "error" in res_json: logger.error(f"VK API ERROR: {res_json['error']}")
+        except Exception as e: logger.error(f"VK EXCEPTION: {e}")
 
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
-    print(f"START_HANDLER EXECUTING FOR {message.from_id}")
+    logger.warning(f"START HANDLER TRIGGERED for {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -221,7 +218,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                 elif info.get("state") in ["failed", "error"]: raise Exception(info.get("error"))
             raise Exception("Timeout")
         except Exception as e:
-            print(f"GEN ERROR: {e}")
+            logger.error(f"GEN ERROR: {e}")
             await services.refund_frozen_credits(db, user_id, cost)
             await safe_vk_send(vk_p_id, f"Ошибка: {e}")
 
