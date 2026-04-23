@@ -6,7 +6,7 @@ import httpx
 import io
 import re
 from vkbottle.bot import Bot, Message
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
@@ -47,9 +47,8 @@ def human_model_name(model_id):
 
 # --- HANDLERS ---
 
-@bot.on.message(text=["начать", "start", "/start"])
+@bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
 async def start_handler(message: Message):
-    logger.info(f"DEBUG: [start_handler] triggered for user {message.from_id}")
     async with AsyncSessionLocal() as db:
         user, created = await services.get_or_create_user(
             db, platform_id=message.from_id, name=f"VK_{message.from_id}", platform="vk"
@@ -62,53 +61,51 @@ async def start_handler(message: Message):
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
     cmd = message.get_payload_json()["cmd"]
-    logger.info(f"DEBUG: [menu_cmd_handler] payload cmd={cmd} for user {message.from_id}")
     if cmd == "create": await cmd_create_handler(message)
     elif cmd == "model": await model_menu_handler(message)
     elif cmd == "balance": await balance_handler(message)
     elif cmd == "contacts": await contacts_handler(message)
     elif cmd == "main": await start_handler(message)
 
-@bot.on.message(text="✨ Создать")
+@bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
-    logger.info(f"DEBUG: [cmd_create_handler] for user {message.from_id}")
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = 1 if "1k" in user.model_preference.lower() else 2
     await message.answer(clean_markdown(messages.MSG_GEN_PROMPT.format(limit=limit)), keyboard=keyboards.build_reply_kb())
 
-@bot.on.message(text="🤖 Модель")
+@bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
-    logger.info(f"DEBUG: [model_menu_handler] for user {message.from_id}")
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=1 if "1k" in user.model_preference.lower() else 2, balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
 
-@bot.on.message(text="💳 Баланс")
+@bot.on.message(text=["💳 баланс", "💳 Баланс", "Баланс", "баланс"])
 async def balance_handler(message: Message):
-    logger.info(f"DEBUG: [balance_handler] for user {message.from_id}")
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65}')
+        packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
         text = messages.MSG_BUY_MENU.format(balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_buy_kb(json.loads(packs_str)))
+
+@bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
+async def contacts_handler(message: Message):
+    await message.answer(clean_markdown(messages.MSG_CONTACTS))
 
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):
     payload = message.get_payload_json()
-    logger.info(f"DEBUG: [buy_handler] payload={payload} for user {message.from_id}")
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        payment_url = await services.create_yookassa_payment(db, user.id, float(payload["buy"]), f"Credit Pack {payload['amount']} (VK:{message.from_id})")
-    await message.answer(f"⏳ Счёт создан! Нажмите кнопку для оплаты:", keyboard=keyboards.build_pay_link_kb(payment_url))
+        payment_url = await services.create_yookassa_payment(db, user.id, float(payload["buy"]), f"Buy {payload['amount']} credits (VK:{message.from_id})")
+    await message.answer(f"⏳ Счёт на {payload['buy']} руб. создан! Нажмите кнопку ниже для оплаты:", keyboard=keyboards.build_pay_link_kb(payment_url))
 
 @bot.on.message(state=BotState.CONFIRM_GEN)
 async def confirmation_handler(message: Message):
     payload = message.get_payload_json() or {}
     action = payload.get("action")
-    logger.info(f"DEBUG: [confirmation_handler] state=CONFIRM_GEN, action={action}, text='{message.text}'")
     
     if action == "confirm_gen":
         state_data = message.state_peer.payload
@@ -132,9 +129,9 @@ async def confirmation_handler(message: Message):
 @bot.on.message()
 async def generic_handler(message: Message):
     if not message.text and not message.attachments: return
-    logger.info(f"DEBUG: [generic_handler] text='{message.text}' payload='{message.payload}'")
     
-    if (message.text or "").strip().lower() in ["✨ создать", "🤖 модель", "💳 баланс", "📬 контакты", "начать", "start", "/start", "назад"]: 
+    cmd = (message.text or "").strip().lower()
+    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]): 
         return
     
     image_urls = []
@@ -167,7 +164,6 @@ async def generic_handler(message: Message):
     await message.answer(clean_markdown(confirm_text), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
-    logger.info(f"DEBUG: [run_vk_generation] start for {vk_p_id}")
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
