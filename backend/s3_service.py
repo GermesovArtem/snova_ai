@@ -34,7 +34,11 @@ async def upload_file_to_s3(file_bytes: bytes, ext: str) -> str:
     
     # Путь к сертификату GlobalSign Root R6 (из вашей инструкции)
     cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'certs', 'root.crt')
-    verify_ssl = cert_path if os.path.exists(cert_path) else True
+    if os.path.exists(cert_path):
+        verify_ssl = cert_path
+    else:
+        logger.warning(f"Cert file not found at {cert_path}, disabling SSL verification for S3.")
+        verify_ssl = False
 
     try:
         async with session.client(
@@ -85,7 +89,10 @@ async def get_presigned_url(filename: str, expires_in: int = 3600) -> str:
     """
     # SSL Сертификат из инструкции
     cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'certs', 'root.crt')
-    verify_ssl = cert_path if os.path.exists(cert_path) else True
+    if os.path.exists(cert_path):
+        verify_ssl = cert_path
+    else:
+        verify_ssl = False
     
     config = Config(s3={'addressing_style': 'path'})
     async with session.client(
