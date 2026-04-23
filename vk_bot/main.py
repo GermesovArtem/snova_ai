@@ -61,7 +61,6 @@ async def get_vk_user_name(user_id: int) -> str:
     return ""
 
 def get_limit_for_model(model_name: str) -> int:
-    # 1 photo for Basic 1K, up to 14 for others as requested (8-14 range)
     if "1k" in model_name.lower(): return 1
     return 14
 
@@ -176,27 +175,48 @@ async def generic_handler(message: Message):
     cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
     
+    image_processed_msg = None
+    if message.attachments:
+         image_processed_msg = await message.answer("📸 Обрабатываю ваши изображения...")
+
     image_urls = []
     for att in message.attachments:
+        url = None
         if att.photo:
-            photo = att.photo.sizes[-1]
+            url = att.photo.sizes[-1].url
+        elif att.doc and att.doc.type == 1: # Image document
+            url = att.doc.url
+            
+        if url:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(photo.url)
+                resp = await client.get(url)
                 if resp.status_code == 200:
                     s3_path = f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg"
                     s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", s3_path)
                     if s3_url: image_urls.append(s3_url)
+
     prompt = (message.text or "").strip()
-    if not prompt and not image_urls: return
+    if not prompt and not image_urls: 
+        if image_processed_msg: await bot.api.messages.delete(cmids=[image_processed_msg.conversation_message_id], peer_id=message.from_id, delete_for_all=True)
+        return
+
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
         if len(image_urls) > limit:
-             await message.answer(f"⚠️ Вы загрузили {len(image_urls)} фото, но текущая модель поддерживает только {limit}. Мы используем первые {limit}.")
              image_urls = image_urls[:limit]
         cost = services.get_model_cost(user.model_preference)
+
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW, safe_prompt=prompt[:100], img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
+    
+    confirm_text = messages.MSG_CONFIRMATION.format(
+        header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
+        safe_prompt=prompt[:100] or "(без текста)",
+        img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "",
+        human_name=human_model_name(user.model_preference),
+        ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
+    )
+    await message.answer(clean_markdown(confirm_text), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
     async with AsyncSessionLocal() as db:
