@@ -797,8 +797,12 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
         await state.update_data(last_prompt=prompt, last_image_urls=image_urls)
 
     msg_wait = await bot.send_message(user_id, f"🚀 **Запрос подтвержден!** Начинаю генерацию (**{human_model_name(user.model_preference)}**)...", parse_mode="Markdown")
+    
+    # We pass BOTH: 
+    # 1. user.id (Internal DB PK for credits/tasks)
+    # 2. user_id (Telegram Platform ID for messaging)
     asyncio.create_task(run_generation_task(
-        user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state,
+        user.id, user_id, prompt, cost, actual_model, msg_wait.message_id, image_urls, state,
         aspect_ratio, resolution, output_format
     ))
 
@@ -855,14 +859,14 @@ async def get_safe_preview_photo(url: str) -> types.BufferedInputFile | None:
         logger.error(f"Error in get_safe_preview_photo: {e}", exc_info=True)
         return None
 
-async def run_generation_task(user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
+async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cost: float, model: str, msg_id: int, image_urls: list[str], state: FSMContext = None,
                           aspect_ratio: str = "auto", resolution: str = "1K", output_format: str = "jpg"):
     kie_task_id = None
     try:
         # 1. Start Flow (Short DB session)
         async with AsyncSessionLocal() as db:
             kie_task_id = await services.start_generation_flow(
-                db, user_id, prompt, image_urls, model, cost, 
+                db, db_user_id, prompt, image_urls, model, cost, 
                 aspect_ratio, resolution, output_format
             )
             
@@ -884,7 +888,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
 
                 # 2. Finalize credits
                 async with AsyncSessionLocal() as db:
-                    await services.commit_frozen_credits(db, user_id, cost)
+                    await services.commit_frozen_credits(db, db_user_id, cost)
                     
                     # Persistence: Save result URL to DB
                     from sqlalchemy import update
@@ -895,7 +899,7 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     )
                     await db.commit()
                     
-                    user, _ = await services.get_or_create_user(db, user_id)
+                    user = await services.get_user_by_id(db, db_user_id)
                     new_balance = int(user.balance)
 
                 models_map = get_available_models()
@@ -907,18 +911,18 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
                     photo_data = await get_safe_preview_photo(info["image_url"])
                     if photo_data:
                         caption = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=new_balance, model_name=human_name)
-                        await bot.send_photo(user_id, photo=photo_data, caption=caption, reply_markup=build_after_gen_kb(), parse_mode="Markdown")
+                        await bot.send_photo(tg_user_id, photo=photo_data, caption=caption, reply_markup=build_after_gen_kb(), parse_mode="Markdown")
                         photo_sent = True
                     
-                    await bot.send_document(user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), caption="💾 Оригинал (PNG/4K)")
+                    await bot.send_document(tg_user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), caption="💾 Оригинал (PNG/4K)")
                 except Exception as e:
                     logger.warning(f"Delivery failed: {e}")
                     if not photo_sent:
                         fallback_caption = messages.MSG_GEN_SUCCESS_FALLBACK.format(balance=new_balance)
-                        await bot.send_document(user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), 
+                        await bot.send_document(tg_user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), 
                                                caption=fallback_caption, parse_mode="Markdown", reply_markup=build_after_gen_kb())
                 
-                try: await bot.delete_message(user_id, msg_id)
+                try: await bot.delete_message(tg_user_id, msg_id)
                 except: pass
                 return
                 
@@ -940,12 +944,12 @@ async def run_generation_task(user_id: int, prompt: str, cost: float, model: str
         logger.error(f"Generation task error: {e}", exc_info=True)
         # Refund (Short DB session)
         async with AsyncSessionLocal() as db:
-            await services.refund_frozen_credits(db, user_id, cost)
+            await services.refund_frozen_credits(db, db_user_id, cost)
             
         # Use translated message if possible
         err_msg = services.translate_error(str(e))
-        await bot.send_message(user_id, f"❌ {err_msg}\n\nЕсли проблема в промпте, попробуйте изменить его. Если это сбой сервера — мы уже в курсе и чиним!")
-        try: await bot.delete_message(user_id, msg_id)
+        await bot.send_message(tg_user_id, f"❌ {err_msg}\n\nЕсли проблема в промпте, попробуйте изменить его. Если это сбой сервера — мы уже в курсе и чиним!")
+        try: await bot.delete_message(tg_user_id, msg_id)
         except: pass
 
 

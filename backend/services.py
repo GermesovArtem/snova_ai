@@ -132,9 +132,19 @@ def get_model_cost(model_id: str) -> float:
     fallback = {"nano-banana-2": 2.0, "nano-banana-pro": 3.0, "google/nano-banana": 1.0}
     return float(fallback.get(model_id, 2.0))
 
-async def get_user_by_id(db, user_id: int):
-    res = await db.execute(select(models.User).filter(models.User.id == user_id))
-    return res.scalar_one_or_none()
+async def get_user_by_id(db: AsyncSession, user_id: int):
+    # This is INTERNAL ID lookup
+    res = await db.execute(select(models.User).filter_by(id=user_id))
+    return res.scalars().first()
+
+async def get_user_by_platform_id(db: AsyncSession, platform_id: int, platform: str = "telegram"):
+    if platform == "telegram":
+        res = await db.execute(select(models.User).filter_by(telegram_id=platform_id))
+    elif platform == "vk":
+        res = await db.execute(select(models.User).filter_by(vk_id=platform_id))
+    else:
+        return None
+    return res.scalars().first()
 
 async def get_user_by_yandex_id(db, yandex_id: str):
     res = await db.execute(select(models.User).filter(models.User.yandex_id == yandex_id))
@@ -154,25 +164,35 @@ async def get_active_generation_tasks(db: AsyncSession, user_id: int):
     )
     return res.scalars().all()
 
-async def get_or_create_user(db, user_id: int, name: str = None, username: str = None):
-    # Try by internal/telegram ID first
-    user = await get_user_by_id(db, user_id)
+async def get_or_create_user(db: AsyncSession, platform_id: int, name: str = None, username: str = None, platform: str = "telegram"):
+    # 1. Try to find existing user by platform ID
+    user = await get_user_by_platform_id(db, platform_id, platform)
     created = False
     if not user:
-        # Initial balance and model for new users
+        # Create new user record
         starting_balance = float(os.getenv("STARTING_BALANCE", 3.0))
         default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2-1k")
-        user = models.User(
-            id=user_id, 
-            name=name or username, 
-            balance=starting_balance,
-            model_preference=default_model
-        )
+        
+        user_data = {
+            "name": name or username,
+            "balance": starting_balance,
+            "model_preference": default_model
+        }
+        if platform == "telegram":
+            user_data["telegram_id"] = platform_id
+        elif platform == "vk":
+            user_data["vk_id"] = platform_id
+            
+        user = models.User(**user_data)
         db.add(user)
-        # Handle referral case if needed (not implemented here for web yet)
         await db.commit()
         await db.refresh(user)
-        logger.info(f"Created new user: {user_id} ({name}) with {starting_balance} ⚡.")
+        
+        # Create referral record
+        ref = models.Referral(user_id=user.id)
+        db.add(ref)
+        await db.commit()
+        logger.info(f"Created new user: {platform_id} ({name}) on {platform} with {starting_balance} ⚡.")
         created = True
     return user, created
 
@@ -571,34 +591,31 @@ async def broadcast_to_all_users(db, text: str):
         logger.error("TELEGRAM_BOT_TOKEN not set for broadcast")
         return
         
-    res = await db.execute(select(models.User.id))
-    user_ids = res.scalars().all()
+    res = await db.execute(select(models.User.telegram_id, models.User.vk_id))
+    users = res.all()
     
-    logger.info(f"Starting broadcast to {len(user_ids)} users...")
+    logger.info(f"Starting broadcast to {len(users)} users...")
     
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    tg_url = f"https://api.telegram.org/bot{token}/sendMessage"
     
     async with aiohttp.ClientSession() as session:
-        for i, user_id in enumerate(user_ids):
+        for i, (tg_id, vk_id) in enumerate(users):
             try:
-                payload = {"chat_id": user_id, "text": text, "parse_mode": "HTML"}
-                async with session.post(url, json=payload) as resp:
-                    if resp.status == 429: # Too many requests
-                        retry_after = (await resp.json()).get("parameters", {}).get("retry_after", 1)
-                        logger.warning(f"Rate limited by Telegram. Waiting {retry_after}s...")
-                        await asyncio.sleep(retry_after)
-                        # Retry once
-                        await session.post(url, json=payload)
-                    elif resp.status == 403:
-                        logger.warning(f"User {user_id} blocked the bot. Skipping.")
-                    elif resp.status != 200:
-                        data = await resp.json()
-                        logger.error(f"Failed to send broadcast to {user_id}: {data}")
+                # 1. Send to Telegram if id exists
+                if tg_id:
+                    payload = {"chat_id": tg_id, "text": text, "parse_mode": "HTML"}
+                    async with session.post(tg_url, json=payload) as resp:
+                        if resp.status == 429:
+                            await asyncio.sleep(1) # Simple backoff
+                
+                # 2. VK Broadcast (Optional, logic could be added here similar to TG)
+                # if vk_id: ...
+                
             except Exception as e:
-                logger.error(f"Error sending broadcast to {user_id}: {e}")
+                logger.error(f"Error sending broadcast to TG:{tg_id}: {e}")
             
-            # Rate limiting: ~25 messages per second
-            if (i + 1) % 25 == 0:
+            # Rate limiting
+            if (i + 1) % 30 == 0:
                 await asyncio.sleep(1)
                 
     logger.info("Broadcast completed.")

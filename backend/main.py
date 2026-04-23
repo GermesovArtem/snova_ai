@@ -52,6 +52,52 @@ async def startup():
         except Exception as e:
             logger.error(f"Migration error: {e}")
 
+    # Database Migration: TG ID separation
+    async with engine.begin() as conn:
+        try:
+            # 1. Add telegram_id column if it doesn't exist
+            # Note: We use raw text for direct SQL control
+            logger.info("Migration: Checking for telegram_id column...")
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN telegram_id BIGINT UNIQUE;"))
+                logger.info("Migration: Added telegram_id column.")
+            except Exception:
+                # Column likely already exists
+                pass
+
+            # 2. Add vk_id column if it doesn't exist
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN vk_id BIGINT UNIQUE;"))
+                logger.info("Migration: Added vk_id column.")
+            except Exception: pass
+
+            # 3. Synchronize old data: Move 'id' to 'telegram_id' for existing users who don't have it set
+            # This ensures old users (where ID = TG ID) are still findable by the bot.
+            res = await conn.execute(text("SELECT COUNT(*) FROM users WHERE telegram_id IS NULL"))
+            count = res.scalar()
+            if count and count > 0:
+                logger.info(f"Migration: Migrating {count} users to new telegram_id column...")
+                await conn.execute(text("UPDATE users SET telegram_id = id WHERE telegram_id IS NULL"))
+                await conn.commit()
+
+            # 4. Postgres Specific: Ensure 'id' column uses a sequence for AUTOINCREMENT
+            # Since the original model had autoincrement=False, SqlAlchemy might not have created a sequence.
+            try:
+                # Check current ID max to set sequence start
+                max_id_res = await conn.execute(text("SELECT MAX(id) FROM users"))
+                max_id = max_id_res.scalar() or 0
+                
+                # Check for existing sequence or create it
+                await conn.execute(text("CREATE SEQUENCE IF NOT EXISTS users_id_seq;"))
+                await conn.execute(text(f"SELECT setval('users_id_seq', {max_id});"))
+                await conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
+                logger.info(f"Migration: Reset id sequence to {max_id}")
+            except Exception as e:
+                logger.warning(f"Migration: Sequence setup skipped/failed (likely SQLite or already set): {e}")
+
+        except Exception as e:
+            logger.error(f"Critical Migration error: {e}")
+
     # Ensure starting models are normalized
     async with AsyncSessionLocal() as db:
         await services.fix_all_model_ids(db)
