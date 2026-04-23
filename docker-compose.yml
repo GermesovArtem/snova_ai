@@ -62,6 +62,16 @@ services:
     command: python -m scripts.backup_manager
     <<: *default-logging
 
+  vk-bot:
+    build: .
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    command: sh -c "sleep 5 && python -m vk_bot.main"
+    <<: *default-logging
+
   caddy:
     image: caddy:alpine
     restart: always
