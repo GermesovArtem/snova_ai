@@ -180,12 +180,19 @@ async def generic_handler(message: Message):
          image_processed_msg = await message.answer("📸 Обрабатываю ваши изображения...")
 
     image_urls = []
+    vk_attachment_strs = [] # Store native VK strings to show them back
     for att in message.attachments:
         url = None
-        if att.photo: url = att.photo.sizes[-1].url
-        elif att.doc and att.doc.type == 1: url = att.doc.url
+        vk_id = ""
+        if att.photo: 
+             url = att.photo.sizes[-1].url
+             vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
+        elif att.doc and att.doc.type == 1: 
+             url = att.doc.url
+             vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
             
         if url:
+            vk_attachment_strs.append(vk_id)
             async with httpx.AsyncClient() as client:
                 try:
                     resp = await client.get(url, timeout=30.0)
@@ -201,14 +208,31 @@ async def generic_handler(message: Message):
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
-        if len(image_urls) > limit: image_urls = image_urls[:limit]
+        if len(image_urls) > limit: 
+             image_urls = image_urls[:limit]
+             vk_attachment_strs = vk_attachment_strs[:limit]
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    await message.answer(clean_markdown(messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(без текста)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))), keyboard=keyboards.build_confirm_kb())
+    
+    confirm_text = messages.MSG_CONFIRMATION.format(
+        header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
+        safe_prompt=prompt[:100] or "(без текста)",
+        img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "",
+        human_name=human_model_name(user.model_preference),
+        ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
+    )
+    
+    # Attach the same photos back to the confirmation message
+    await bot.api.request("messages.send", {
+        "peer_id": int(message.from_id),
+        "message": clean_markdown(confirm_text),
+        "attachment": ",".join(vk_attachment_strs),
+        "random_id": random.randint(1, 2**31),
+        "keyboard": keyboards.build_confirm_kb()
+    })
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
-    logger.info(f"START GEN for VK:{vk_p_id}")
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
@@ -218,18 +242,14 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         generation_committed = False
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
-            logger.info(f"Task {task_id} started for {vk_p_id}")
             for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
                 status = info.get("state")
-                logger.debug(f"Polling task {task_id}: {status}") 
                 if status in ["success", "completed"]:
                     img_url = info.get("image_url")
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
-                    logger.info(f"Task {task_id} success. Delivering to {vk_p_id}...")
-                    
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url, timeout=60.0)
                         if r.status_code == 200:
@@ -238,33 +258,19 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             photo_att = await uploader.upload(img_data, peer_id=int(vk_p_id))
                             img_data.seek(0)
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
-                            
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            
-                            await bot.api.request("messages.send", {
-                                "peer_id": int(vk_p_id),
-                                "message": clean_markdown(text),
-                                "attachment": f"{photo_att},{doc_att}",
-                                "random_id": random.randint(1, 2**31),
-                                "keyboard": keyboards.build_after_gen_kb()
-                            })
-                            logger.info(f"Task {task_id} delivered successfully.")
+                            await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": clean_markdown(text), "attachment": f"{photo_att},{doc_att}", "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_after_gen_kb()})
                             return
                 elif status in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
-            raise Exception("Timeout (более 10 минут)")
+            raise Exception("Timeout")
         except Exception as e:
-            logger.error(f"GEN ERROR for {vk_p_id}: {e}")
+            logger.error(f"GEN ERROR: {e}")
             if not generation_committed:
                 try: await services.refund_frozen_credits(db, user_id, cost)
                 except: pass
-            await bot.api.request("messages.send", {
-                "peer_id": int(vk_p_id),
-                "message": f"❌ Ошибка: {str(e)}",
-                "random_id": random.randint(1, 2**31),
-                "keyboard": keyboards.build_reply_kb()
-            })
+            await bot.api.request("messages.send", {"peer_id": int(vk_p_id), "message": f"❌ Ошибка: {str(e)}", "random_id": random.randint(1, 2**31), "keyboard": keyboards.build_reply_kb()})
 
 if __name__ == "__main__":
     bot.run_forever()
