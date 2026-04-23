@@ -65,7 +65,6 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
-    """Extremely robust message sender for VK."""
     params = {
         "peer_id": str(peer_id),
         "message": message,
@@ -73,14 +72,10 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
     }
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
-    
-    logger.info(f"SAFE_SEND: peer={peer_id}, att_len={len(attachment or '')}, has_kb={bool(keyboard)}")
     try:
-        # Use low-level request to bypass model serialization issues
         await bot.api.request("messages.send", params)
     except Exception as e:
-        logger.error(f"SAFE_SEND_ERROR: {e} | Params: {params}")
-        raise e
+        logger.error(f"SAFE_SEND_ERROR: {e}")
 
 # --- HANDLERS ---
 
@@ -193,10 +188,6 @@ async def generic_handler(message: Message):
     cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
     
-    image_processed_msg = None
-    if message.attachments:
-         image_processed_msg = await message.answer("📸 Обрабатываю ваши изображения...")
-
     image_urls = []
     vk_attachment_strs = []
     for att in message.attachments:
@@ -209,14 +200,9 @@ async def generic_handler(message: Message):
              vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
             
         if url:
-            vk_attachment_strs.append(vk_id)
-            async with httpx.AsyncClient() as client:
-                try:
-                    resp = await client.get(url, timeout=30.0)
-                    if resp.status_code == 200:
-                        s3_url = await s3_service.upload_file_to_s3(resp.content, ".jpg")
-                        if s3_url: image_urls.append(s3_url)
-                except Exception as e: logger.error(f"S3 Upload fail: {e}")
+             vk_attachment_strs.append(vk_id)
+             # Use DIRECT VK URL if possible to avoid S3 SSL issues
+             image_urls.append(url)
 
     prompt = (message.text or "").strip()
     if not prompt and not image_urls: return
@@ -230,7 +216,6 @@ async def generic_handler(message: Message):
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    
     confirm_text = messages.MSG_CONFIRMATION.format(
         header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
         safe_prompt=prompt[:100] or "(без текста)",
@@ -238,7 +223,6 @@ async def generic_handler(message: Message):
         human_name=human_model_name(user.model_preference),
         ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
     )
-    
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
@@ -268,12 +252,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                             doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            
-                            atts = []
-                            if photo_att: atts.append(str(photo_att))
-                            if doc_att: atts.append(str(doc_att))
-                            
-                            await safe_vk_send(vk_p_id, clean_markdown(text), attachment=",".join(atts), keyboard=keyboards.build_after_gen_kb())
+                            await safe_vk_send(vk_p_id, clean_markdown(text), attachment=f"{photo_att},{doc_att}", keyboard=keyboards.build_after_gen_kb())
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
