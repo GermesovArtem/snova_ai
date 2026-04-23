@@ -186,7 +186,7 @@ async def confirmation_handler(message: Message):
 @bot.on.message(state=BotState.WAIT_PROMPT)
 async def wait_prompt_handler(message: Message):
     if not message.text:
-         await message.answer("Пожалуйста, введите текст (промпт) — что именно нужно сделать с вашими фото?")
+         await message.answer("Пожалуйста, введите задание текстом 👇")
          return
     state_data = message.state_peer.payload
     await generic_handler(message, existing_images=state_data["images"], existing_vk_atts=state_data["vk_atts"])
@@ -205,26 +205,26 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
             url, vk_id = None, ""
             if att.photo: 
                  url = att.photo.sizes[-1].url
-                 # IMPORTANT: Need access_key for private attachments to show them back
                  vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
-                 if hasattr(att.photo, "access_key") and att.photo.access_key:
-                      vk_id += f"_{att.photo.access_key}"
+                 if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
             elif att.doc and att.doc.type == 1: 
                  url = att.doc.url
                  vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
-                 if hasattr(att.doc, "access_key") and att.doc.access_key:
-                      vk_id += f"_{att.doc.access_key}"
-                
+                 if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
             if url:
                 vk_attachment_strs.append(vk_id)
                 image_urls.append(url)
 
     prompt = (message.text or "").strip()
     
-    # NEW: Handle empty prompt scenario
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
-         await message.answer("📸 Фотографии получены! Теперь, пожалуйста, напишите **текстом**, что именно нужно сделать: (например: 'сделай в стиле киберпанк' или 'замени фон')")
+         premium_msg = (
+             "✨ **Загрузка завершена!**\n\n"
+             f"Вы прислали **{len(image_urls)} фото** (см. выше 👆)\n"
+             "Теперь напишите, пожалуйста, **задание** для нейросети: что именно нужно сделать? 👇"
+         )
+         await safe_vk_send(message.from_id, clean_markdown(premium_msg), attachment=",".join(vk_attachment_strs))
          return
 
     if not prompt and not image_urls: return
@@ -238,7 +238,6 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    
     confirm_text = messages.MSG_CONFIRMATION.format(
         header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
         safe_prompt=prompt[:100] or "(без текста)",
@@ -246,7 +245,6 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
         human_name=human_model_name(user.model_preference),
         ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
     )
-    
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
