@@ -71,8 +71,13 @@ async def start_handler(message: Message):
         else:
             text = messages.MSG_START_REGULAR.format(name="", balance=int(user.balance))
             
-        # Forces the keyboard to appear
-        await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
+        # Forces the keyboard to appear using direct API call
+        await bot.api.messages.send(
+            peer_id=message.from_id,
+            message=clean_markdown(text),
+            keyboard=keyboards.build_reply_kb(),
+            random_id=0
+        )
         await bot.state_dispenser.set(message.from_id, BotState.IDLE)
 
 @bot.on.message(payload_map=[("cmd", str)])
