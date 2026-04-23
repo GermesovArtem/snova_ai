@@ -650,7 +650,16 @@ async def process_successful_payment(db: AsyncSession, provider_payment_id: str)
     db_payment = res.scalars().first()
     
     if not db_payment or db_payment.status == "succeeded":
-        logger.info(f"Payment {provider_payment_id} already processed or not found.")
+        logger.warning(f"Payment {provider_payment_id} already processed or missing.")
+        return False
+        
+    # ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: Блокируем также и пользователя
+    user_res = await db.execute(
+        select(models.User).filter_by(id=db_payment.user_id).with_for_update()
+    )
+    user = user_res.scalars().first()
+    if not user:
+        logger.error(f"User {db_payment.user_id} not found during payment {provider_payment_id}")
         return False
         
     # 2. Помечаем как успешный

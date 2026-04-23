@@ -45,7 +45,7 @@ class Payment(Base):
     amount_rub = Column(Float, nullable=False)
     status = Column(String, default="pending") # pending, succeeded, canceled
     payment_url = Column(String, nullable=True)
-    provider_payment_id = Column(String, nullable=True)
+    provider_payment_id = Column(String, unique=True, index=True, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     
 class Referral(Base):

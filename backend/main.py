@@ -55,6 +55,21 @@ async def startup():
     # Ensure starting models are normalized
     async with AsyncSessionLocal() as db:
         await services.fix_all_model_ids(db)
+        
+    # Migration: Enforce unique constraint on provider_payment_id
+    async with engine.begin() as conn:
+        try:
+            logger.info("Migration: Enforcing uniqueness on provider_payment_id")
+            # This might fail if duplicates already exist, deleting duplicates first
+            await conn.execute(text("""
+                DELETE FROM payments WHERE id NOT IN (
+                    SELECT MIN(id) FROM payments GROUP BY provider_payment_id
+                );
+            """))
+            await conn.execute(text("ALTER TABLE payments ADD CONSTRAINT unique_provider_payment_id UNIQUE (provider_payment_id);"))
+        except Exception:
+            # Maybe constraint already exists or something else, it's fine for simple migration
+            pass
 
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
