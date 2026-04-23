@@ -99,6 +99,7 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
+    logger.info(f"Incoming Start Command from {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
