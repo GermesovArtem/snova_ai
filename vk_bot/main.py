@@ -66,17 +66,30 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
+    """
+    ULTIMATE DIRECT SENDER: Bypasses library serialization issues by calling VK API directly via HTTP.
+    """
+    url = "https://api.vk.com/method/messages.send"
     params = {
         "peer_id": str(peer_id),
         "message": message,
-        "random_id": random.randint(1, 2**31),
+        "random_id": str(random.randint(1, 2**31)),
+        "access_token": VK_TOKEN,
+        "v": "5.131"
     }
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
-    try:
-        await bot.api.request("messages.send", params)
-    except Exception as e:
-        logger.error(f"SAFE_SEND_ERROR: {e}")
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(url, data=params)
+            res_json = resp.json()
+            if "error" in res_json:
+                 logger.error(f"VK API DIRECT ERROR: {res_json['error']}")
+            else:
+                 logger.info(f"VK DIRECT SEND SUCCESS for {peer_id}")
+        except Exception as e:
+            logger.error(f"VK DIRECT HTTP ERROR: {e}")
 
 # --- HANDLERS ---
 
