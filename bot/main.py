@@ -980,6 +980,13 @@ async def on_startup():
                 await conn.execute(text("ALTER TABLE users ALTER COLUMN vk_id TYPE BIGINT USING vk_id::BIGINT;"))
                 await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_vk_id ON users (vk_id);"))
             except Exception as e: print(f"VK migration warn: {e}")
+            
+            # 3. Ensure platform exists
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT 'telegram';"))
+                await conn.execute(text("UPDATE users SET platform = 'vk' WHERE vk_id IS NOT NULL;"))
+                logger.info("Migration: Added platform column.")
+            except Exception: pass
 
             # 3. Migrate old users
             await conn.execute(text("UPDATE users SET telegram_id = id WHERE telegram_id IS NULL;"))

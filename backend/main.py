@@ -70,8 +70,17 @@ async def startup():
                 await conn.execute(text("ALTER TABLE users ADD COLUMN vk_id BIGINT UNIQUE;"))
                 logger.info("Migration: Added vk_id column.")
             except Exception: pass
+            
+            # 3. Add platform column if it doesn't exist
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN platform VARCHAR(20) DEFAULT 'telegram';"))
+                # Populate platform for existing VK users
+                await conn.execute(text("UPDATE users SET platform = 'vk' WHERE vk_id IS NOT NULL;"))
+                logger.info("Migration: Added platform column and initialized values.")
+            except Exception:
+                pass
 
-            # 3. Synchronize old data: Move 'id' to 'telegram_id' for existing users who don't have it set
+            # 4. Synchronize old data: Move 'id' to 'telegram_id' for existing users who don't have it set
             # This ensures old users (where ID = TG ID) are still findable by the bot.
             res = await conn.execute(text("SELECT COUNT(*) FROM users WHERE telegram_id IS NULL"))
             count = res.scalar()
