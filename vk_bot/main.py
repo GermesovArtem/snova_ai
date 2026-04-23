@@ -73,7 +73,6 @@ async def start_handler(message: Message):
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
-
         limit = 1 if "1k" in user.model_preference.lower() else 2
         text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
     await message.answer(clean_markdown(text), keyboard=keyboards.build_reply_kb())
@@ -197,19 +196,24 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                         if r.status_code == 200:
                             img_data = io.BytesIO(r.content)
                             img_data.name = "result.png"
-                            photo_att = await uploader.upload(img_data, peer_id=vk_p_id)
+                            photo_att = await uploader.upload(img_data, peer_id=int(vk_p_id))
                             img_data.seek(0)
-                            doc_att = await doc_uploader.upload("result.png", img_data, peer_id=vk_p_id)
+                            doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            # CRITICAL: Use unique random_id and ensure peer_id is handled correctly
-                            await bot.api.messages.send(
-                                peer_id=vk_p_id, 
-                                message=clean_markdown(text), 
-                                attachment=f"{photo_att},{doc_att}", 
-                                random_id=random.getrandbits(32), 
-                                keyboard=keyboards.build_after_gen_kb()
-                            )
+                            
+                            # BUILD ATTACHMENT STRING SAFELY
+                            atts = []
+                            if photo_att: atts.append(str(photo_att))
+                            if doc_att: atts.append(str(doc_att))
+                            
+                            await bot.api.request("messages.send", {
+                                "peer_id": int(vk_p_id),
+                                "message": clean_markdown(text),
+                                "attachment": ",".join(atts),
+                                "random_id": random.randint(1, 2**31),
+                                "keyboard": keyboards.build_after_gen_kb()
+                            })
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
@@ -217,7 +221,12 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         except Exception as e:
             logger.error(f"GEN ERROR: {e}")
             await services.refund_frozen_credits(db, user_id, cost)
-            await bot.api.messages.send(peer_id=vk_p_id, message=f"❌ Ошибка: {e}", random_id=random.getrandbits(32), keyboard=keyboards.build_reply_kb())
+            await bot.api.request("messages.send", {
+                "peer_id": int(vk_p_id),
+                "message": f"❌ Ошибка: {str(e)}",
+                "random_id": random.randint(1, 2**31),
+                "keyboard": keyboards.build_reply_kb()
+            })
 
 if __name__ == "__main__":
     bot.run_forever()
