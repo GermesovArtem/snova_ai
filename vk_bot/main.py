@@ -26,8 +26,6 @@ VK_TOKEN = os.getenv("VK_API_TOKEN")
 GROUP_ID = os.getenv("VK_GROUP_ID")
 
 bot = Bot(token=VK_TOKEN)
-uploader = PhotoMessageUploader(bot.api)
-doc_uploader = DocMessagesUploader(bot.api)
 
 # --- STATES ---
 class BotState(BaseStateGroup):
@@ -64,6 +62,33 @@ async def get_vk_user_name(user_id: int) -> str:
 def get_limit_for_model(model_name: str) -> int:
     if "1k" in model_name.lower(): return 1
     return 14
+
+async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
+    """Directly uploads photo to VK without using library uploaders."""
+    async with httpx.AsyncClient() as client:
+        # 1. Get upload server
+        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={
+            "peer_id": str(peer_id),
+            "access_token": VK_TOKEN,
+            "v": "5.131"
+        })
+        upload_url = resp.json()["response"]["upload_url"]
+        
+        # 2. Upload file
+        files = {"photo": ("photo.jpg", image_bytes, "image/jpeg")}
+        resp = await client.post(upload_url, files=files)
+        upload_data = resp.json()
+        
+        # 3. Save photo
+        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
+            "photo": upload_data["photo"],
+            "server": upload_data["server"],
+            "hash": upload_data["hash"],
+            "access_token": VK_TOKEN,
+            "v": "5.131"
+        })
+        photo = resp.json()["response"][0]
+        return f"photo{photo['owner_id']}_{photo['id']}"
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
     url = "https://api.vk.com/method/messages.send"
@@ -246,22 +271,16 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                 status = info.get("state")
                 if status in ["success", "completed"]:
                     img_url = info.get("image_url")
-                    
-                    # DEFENSIVE: If it is a list, take the first one
-                    if isinstance(img_url, list) and len(img_url) > 0:
-                         img_url = img_url[0]
-                    
+                    if isinstance(img_url, list) and len(img_url) > 0: img_url = img_url[0]
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url, timeout=60.0)
                         if r.status_code == 200:
-                            img_data = io.BytesIO(r.content); img_data.name = "result.png"
-                            photo_att = await uploader.upload(img_data, peer_id=int(vk_p_id))
-                            img_data.seek(0); doc_att = await doc_uploader.upload("result.png", img_data, peer_id=int(vk_p_id))
+                            photo_att = await vk_upload_photo(r.content, vk_p_id)
                             user = await services.get_user_by_id(db, user_id)
                             text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(balance=int(user.balance), model_name=human_model_name(model))
-                            await safe_vk_send(vk_p_id, clean_markdown(text), attachment=f"{photo_att},{doc_att}", keyboard=keyboards.build_after_gen_kb())
+                            await safe_vk_send(vk_p_id, clean_markdown(text), attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
                             return
                 elif info.get("state") in ["failed", "error"]:
                     raise Exception(info.get("error", "KIE Error"))
