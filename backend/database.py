@@ -29,8 +29,15 @@ else:
     DATABASE_URL = parse_db_url(DATABASE_URL)
 # --- EXTREME DEBUG END ---
 
-# Create Async Engine
-engine = create_async_engine(DATABASE_URL, echo=False)
+# Create Async Engine with connection pool management
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False,
+    pool_pre_ping=True,      # Check connection status before using
+    pool_recycle=300,        # Refresh connections every 5 minutes
+    pool_size=20,            # Maintain up to 20 connections
+    max_overflow=10          # Allow up to 10 extra connections during peaks
+)
 
 # Create session factory
 AsyncSessionLocal = async_sessionmaker(
