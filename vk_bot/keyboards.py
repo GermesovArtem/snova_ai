@@ -13,11 +13,15 @@ def build_reply_kb():
 
 def build_model_menu_kb(models, current_model, costs):
     kb = Keyboard(inline=True)
-    for name, mm in models.items():
+    # Using a list to ensure order and avoid dictionary key issues
+    items = list(models.items())
+    for i, (name, mm) in enumerate(items):
         cost = int(costs.get(mm, 1))
         prefix = "✅ " if mm == current_model else ""
-        kb.add(Text(f"{prefix}{name} ({cost} ⚡)", payload={"set_model": mm}))
-        kb.row()
+        button_text = f"{prefix}{name} ({cost} ⚡)"
+        kb.add(Text(button_text, payload={"set_model": mm}))
+        if (i + 1) % 1 == 0: # One per row for clarity
+             kb.row()
     return kb.get_json()
 
 def build_buy_kb(packs):
@@ -31,15 +35,17 @@ def build_buy_kb(packs):
 def build_confirm_kb():
     return (
         Keyboard(inline=True)
-        .add(Text("🚀 Сгенерировать", payload={"action": "confirm_gen"}), color=KeyboardButtonColor.POSITIVE)
+        .add(Text("✅ Сгенерировать", payload={"action": "confirm_gen"}), color=KeyboardButtonColor.POSITIVE)
         .row()
-        .add(Text("✏️ Изменить", payload={"action": "edit_gen"}), color=KeyboardButtonColor.SECONDARY)
+        .add(Text("❌ Отмена", payload={"action": "edit_gen"}), color=KeyboardButtonColor.NEGATIVE)
         .get_json()
     )
 
 def build_after_gen_kb():
     return (
         Keyboard(inline=True)
-        .add(Text("🖼 Начать заново", payload={"menu": "main"}))
+        .add(Text("🔄 Повторить", payload={"action": "repeat_gen"}), color=KeyboardButtonColor.PRIMARY)
+        .row()
+        .add(Text("🖼 Начать заново", payload={"menu": "main"}), color=KeyboardButtonColor.SECONDARY)
         .get_json()
     )

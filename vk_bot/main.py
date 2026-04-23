@@ -5,7 +5,7 @@ import json
 import httpx
 import io
 from vkbottle.bot import Bot, Message
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, BaseStateGroup
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
@@ -19,15 +19,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# VK Config (Ensure these are set on server)
+# VK Config
 VK_TOKEN = os.getenv("VK_API_TOKEN")
 GROUP_ID = os.getenv("VK_GROUP_ID")
 
-if not VK_TOKEN:
-    logger.error("VK_API_TOKEN not found in .env")
-
 bot = Bot(token=VK_TOKEN)
 uploader = PhotoMessageUploader(bot.api)
+doc_uploader = DocMessagesUploader(bot.api)
 
 # --- STATES ---
 class BotState(BaseStateGroup):
@@ -36,14 +34,18 @@ class BotState(BaseStateGroup):
 
 # --- UTILS ---
 def get_model_costs():
-    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2": 1, "nano-banana-pro": 3}')
+    costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2, "nano-banana-pro-2k": 2, "nano-banana-pro-4k": 3}')
     try: return json.loads(costs_str)
-    except: return {"nano-banana-2": 1, "nano-banana-pro": 3}
+    except: return {"nano-banana-2-1k": 1, "nano-banana-2-4k": 2, "nano-banana-pro-2k": 2, "nano-banana-pro-4k": 3}
 
 def get_credit_packs():
     packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
     try: return json.loads(packs_str)
     except: return {"149": 30, "299": 65, "990": 270}
+
+def human_model_name(model_id):
+    models_map = services.get_available_models()
+    return next((name for name, mid in models_map.items() if mid == model_id), model_id)
 
 # --- HANDLERS ---
 
@@ -51,7 +53,7 @@ def get_credit_packs():
 async def start_handler(message: Message):
     async with AsyncSessionLocal() as db:
         user, created = await services.get_or_create_user(
-            db, platform_id=message.from_id, name=f"VK User {message.from_id}", platform="vk"
+            db, platform_id=message.from_id, name=f"VK_{message.from_id}", platform="vk"
         )
         
         if created:
@@ -65,7 +67,7 @@ async def start_handler(message: Message):
 @bot.on.message(text="✨ Создать")
 async def cmd_create_handler(message: Message):
     await message.answer(
-        "📝 **Пришлите описание (промпт) или фото.**\n\nЯ запомню его и предложу варианты генерации.",
+        messages.MSG_GEN_PROMPT.format(limit=2),
         keyboard=keyboards.build_reply_kb()
     )
 
@@ -76,7 +78,11 @@ async def model_menu_handler(message: Message):
         models_list = services.get_available_models()
         costs = get_model_costs()
         
-        text = f"🤖 **Выбор модели**\n\nТекущая: {user.model_preference}\nБаланс: {int(user.balance)} ⚡"
+        text = messages.MSG_MODEL_MENU.format(
+            human_name=human_model_name(user.model_preference),
+            limit=1 if "1k" in user.model_preference.lower() else 2,
+            balance=int(user.balance)
+        )
         await message.answer(text, keyboard=keyboards.build_model_menu_kb(models_list, user.model_preference, costs))
 
 @bot.on.message(text="💳 Баланс")
@@ -105,7 +111,8 @@ async def set_model_handler(message: Message):
         user.model_preference = model
         await db.commit()
     
-    await message.answer(f"✅ Модель изменена на: {model}", keyboard=keyboards.build_reply_kb())
+    await message.answer(messages.MSG_MODEL_SET_SUCCESS, keyboard=keyboards.build_reply_kb())
+    await message.answer(messages.MSG_MODEL_SET_NEXT.format(limit=2))
 
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):
@@ -122,17 +129,41 @@ async def buy_handler(message: Message):
         keyboard=keyboards.build_reply_kb()
     )
 
+@bot.on.message(payload_map=[("action", "repeat_gen")])
+async def repeat_gen_handler(message: Message):
+    # Retrieve last gen data from state or DB. For now, let's use the current user prefs.
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        # Find last task for this user
+        from sqlalchemy import select
+        res = await db.execute(
+            select(models.GenerationTask)
+            .filter_by(user_id=user.id)
+            .order_by(models.GenerationTask.created_at.desc())
+            .limit(1)
+        )
+        last_task = res.scalars().first()
+        
+        if not last_task:
+            await message.answer(messages.MSG_GEN_SIMILAR_NO_DATA)
+            return
+            
+        cost = services.get_model_cost(last_task.model)
+        if user.balance < cost:
+             await message.answer(messages.MSG_ERR_FUNDS.format(cost=int(cost), balance=int(user.balance)))
+             return
+
+        await message.answer(messages.MSG_GEN_SIMILAR_START)
+        image_urls = json.loads(last_task.prompt_images_json) if last_task.prompt_images_json else []
+        asyncio.create_task(run_vk_generation(user.id, last_task.prompt, image_urls))
+
 # --- GENERATION ROUTER ---
 
 @bot.on.message(state=BotState.IDLE)
-@bot.on.message() # Fallback for no state
+@bot.on.message() # Handle if someone lost state
 async def generation_init_handler(message: Message):
-    if not message.text and not message.attachments:
-         return
-
-    # Skip menu buttons
-    if message.text in ["✨ Создать", "🤖 Модель", "💳 Баланс", "📬 Контакты"]:
-        return
+    if not message.text and not message.attachments: return
+    if message.text in ["✨ Создать", "🤖 Модель", "💳 Баланс", "📬 Контакты"]: return
 
     # Process photo if exists
     image_urls = []
@@ -144,8 +175,7 @@ async def generation_init_handler(message: Message):
                 if resp.status_code == 200:
                     s3_path = f"vk_uploads/{message.from_id}/{os.urandom(8).hex()}.jpg"
                     s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", s3_path)
-                    if s3_url:
-                        image_urls.append(s3_url)
+                    if s3_url: image_urls.append(s3_url)
 
     prompt = message.text or ""
     if not prompt and not image_urls: return
@@ -154,99 +184,96 @@ async def generation_init_handler(message: Message):
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         cost = services.get_model_cost(user.model_preference)
 
-    # Set confirmation state
+    # State data for confirmation
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
     
-    confirm_text = (
-        f"🤖 **Подтвердите генерацию**\n\n"
-        f"💬 Запрос: {prompt[:100] + '...' if len(prompt) > 100 else prompt}\n"
-        f"🖼 Фото: {'Добавлено' if image_urls else 'Нет'}\n"
-        f"💰 Стоимость: {int(cost)} ⚡\n"
-        f"🏦 Ваш баланс: {int(user.balance)} ⚡"
+    confirm_text = messages.MSG_CONFIRMATION.format(
+        header=messages.MSG_CONFIRM_HEADER_NEW,
+        safe_prompt=prompt[:100],
+        img_count_text=f"🖼 Фото: **{len(image_urls)} шт.**\n" if image_urls else "",
+        human_name=human_model_name(user.model_preference),
+        ratio="auto", fmt="png",
+        cost=int(cost),
+        balance=int(user.balance)
     )
     await message.answer(confirm_text, keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message(state=BotState.CONFIRM_GEN)
 async def confirmation_handler(message: Message):
     state_data = message.state_peer.payload
-    
-    # Check if payload action is 'confirm_gen' (button) or any random text
     payload = message.get_payload_json() or {}
     action = payload.get("action")
 
     if action == "confirm_gen":
-        prompt = state_data["prompt"]
-        image_urls = state_data["images"]
-        cost = state_data["cost"]
+        prompt, image_urls, cost = state_data["prompt"], state_data["images"], state_data["cost"]
 
         async with AsyncSessionLocal() as db:
             user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
             if user.balance < cost:
-                await message.answer("❌ Недостаточно молний для генерации.", keyboard=keyboards.build_reply_kb())
+                await message.answer(messages.MSG_ERR_FUNDS.format(cost=int(cost), balance=int(user.balance)), keyboard=keyboards.build_reply_kb())
                 await bot.state_dispenser.set(message.from_id, BotState.IDLE)
                 return
 
-        await message.answer(f"🚀 Запрос подтвержден! Начинаю генерацию ({user.model_preference})...")
+        await message.answer(messages.MSG_GEN_STARTING.format(model_name=human_model_name(user.model_preference)))
         asyncio.create_task(run_vk_generation(user.id, prompt, image_urls))
         await bot.state_dispenser.set(message.from_id, BotState.IDLE)
 
-    elif action == "edit_gen":
-        await message.answer("Хорошо, отправьте новый запрос или нажмите кнопки меню.", keyboard=keyboards.build_reply_kb())
+    elif action == "edit_gen" or message.text == "❌ Отмена":
+        await message.answer(messages.MSG_EDIT_GEN, keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.set(message.from_id, BotState.IDLE)
     else:
-        await message.answer("Пожалуйста, подтвердите генерацию кнопкой выше или нажмите 'Изменить'.", keyboard=keyboards.build_confirm_kb())
+        # If user sends random text during confirmation, re-show confirmation or update prompt?
+        # Following TG: we re-show confirm
+        await message.answer("Пожалуйста, подтвердите генерацию кнопкой выше или нажмите 'Отмена'.", keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(db_user_id: int, prompt: str, image_urls: list):
     async with AsyncSessionLocal() as db:
         user = await services.get_user_by_id(db, db_user_id)
         if not user: return
-        
-        vk_platform_id = user.vk_id
-        model = user.model_preference
-        cost = services.get_model_cost(model)
+        vk_p_id, model, cost = user.vk_id, user.model_preference, services.get_model_cost(user.model_preference)
         
         try:
-            # 1. Start Flow
             task_id = await services.start_generation_flow(db, db_user_id, prompt, image_urls, model, cost)
             
-            # 2. Poll
-            for _ in range(150): # 12.5 minutes max
+            for _ in range(160):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
                 if info.get("state") in ["success", "completed"]:
                     img_url = info.get("image_url")
-                    
-                    # Commit credits
                     await services.commit_frozen_credits(db, db_user_id, cost)
                     
-                    # Download image for VK upload
+                    # Delivery: Photo + Doc
                     async with httpx.AsyncClient() as client:
-                        img_resp = await client.get(img_url)
-                        if img_resp.status_code != 200:
-                             raise Exception(f"Failed to download result image from {img_url}")
-                        
-                        img_data = io.BytesIO(img_resp.content)
-                        img_data.name = "result.png"
-
-                    # Send result to VK
-                    photo_att = await uploader.upload(img_data, peer_id=vk_platform_id)
-                    await bot.api.messages.send(
-                        peer_id=vk_platform_id,
-                        message=f"✨ Ваша генерация готова!\n\n🤖 Модель: {model}\n⚡ Списано: {int(cost)} молний.",
-                        attachment=photo_att,
-                        random_id=0,
-                        keyboard=keyboards.build_after_gen_kb()
-                    )
-                    return
+                        r = await client.get(img_url)
+                        if r.status_code == 200:
+                            img_data = io.BytesIO(r.content)
+                            img_data.name = f"result_{task_id[:6]}.png"
+                            
+                            # 1. Upload as Photo
+                            photo_att = await uploader.upload(img_data, peer_id=vk_p_id)
+                            # Reset stream for next upload
+                            img_data.seek(0)
+                            # 2. Upload as Doc (Original)
+                            doc_att = await doc_uploader.upload(f"result_{task_id[:6]}.png", img_data, peer_id=vk_p_id)
+                            
+                            user = await services.get_user_by_id(db, db_user_id)
+                            text = messages.MSG_GEN_SUCCESS_WITH_BALANCE.format(
+                                balance=int(user.balance),
+                                model_name=human_model_name(model)
+                            )
+                            await bot.api.messages.send(
+                                peer_id=vk_p_id, message=text,
+                                attachment=[photo_att, doc_att],
+                                random_id=0, keyboard=keyboards.build_after_gen_kb()
+                            )
+                            return
                 elif info.get("state") in ["failed", "error"]:
-                    raise Exception(info.get("error", "KIE Error"))
-            
-            raise Exception("Timeout (Wait limit exceeded)")
-            
+                    raise Exception(info.get("error", "KIE error"))
+            raise Exception("Timeout exceeded")
         except Exception as e:
             logger.error(f"VK Gen Error: {e}")
             await services.refund_frozen_credits(db, db_user_id, cost)
-            await bot.api.messages.send(peer_id=vk_platform_id, message=f"❌ Ошибка генерации: {e}", random_id=0, keyboard=keyboards.build_reply_kb())
+            await bot.api.messages.send(peer_id=vk_p_id, message=messages.MSG_ERR_GEN_FAILED.format(err_text=str(e)), random_id=0, keyboard=keyboards.build_reply_kb())
 
 if __name__ == "__main__":
     bot.run_forever()
