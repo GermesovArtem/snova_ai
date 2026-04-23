@@ -113,3 +113,6 @@ MSG_GEN_SUCCESS_FALLBACK = (
 )
 
 MSG_ERR_GEN_FAILED = "❌ Ошибка генерации: {err_text}"
+
+MSG_CONFIRM_HEADER_NEW = "🆕 Ваш промпт почти готов!"
+MSG_CONFIRM_HEADER_EDIT = "✨ Ваш промпт почти готов!"
