@@ -959,6 +959,14 @@ async def on_startup():
     from sqlalchemy import text
     async with engine.begin() as conn:
         try:
+            # FIX: Convert IDs to BIGINT to support large Telegram IDs
+            logger.info("Migration: Ensuring BIGINT for all ID columns...")
+            for table in ["users", "generation_tasks", "payments", "referrals", "web_chat_messages"]:
+                col = "id" if table == "users" else "user_id"
+                try:
+                    await conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE BIGINT;"))
+                except: pass
+
             # 1. Ensure telegram_id exists
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT;"))
             await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_id ON users (telegram_id);"))
