@@ -33,6 +33,7 @@ doc_uploader = DocMessagesUploader(bot.api)
 class BotState(BaseStateGroup):
     IDLE = 0
     CONFIRM_GEN = 1
+    WAIT_PROMPT = 2
 
 # --- UTILS ---
 def clean_markdown(text: str) -> str:
@@ -182,29 +183,50 @@ async def confirmation_handler(message: Message):
              return
         await safe_vk_send(message.from_id, "Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
+@bot.on.message(state=BotState.WAIT_PROMPT)
+async def wait_prompt_handler(message: Message):
+    if not message.text:
+         await message.answer("Пожалуйста, введите текст (промпт) — что именно нужно сделать с вашими фото?")
+         return
+    state_data = message.state_peer.payload
+    await generic_handler(message, existing_images=state_data["images"], existing_vk_atts=state_data["vk_atts"])
+
 @bot.on.message()
-async def generic_handler(message: Message):
-    if not message.text and not message.attachments: return
+async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
+    if not message.text and not message.attachments and not existing_images: return
     cmd = (message.text or "").strip().lower()
     if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start", "/start", "назад"]) or message.payload: return
     
-    image_urls = []
-    vk_attachment_strs = []
-    for att in message.attachments:
-        url, vk_id = None, ""
-        if att.photo: 
-             url = att.photo.sizes[-1].url
-             vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
-        elif att.doc and att.doc.type == 1: 
-             url = att.doc.url
-             vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
-            
-        if url:
-             vk_attachment_strs.append(vk_id)
-             # Use DIRECT VK URL if possible to avoid S3 SSL issues
-             image_urls.append(url)
+    image_urls = existing_images or []
+    vk_attachment_strs = existing_vk_atts or []
+    
+    if message.attachments:
+        for att in message.attachments:
+            url, vk_id = None, ""
+            if att.photo: 
+                 url = att.photo.sizes[-1].url
+                 # IMPORTANT: Need access_key for private attachments to show them back
+                 vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
+                 if hasattr(att.photo, "access_key") and att.photo.access_key:
+                      vk_id += f"_{att.photo.access_key}"
+            elif att.doc and att.doc.type == 1: 
+                 url = att.doc.url
+                 vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
+                 if hasattr(att.doc, "access_key") and att.doc.access_key:
+                      vk_id += f"_{att.doc.access_key}"
+                
+            if url:
+                vk_attachment_strs.append(vk_id)
+                image_urls.append(url)
 
     prompt = (message.text or "").strip()
+    
+    # NEW: Handle empty prompt scenario
+    if image_urls and not prompt:
+         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
+         await message.answer("📸 Фотографии получены! Теперь, пожалуйста, напишите **текстом**, что именно нужно сделать: (например: 'сделай в стиле киберпанк' или 'замени фон')")
+         return
+
     if not prompt and not image_urls: return
 
     async with AsyncSessionLocal() as db:
@@ -216,6 +238,7 @@ async def generic_handler(message: Message):
         cost = services.get_model_cost(user.model_preference)
 
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
+    
     confirm_text = messages.MSG_CONFIRMATION.format(
         header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT,
         safe_prompt=prompt[:100] or "(без текста)",
@@ -223,6 +246,7 @@ async def generic_handler(message: Message):
         human_name=human_model_name(user.model_preference),
         ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance)
     )
+    
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
@@ -238,7 +262,8 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
             for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
-                if info.get("state") in ["success", "completed"]:
+                status = info.get("state")
+                if status in ["success", "completed"]:
                     img_url = info.get("image_url")
                     await services.commit_frozen_credits(db, user_id, cost)
                     generation_committed = True
