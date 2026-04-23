@@ -63,7 +63,7 @@ async def get_vk_user_name(user_id: int) -> str:
 def get_limit_for_model(model_name: str) -> int:
     mn = model_name.lower()
     if "pro" in mn: return 8
-    if "1k" in mn: return 1
+    # All other V2 models (including 1K and generic Banana 2) allow up to 14 photos
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
