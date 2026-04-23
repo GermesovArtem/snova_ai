@@ -956,9 +956,42 @@ async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cos
 
 async def on_startup():
     await setup_bot_commands(bot)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    print("\n" + ">"*50)
+    print(">>> Bot: Starting on_startup...")
     
+    # --- MIGRATION BLOCK ---
+    from sqlalchemy import text
+    async with engine.begin() as conn:
+        try:
+            logger.info("Migration: Checking for telegram_id column...")
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN telegram_id BIGINT UNIQUE;"))
+                logger.info("Migration: Added telegram_id column.")
+            except Exception: pass
+
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN vk_id BIGINT UNIQUE;"))
+                logger.info("Migration: Added vk_id column.")
+            except Exception: pass
+
+            res = await conn.execute(text("SELECT COUNT(*) FROM users WHERE telegram_id IS NULL"))
+            count = res.scalar()
+            if count and count > 0:
+                logger.info(f"Migration: Migrating {count} users to new telegram_id column...")
+                await conn.execute(text("UPDATE users SET telegram_id = id WHERE telegram_id IS NULL"))
+                await conn.commit()
+
+            try:
+                max_id_res = await conn.execute(text("SELECT MAX(id) FROM users"))
+                max_id = max_id_res.scalar() or 0
+                await conn.execute(text("CREATE SEQUENCE IF NOT EXISTS users_id_seq;"))
+                await conn.execute(text(f"SELECT setval('users_id_seq', {max_id});"))
+                await conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
+            except Exception: pass
+        except Exception as e:
+            logger.error(f"Migration error in bot: {e}")
+    # --- END MIGRATION ---
+
     async with AsyncSessionLocal() as db:
         await services.fix_all_model_ids(db)
 
