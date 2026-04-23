@@ -7,8 +7,7 @@ import io
 import re
 import random
 from vkbottle.bot import Bot, Message
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
-from vkbottle import BaseMiddleware # Keeping it for future but not using in a way that blocks
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink, BaseMiddleware
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
@@ -88,7 +87,6 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
-    await bot.state_dispenser.delete(message.from_id)
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -101,7 +99,6 @@ async def start_handler(message: Message):
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
-    await bot.state_dispenser.delete(message.from_id)
     cmd = message.get_payload_json()["cmd"]
     if cmd == "create": await cmd_create_handler(message)
     elif cmd == "model": await model_menu_handler(message)
@@ -109,10 +106,8 @@ async def menu_cmd_handler(message: Message):
     elif cmd == "contacts": await contacts_handler(message)
     elif cmd == "main": await start_handler(message)
 
-# Standard menu text handlers
 @bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
-    await bot.state_dispenser.delete(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
@@ -120,7 +115,6 @@ async def cmd_create_handler(message: Message):
 
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
-    await bot.state_dispenser.delete(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
@@ -187,7 +181,8 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
     async with AsyncSessionLocal() as db:
-        res = await db.execute(models.select(models.User).filter_by(vk_id=vk_p_id))
+        from sqlalchemy import select
+        res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
         user = res.scalars().first()
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
@@ -203,7 +198,6 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
                         r = await client.get(img_url)
                         photo_att = await vk_upload_photo(r.content, vk_p_id)
                         await safe_vk_send(vk_p_id, "Генерация завершена!", attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
-                        await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                         return
             raise Exception("Timeout")
         except Exception as e:
