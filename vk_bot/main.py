@@ -6,7 +6,7 @@ import httpx
 import io
 import re
 import random
-from vkbottle.bot import Bot, Message
+from vkbottle.bot import Bot, Message, BaseMiddleware
 from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
 from dotenv import load_dotenv
 
@@ -33,6 +33,18 @@ class BotState(BaseStateGroup):
     CONFIRM_GEN = 1
     WAIT_PROMPT = 2
     POST_GEN = 3
+
+# --- MIDDLEWARE ---
+class StateResetMiddleware(BaseMiddleware[Message]):
+    """Force reset state on core commands."""
+    async def pre(self):
+        cmd = (self.event.text or "").strip().lower()
+        core_commands = ["начать", "назад", "start", "✨ создать", "🤖 модель", "💳 баланс", "📬 контакты"]
+        if any(x == cmd or x in cmd for x in core_commands):
+             await bot.state_dispenser.delete(self.event.from_id)
+        return True
+
+bot.labeler.message_view.register_middleware(StateResetMiddleware)
 
 # --- UTILS ---
 def clean_markdown(text: str) -> str:
@@ -88,11 +100,10 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
             if "error" in res_json: logger.error(f"VK API DIRECT ERROR: {res_json['error']}")
         except Exception as e: logger.error(f"VK DIRECT HTTP ERROR: {e}")
 
-# --- HANDLERS (STATE-AGNOSTIC) ---
+# --- HANDLERS ---
 
 @bot.on.message(text=["начать", "Начать", "НАЧАТЬ", "start", "Start", "START", "/start"])
 async def start_handler(message: Message):
-    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -105,7 +116,6 @@ async def start_handler(message: Message):
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
-    await safe_clear_state(message.from_id)
     cmd = message.get_payload_json()["cmd"]
     if cmd == "create": await cmd_create_handler(message)
     elif cmd == "model": await model_menu_handler(message)
@@ -115,7 +125,6 @@ async def menu_cmd_handler(message: Message):
 
 @bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
-    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
@@ -123,7 +132,6 @@ async def cmd_create_handler(message: Message):
 
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
-    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
@@ -132,7 +140,6 @@ async def model_menu_handler(message: Message):
 
 @bot.on.message(payload_map=[("set_model", str)])
 async def set_model_handler(message: Message):
-    await safe_clear_state(message.from_id)
     new_model = message.get_payload_json()["set_model"]
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
@@ -143,7 +150,6 @@ async def set_model_handler(message: Message):
 
 @bot.on.message(text=["💳 баланс", "💳 Баланс", "Баланс", "баланс"])
 async def balance_handler(message: Message):
-    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         packs_str = os.getenv("CREDIT_PACKS", '{"149": 30, "299": 65, "990": 270}')
@@ -152,7 +158,6 @@ async def balance_handler(message: Message):
 
 @bot.on.message(text=["📬 контакты", "📬 Контакты", "Контакты", "контакты"])
 async def contacts_handler(message: Message):
-    await safe_clear_state(message.from_id)
     vk_contacts = "🆘 Техподдержка: @artemgavr\n👤 Менеджер: @doloreees_s\n\nПишите нам по любым вопросам!"
     await safe_vk_send(message.from_id, clean_markdown(vk_contacts))
 
@@ -164,7 +169,7 @@ async def buy_handler(message: Message):
         payment_url = await services.create_yookassa_payment(db, user.id, float(payload["buy"]), f"Buy {payload['amount']} credits (VK:{message.from_id})")
     await safe_vk_send(message.from_id, f"⏳ Счёт на {payload['buy']} руб. создан! Нажмите кнопку ниже для оплаты:", keyboard=keyboards.build_pay_link_kb(payment_url))
 
-# --- HANDLERS (STATE-SPECIFIC) ---
+# --- STATE HANDLERS ---
 
 @bot.on.message(state=BotState.CONFIRM_GEN)
 async def confirmation_handler(message: Message):
@@ -186,27 +191,10 @@ async def confirmation_handler(message: Message):
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
     else:
-        # Check for core commands even in state
-        cmd = (message.text or "").strip().lower()
-        if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
-             await safe_clear_state(message.from_id)
-             if "начать" in cmd or "start" in cmd: await start_handler(message)
-             elif "создать" in cmd: await cmd_create_handler(message)
-             elif "модель" in cmd: await model_menu_handler(message)
-             elif "баланс" in cmd: await balance_handler(message)
-             return
         await safe_vk_send(message.from_id, "Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message(state=BotState.WAIT_PROMPT)
 async def wait_prompt_handler(message: Message):
-    cmd = (message.text or "").strip().lower()
-    if any(x in cmd for x in ["создать", "модель", "баланс", "контакты", "начать", "start"]):
-         await safe_clear_state(message.from_id)
-         if "начать" in cmd or "start" in cmd: await start_handler(message)
-         elif "создать" in cmd: await cmd_create_handler(message)
-         elif "модель" in cmd: await model_menu_handler(message)
-         elif "баланс" in cmd: await balance_handler(message)
-         return
     if not message.text:
          await message.answer("Пожалуйста, введите задание текстом 👇")
          return
@@ -217,7 +205,6 @@ async def wait_prompt_handler(message: Message):
 async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
     if not message.text and not message.attachments and not existing_images: return
     
-    # Handle direct action buttons after gen
     payload = message.get_payload_json() or {}
     action = payload.get("action")
     if action == "repeat_gen":
