@@ -214,7 +214,7 @@ async def generic_handler(message: Message):
                 try:
                     resp = await client.get(url, timeout=30.0)
                     if resp.status_code == 200:
-                        s3_url = await s3_service.upload_file_bytes(resp.content, "snova-ai", f"vk/{message.from_id}/{os.urandom(8).hex()}.jpg")
+                        s3_url = await s3_service.upload_file_to_s3(resp.content, ".jpg")
                         if s3_url: image_urls.append(s3_url)
                 except Exception as e: logger.error(f"S3 Upload fail: {e}")
 
