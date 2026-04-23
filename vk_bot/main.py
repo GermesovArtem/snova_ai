@@ -6,8 +6,8 @@ import httpx
 import io
 import re
 import random
-from vkbottle.bot import Bot, Message
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink, BaseMiddleware
+from vkbottle.bot import Bot, Message, BaseMiddleware
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
@@ -34,22 +34,24 @@ class BotState(BaseStateGroup):
     WAIT_PROMPT = 2
     POST_GEN = 3
 
-# --- MIDDLEWARE ---
-class StateResetMiddleware(BaseMiddleware[Message]):
+# --- DEBUG MIDDLEWARE (LOG EVERYTHING) ---
+class DiagnosticMiddleware(BaseMiddleware[Message]):
     async def pre(self):
-        text = (self.event.text or "").strip().lower()
-        payload = self.event.get_payload_json() or {}
+        text = self.event.text or ""
+        payload = self.event.payload or ""
+        logger.info(f"RECEIVED EVENT: text='{text}', payload='{payload}', from_id={self.event.from_id}")
         
-        # Check for core commands in text OR payload
-        is_start = text in ["начать", "начни", "старт", "/start"] or payload.get("command") == "start" or payload.get("cmd") == "main"
-        core_commands = ["назад", "✨ создать", "🤖 модель", "💳 баланс", "📬 контакты"]
+        # Check start command explicitly
+        cmd = text.strip().lower()
+        payload_data = self.event.get_payload_json() or {}
+        is_start = cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start"
         
-        if is_start or any(x in text for x in core_commands):
-             logger.info(f"CORE COMMAND DETECTED: {text or payload}. Resetting state for {self.event.from_id}")
+        if is_start:
+             logger.info(f"!!! START COMMAND RESET FOR {self.event.from_id} !!!")
              await bot.state_dispenser.delete(self.event.from_id)
         return True
 
-bot.labeler.message_view.register_middleware(StateResetMiddleware)
+bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
 
 # --- UTILS ---
 def clean_markdown(text: str) -> str:
@@ -61,12 +63,6 @@ def clean_markdown(text: str) -> str:
 def human_model_name(model_id):
     models_map = services.get_available_models()
     return next((name for name, mid in models_map.items() if mid == model_id), model_id)
-
-async def safe_clear_state(peer_id: int):
-    try:
-        await bot.state_dispenser.delete(peer_id)
-    except:
-        pass
 
 async def get_vk_user_name(user_id: int) -> str:
     try:
@@ -83,12 +79,16 @@ def get_limit_for_model(model_name: str) -> int:
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
     async with httpx.AsyncClient() as client:
         resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.131"})
-        upload_url = resp.json()["response"]["upload_url"]
+        data = resp.json()
+        if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
+        upload_url = data["response"]["upload_url"]
         files = {"photo": ("photo.jpg", image_bytes, "image/jpeg")}
         resp = await client.post(upload_url, files=files)
         upload_data = resp.json()
         resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={"photo": upload_data["photo"], "server": upload_data["server"], "hash": upload_data["hash"], "access_token": VK_TOKEN, "v": "5.131"})
-        photo = resp.json()["response"][0]
+        photo_resp = resp.json()
+        if "error" in photo_resp: raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
+        photo = photo_resp["response"][0]
         return f"photo{photo['owner_id']}_{photo['id']}"
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
@@ -105,10 +105,10 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 # --- HANDLERS ---
 
-# Absolute Start Handler: catches anything that looks like a start command
+# 1. ULTIMATE CATCH-ALL START HANDLER
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
-    logger.info(f"START HANDLER TRIGGERED for {message.from_id}")
+    logger.info(f"SUCCESS: start_handler called for {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -143,45 +143,30 @@ async def model_menu_handler(message: Message):
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
 
-@bot.on.message(payload_map=[("set_model", str)])
-async def set_model_handler(message: Message):
-    new_model = message.get_payload_json()["set_model"]
-    async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        user.model_preference = new_model
-        await db.commit()
-    await message.answer(f"✅ Модель успешно изменена на: {human_model_name(new_model)}")
-    await cmd_create_handler(message)
-
 # --- STATE HANDLERS ---
 
 @bot.on.message(state=BotState.CONFIRM_GEN)
 async def confirmation_handler(message: Message):
     payload = message.get_payload_json() or {}
-    action = payload.get("action")
-    if action == "confirm_gen":
+    if payload.get("action") == "confirm_gen":
         state_data = message.state_peer.payload
         async with AsyncSessionLocal() as db:
              user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-             cost = state_data["cost"]
-             if user.balance < cost:
-                  await safe_vk_send(message.from_id, clean_markdown(messages.MSG_ERR_FUNDS.format(cost=int(cost), balance=int(user.balance))))
-                  await bot.state_dispenser.delete(message.from_id)
-                  return
+             cost = state_data["cost"]; balance = int(user.balance)
+             if balance < cost:
+                  await safe_vk_send(message.from_id, clean_markdown(messages.MSG_ERR_FUNDS.format(cost=int(cost), balance=balance)))
+                  await bot.state_dispenser.delete(message.from_id); return
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_GEN_STARTING.format(model_name=human_model_name(user.model_preference))))
         asyncio.create_task(run_vk_generation(message.from_id, state_data["prompt"], state_data["images"]))
         await bot.state_dispenser.delete(message.from_id)
-    elif action == "edit_gen" or (message.text or "").strip().lower() == "❌ отмена":
+    elif payload.get("action") == "edit_gen" or (message.text or "").strip().lower() == "❌ отмена":
         await safe_vk_send(message.from_id, clean_markdown(messages.MSG_EDIT_GEN), keyboard=keyboards.build_reply_kb())
         await bot.state_dispenser.delete(message.from_id)
-    else:
-        await safe_vk_send(message.from_id, "Пожалуйста, используйте кнопки для подтверждения или отмены.", keyboard=keyboards.build_confirm_kb())
 
 @bot.on.message(state=BotState.WAIT_PROMPT)
 async def wait_prompt_handler(message: Message):
     if not message.text:
-         await message.answer("Пожалуйста, введите задание текстом 👇")
-         return
+         await message.answer("Пожалуйста, введите задание текстом 👇"); return
     state_data = message.state_peer.payload
     await generic_handler(message, existing_images=state_data["images"], existing_vk_atts=state_data["vk_atts"])
 
@@ -206,12 +191,10 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
         for att in message.attachments:
             url, vk_id = None, ""
             if att.photo: 
-                 url = att.photo.sizes[-1].url
-                 vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
+                 url = att.photo.sizes[-1].url; vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
                  if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
             elif att.doc and att.doc.type == 1: 
-                 url = att.doc.url
-                 vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
+                 url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                  if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
             if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
 
@@ -224,11 +207,12 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
     if not prompt and not image_urls: return
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        cost = services.get_model_cost(user.model_preference); balance = int(user.balance)
         limit = get_limit_for_model(user.model_preference)
         if len(image_urls) > limit: image_urls = image_urls[:limit]; vk_attachment_strs = vk_attachment_strs[:limit]
-        cost = services.get_model_cost(user.model_preference)
+
     await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    confirm_text = messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(description)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=int(user.balance))
+    confirm_text = messages.MSG_CONFIRMATION.format(header=messages.MSG_CONFIRM_HEADER_NEW if not image_urls else messages.MSG_CONFIRM_HEADER_EDIT, safe_prompt=prompt[:100] or "(description)", img_count_text=f"Фото: {len(image_urls)} шт.\n" if image_urls else "", human_name=human_model_name(user.model_preference), ratio="auto", fmt="png", cost=int(cost), balance=balance)
     await safe_vk_send(message.from_id, clean_markdown(confirm_text), attachment=",".join(vk_attachment_strs), keyboard=keyboards.build_confirm_kb())
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
@@ -244,12 +228,10 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
             for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
-                status = info.get("state")
-                if status in ["success", "completed"]:
+                if info.get("state") in ["success", "completed"]:
                     img_url = info.get("image_url")
                     if isinstance(img_url, list) and len(img_url) > 0: img_url = img_url[0]
-                    await services.commit_frozen_credits(db, user_id, cost)
-                    generation_committed = True
+                    await services.commit_frozen_credits(db, user_id, cost); generation_committed = True
                     async with httpx.AsyncClient() as client:
                         r = await client.get(img_url, timeout=60.0)
                         if r.status_code == 200:
