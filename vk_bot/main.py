@@ -6,8 +6,8 @@ import httpx
 import io
 import re
 import random
-from vkbottle.bot import Bot, Message, BaseMiddleware
-from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink
+from vkbottle.bot import Bot, Message
+from vkbottle import Keyboard, KeyboardButtonColor, Text, PhotoMessageUploader, DocMessagesUploader, BaseStateGroup, OpenLink, BaseMiddleware
 from dotenv import load_dotenv
 
 from backend.database import AsyncSessionLocal
@@ -40,15 +40,12 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
         try:
              text = self.event.text or ""
              payload = self.event.payload or ""
-             logger.info(f"\n[!!!] NEW EVENT [!!!]")
-             logger.info(f"FROM: {self.event.from_id}")
-             logger.info(f"TEXT: '{text}'")
-             logger.info(f"PAYLOAD: '{payload}'")
+             logger.info(f"\n[!!!] NEW EVENT [!!!] FROM: {self.event.from_id} TEXT: '{text}' PAYLOAD: '{payload}'")
              
              cmd = text.strip().lower()
              payload_data = self.event.get_payload_json() or {}
              if cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start":
-                  logger.info("-> DETECTED START COMMAND. CLEARING STATE.")
+                  logger.info("-> START COMMAND DETECTED. RESETTING STATE.")
                   await bot.state_dispenser.delete(self.event.from_id)
         except Exception as e:
              logger.error(f"MIDDLEWARE ERROR: {e}")
@@ -110,7 +107,7 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
 
 @bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
 async def start_handler(message: Message):
-    logger.info(f"EXECUTING START_HANDLER FOR {message.from_id}")
+    logger.info(f"START_HANDLER EXECUTING FOR {message.from_id}")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
@@ -144,6 +141,16 @@ async def model_menu_handler(message: Message):
         costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
+
+@bot.on.message(payload_map=[("set_model", str)])
+async def set_model_handler(message: Message):
+    new_model = message.get_payload_json()["set_model"]
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        user.model_preference = new_model
+        await db.commit()
+    await message.answer(f"✅ Модель успешно изменена на: {human_model_name(new_model)}")
+    await cmd_create_handler(message)
 
 # --- STATE HANDLERS ---
 
