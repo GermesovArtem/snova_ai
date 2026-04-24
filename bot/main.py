@@ -867,7 +867,8 @@ async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cos
         async with AsyncSessionLocal() as db:
             kie_task_id = await services.start_generation_flow(
                 db, db_user_id, prompt, image_urls, model, cost, 
-                aspect_ratio, resolution, output_format
+                aspect_ratio, resolution, output_format,
+                handle_charging=False
             )
             
         # 2. Wait Loop (No DB session)

@@ -235,24 +235,33 @@ async def start_generation_flow(
     aspect_ratio: str = "1:1",
     resolution: str = "1K",
     output_format: str = "png",
-    status_message_id: int = None
+    status_message_id: int = None,
+    handle_charging: bool = True
 ) -> str:
     """
-    Initializes generation task in DB, freezes credits, and calls KIE AI.
+    Initializes generation task in DB, optionally freezes credits, and calls KIE AI.
     Returns the task_uuid.
     """
     # 1. Normalize model
     model_id = normalize_model_id(model_id)
     
-    # 2. Check balance
+    # 2. Check and Handle balance if requested
     user = await get_user_by_id(db, user_id)
-    if not user or user.balance < cost:
-        raise Exception("insufficient_funds")
+    if not user:
+        raise Exception("user_not_found")
 
-    # 3. Freeze credits
-    user.balance -= cost
-    user.frozen_balance += cost
-    db.add(user)
+    if handle_charging:
+        if user.balance < cost:
+            logger.warning(f"Insufficient funds for user {user_id}: balance={user.balance}, cost={cost}")
+            raise Exception("insufficient_funds")
+
+        # Freeze credits
+        user.balance -= cost
+        user.frozen_balance += cost
+        db.add(user)
+    else:
+        logger.info(f"Skipping internal charging for task (handled externally). User balance: {user.balance}")
+
     
     # 4. Create Task record
     new_task = models.GenerationTask(
