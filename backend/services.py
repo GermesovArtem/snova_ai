@@ -315,11 +315,13 @@ async def start_generation_flow(
         await db.commit()
         return kie_task_id
     except Exception as e:
-        # Refund on failure
-        user.frozen_balance -= cost
-        new_task.status = "failed"
-        await db.commit()
+        # Proper refund on failure: add back to balance, remove from frozen
+        await refund_frozen_credits(db, user_id, cost)
+        if 'new_task' in locals():
+            new_task.status = "failed"
+            await db.commit()
         raise e
+
 
 async def background_poll_kie_task(db_factory, user_id: int, task_uuid: str, status_message_id: int = None):
     """
