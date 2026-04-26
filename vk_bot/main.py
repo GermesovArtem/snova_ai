@@ -139,6 +139,77 @@ async def start_handler(message: Message):
         text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
+async def balance_handler(message: Message):
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        balance = int(user.balance)
+    packs_str = os.getenv("CREDIT_PACKS", '{"149": 10, "299": 25, "899": 100}')
+    packs = json.loads(packs_str)
+    await safe_vk_send(message.from_id, messages.MSG_BUY_MENU.format(balance=balance), keyboard=keyboards.build_buy_kb(packs))
+
+async def contacts_handler(message: Message):
+    await safe_vk_send(message.from_id, clean_markdown(messages.MSG_CONTACTS))
+
+@bot.on.message(payload_map=[("set_model", str)])
+async def set_model_handler(message: Message):
+    model = message.get_payload_json()["set_model"]
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        user.model_preference = model
+        await db.commit()
+    await safe_vk_send(message.from_id, messages.MSG_MODEL_SET_SUCCESS)
+    limit = get_limit_for_model(model)
+    await safe_vk_send(message.from_id, messages.MSG_MODEL_SET_NEXT.format(limit=limit), keyboard=keyboards.build_reply_kb())
+
+@bot.on.message(payload_map=[("buy", str)])
+async def buy_handler(message: Message):
+    payload = message.get_payload_json()
+    price = payload["buy"]
+    amount = payload.get("amount", "0")
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        description = f"Пополнение на {amount} ⚡ для S•NOVA AI (VK)"
+        try:
+            payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
+            await safe_vk_send(message.from_id, f"Счет на {price} руб. создан. После оплаты баланс пополнится автоматически.", keyboard=keyboards.build_pay_link_kb(payment_url))
+        except Exception as e:
+            logger.error(f"Payment error: {e}")
+            await safe_vk_send(message.from_id, "Ошибка при создании счета. Попробуйте позже.")
+
+@bot.on.message(payload_map=[("action", str)])
+async def action_handler(message: Message):
+    action = message.get_payload_json()["action"]
+    if action == "confirm_gen":
+        state = message.state_peer
+        if not state or not state.payload:
+             await safe_vk_send(message.from_id, "Ошибка: данные не найдены. Пожалуйста, пришлите фото или текст снова.")
+             return
+        
+        p = state.payload
+        prompt = p.get("prompt")
+        images = p.get("images", [])
+        
+        async with AsyncSessionLocal() as db:
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+            model_name = human_model_name(user.model_preference)
+        
+        await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
+        asyncio.create_task(run_vk_generation(message.from_id, prompt, images))
+        await bot.state_dispenser.delete(message.from_id)
+        
+    elif action == "edit_gen":
+        await bot.state_dispenser.delete(message.from_id)
+        await safe_vk_send(message.from_id, messages.MSG_EDIT_GEN)
+    elif action == "repeat_gen":
+        state = message.state_peer
+        if state and state.payload:
+             p = state.payload
+             if p.get("last_prompt"):
+                  asyncio.create_task(run_vk_generation(message.from_id, p["last_prompt"], p.get("last_images", [])))
+    elif action == "reset_gen":
+        await bot.state_dispenser.delete(message.from_id)
+        await start_handler(message)
+
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
     cmd = message.get_payload_json()["cmd"]
@@ -166,12 +237,7 @@ async def model_menu_handler(message: Message):
 @bot.on.message()
 async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
     if not message.text and not message.attachments and not existing_images: return
-    payload = message.get_payload_json() or {}
-    if payload.get("action") == "repeat_gen":
-         state_data = message.state_peer.payload
-         if state_data: asyncio.create_task(run_vk_generation(message.from_id, state_data["last_prompt"], state_data["last_images"]))
-         return
-    if payload.get("action") == "reset_gen": await start_handler(message); return
+    if message.get_payload_json(): return
     image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
     if message.attachments:
         for att in message.attachments:
