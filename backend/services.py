@@ -336,8 +336,8 @@ async def background_poll_kie_task(db_factory, user_id: int, task_uuid: str, sta
     """
     import asyncio # Ensure it's imported
     try:
-        # Loop for 10 minutes
-        for i in range(120):
+        # Loop for 20 minutes
+        for i in range(240):
             await asyncio.sleep(5)
             info = await check_generation_status(task_uuid)
             status = info.get("state")

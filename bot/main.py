@@ -880,7 +880,7 @@ async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cos
             
         # 2. Wait Loop (No DB session)
         last_log_state = None
-        for i in range(120): # 120 * 5s = 600s (10 mins)
+        for i in range(240): # 240 * 5s = 1200s (20 mins)
             await asyncio.sleep(5)
             info = await services.check_generation_status(kie_task_id)
             kie_status = info.get("state")
