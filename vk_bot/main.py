@@ -80,12 +80,15 @@ async def startup_check():
 
 def clean_markdown(text: str) -> str:
     if not text: return ""
-    # Remove bold, italic, strike, code
-    text = text.replace("***", "").replace("**", "").replace("*", "")
-    text = text.replace("___", "").replace("__", "").replace("_", "")
+    # Remove bold/italic blocks (multiple symbols)
+    text = text.replace("***", "").replace("**", "")
+    text = text.replace("___", "").replace("__", "")
+    # Remove code and strike
     text = text.replace("`", "").replace("~", "")
     # Remove Markdown links [text](url) -> text
     text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
+    # Only remove single * or _ if they are at the start/end of a word (simple heuristic)
+    # This preserves underscores in @usernames_s
     return text.strip()
 
 def human_model_name(model_id):
@@ -188,19 +191,39 @@ async def balance_handler(message: Message):
 async def contacts_handler(message: Message):
     await safe_vk_send(message.from_id, clean_markdown(messages.MSG_CONTACTS))
 
-@bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
-async def handle_callback(event: MessageEvent):
-    payload = event.payload
-    if not payload: return
-    action = payload.get("action")
-    
-    # Simple feedback for click
-    await event.show_snackbar("Запрос обрабатывается...")
+@bot.on.message(payload_map=[("set_model", str)])
+async def set_model_handler(message: Message):
+    model = message.get_payload_json()["set_model"]
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        user.model_preference = model
+        await db.commit()
+    await safe_vk_send(message.from_id, messages.MSG_MODEL_SET_SUCCESS)
+    limit = get_limit_for_model(model)
+    await safe_vk_send(message.from_id, messages.MSG_MODEL_SET_NEXT.format(limit=limit), keyboard=keyboards.build_reply_kb())
 
+@bot.on.message(payload_map=[("buy", str)])
+async def buy_handler(message: Message):
+    payload = message.get_payload_json()
+    price = payload["buy"]
+    amount = payload.get("amount", "0")
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        description = f"Пополнение на {amount} ⚡ для S•NOVA AI (VK)"
+        try:
+            payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
+            await safe_vk_send(message.from_id, f"Счет на {price} руб. создан. После оплаты баланс пополнится автоматически.", keyboard=keyboards.build_pay_link_kb(payment_url))
+        except Exception as e:
+            logger.error(f"Payment error: {e}")
+            await safe_vk_send(message.from_id, "Ошибка при создании счета. Попробуйте позже.")
+
+@bot.on.message(payload_map=[("action", str)])
+async def action_handler(message: Message):
+    action = message.get_payload_json()["action"]
     if action == "confirm_gen":
-        state = await bot.state_dispenser.get(event.peer_id)
+        state = await bot.state_dispenser.get(message.from_id)
         if not state or not state.payload:
-             await bot.api.messages.send(peer_id=event.peer_id, message="Ошибка: данные не найдены. Пожалуйста, пришлите фото или текст снова.", random_id=0)
+             await safe_vk_send(message.from_id, "Ошибка: данные не найдены. Пожалуйста, пришлите фото или текст снова.")
              return
         
         p = state.payload
@@ -209,98 +232,68 @@ async def handle_callback(event: MessageEvent):
         settings = p.get("settings", {})
         
         async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, event.peer_id, platform="vk")
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
             model_name = human_model_name(user.model_preference)
         
-        await bot.api.messages.send(peer_id=event.peer_id, message=clean_markdown(messages.MSG_GEN_STARTING.format(model_name=model_name)), random_id=0)
+        await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
         
         res = "1K"
         if "-4k" in user.model_preference: res = "4K"
         elif "-2k" in user.model_preference: res = "2K"
         
         asyncio.create_task(run_vk_generation(
-            vk_p_id=event.peer_id, 
+            vk_p_id=message.from_id, 
             prompt=prompt, 
             image_urls=images,
             aspect_ratio=settings.get("aspect_ratio", "1:1"),
             resolution=res,
             output_format=settings.get("output_format", "png")
         ))
-        await bot.state_dispenser.delete(event.peer_id)
+        await bot.state_dispenser.delete(message.from_id)
         
     elif action == "edit_gen":
-        await bot.state_dispenser.delete(event.peer_id)
-        await bot.api.messages.send(peer_id=event.peer_id, message=clean_markdown(messages.MSG_EDIT_GEN), random_id=0)
+        await bot.state_dispenser.delete(message.from_id)
+        await safe_vk_send(message.from_id, messages.MSG_EDIT_GEN)
         
     elif action == "settings_menu":
-        state = await bot.state_dispenser.get(event.peer_id)
+        state = await bot.state_dispenser.get(message.from_id)
         if not state or not state.payload: return
         settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
-        await bot.api.messages.edit(peer_id=event.peer_id, message_id=event.conversation_message_id, 
-                                   message=clean_markdown(messages.MSG_SETTINGS_MENU), 
-                                   keyboard=keyboards.build_settings_kb(settings),
-                                   conversation_message_id=event.conversation_message_id)
-
-    elif "buy" in payload:
-        price = payload["buy"]
-        amount = payload.get("amount", "0")
-        async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, event.peer_id, platform="vk")
-            description = f"Пополнение на {amount} ⚡ для S•NOVA AI (VK)"
-            try:
-                payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
-                await bot.api.messages.send(peer_id=event.peer_id, message=f"Счет на {price} руб. создан. После оплаты баланс пополнится автоматически.", 
-                                           keyboard=keyboards.build_pay_link_kb(payment_url), random_id=0)
-            except Exception as e:
-                logger.error(f"Payment error: {e}")
-                await bot.api.messages.send(peer_id=event.peer_id, message="Ошибка при создании счета. Попробуйте позже.", random_id=0)
+        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings))
 
     elif action == "confirm_settings":
-        state = await bot.state_dispenser.get(event.peer_id)
+        state = await bot.state_dispenser.get(message.from_id)
         if not state or not state.payload: return
         p = state.payload
-        # Resend confirmation as new message or edit? Usually resend is better for confirmation
-        await show_confirmation(event.peer_id, p["prompt"], p["images"], p.get("vk_atts"), p.get("is_refinement", False), p.get("settings"))
-
-    elif "set_setting" in payload:
-        key = payload["set_setting"]
-        value = payload["value"]
-        state = await bot.state_dispenser.get(event.peer_id)
-        if not state or not state.payload: return
-        settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
-        settings[key] = value
-        await bot.state_dispenser.set(event.peer_id, state.state, **state.payload, settings=settings)
-        await bot.api.messages.edit(peer_id=event.peer_id, message_id=event.conversation_message_id,
-                                   message=f"Выбрано: {value}", 
-                                   keyboard=keyboards.build_settings_kb(settings),
-                                   conversation_message_id=event.conversation_message_id)
-
-    elif "set_model" in payload:
-        model = payload["set_model"]
-        async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, event.peer_id, platform="vk")
-            user.model_preference = model
-            await db.commit()
-        limit = get_limit_for_model(model)
-        await bot.api.messages.send(peer_id=event.peer_id, message=clean_markdown(messages.MSG_MODEL_SET_SUCCESS), random_id=0)
-        await bot.api.messages.send(peer_id=event.peer_id, message=clean_markdown(messages.MSG_MODEL_SET_NEXT.format(limit=limit)), 
-                                   keyboard=keyboards.build_reply_kb(), random_id=0)
+        await show_confirmation(message.from_id, p["prompt"], p["images"], p.get("vk_atts"), p.get("is_refinement", False), p.get("settings"))
 
     elif action == "repeat_gen":
-        state = await bot.state_dispenser.get(event.peer_id)
+        state = await bot.state_dispenser.get(message.from_id)
         if state and state.payload:
              p = state.payload
              if p.get("last_prompt"):
-                  asyncio.create_task(run_vk_generation(event.peer_id, p["last_prompt"], p.get("last_images", [])))
+                  asyncio.create_task(run_vk_generation(message.from_id, p["last_prompt"], p.get("last_images", [])))
 
     elif action == "reset_gen":
-        await bot.state_dispenser.delete(event.peer_id)
-        # Manually trigger start
+        await bot.state_dispenser.delete(message.from_id)
         async with AsyncSessionLocal() as db:
-            user, created = await services.get_or_create_user(db, event.peer_id, platform="vk")
+            user, created = await services.get_or_create_user(db, message.from_id, platform="vk")
             limit = get_limit_for_model(user.model_preference)
             text = messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
-            await bot.api.messages.send(peer_id=event.peer_id, message=clean_markdown(text), keyboard=keyboards.build_reply_kb(), random_id=0)
+            await safe_vk_send(message.from_id, text, keyboard=keyboards.build_reply_kb())
+
+@bot.on.message(payload_map=[("set_setting", str), ("value", str)])
+async def set_setting_handler(message: Message):
+    payload = message.get_payload_json()
+    key = payload["set_setting"]
+    value = payload["value"]
+    state = await bot.state_dispenser.get(message.from_id)
+    if not state or not state.payload: return
+    settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
+    settings[key] = value
+    # Re-save state
+    await bot.state_dispenser.set(message.from_id, state.state, **state.payload, settings=settings)
+    await safe_vk_send(message.from_id, f"Выбрано: {value}", keyboard=keyboards.build_settings_kb(settings))
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
@@ -322,7 +315,7 @@ async def cmd_create_handler(message: Message):
 async def model_menu_handler(message: Message):
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2}')
+        costs_str = os.getenv("CREDITS_PER_MODEL", '{"nano-banana-2-1k": 1, "nano-banana-2-4k": 2, "nano-banana-pro-2k": 2, "nano-banana-pro-4k": 3, "gpt-image-2": 3}')
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
 
@@ -380,7 +373,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             doc_att = await doc_uploader.upload(title=f"gen_{task_id[:8]}.png", file_source=r.content, peer_id=vk_p_id)
                             
                             await safe_vk_send(vk_p_id, "🔥 Готово!", attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
-                            await safe_vk_send(vk_p_id, "💾 Оригинал (PNG/4K)", attachment=doc_att)
+                            await safe_vk_send(vk_p_id, "💾 Оригинал", attachment=doc_att)
                             
                             await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return

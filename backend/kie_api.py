@@ -20,6 +20,14 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
     url = f"{KIE_BASE_URL}/api/v1/jobs/createTask"
     # KIE API expects base model name without resolution suffixes
     api_model = model.replace("-1k", "").replace("-2k", "").replace("-4k", "")
+    
+    # Gpt Image 2 Logic: Switch between text-to-image and image-to-image
+    if "gpt-image-2" in api_model:
+        if image_urls:
+            api_model = "gpt-image-2-image-to-image"
+        else:
+            api_model = "gpt-image-2-text-to-image"
+
     payload: dict[str, Any] = {
         "model": api_model, 
         "input": {
@@ -33,8 +41,11 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         # According to official Nano Banana 2 / Pro documentation:
         # 1. Field name MUST be 'image_input' (array of strings)
         # 2. It supports up to 14 images
-        if "nano-banana" in model.lower():
+        if "nano-banana" in api_model.lower():
             payload["input"]["image_input"] = image_urls
+        elif "gpt-image-2" in api_model.lower():
+            # For Gpt Image 2, the field is 'input_urls'
+            payload["input"]["input_urls"] = image_urls
         else:
             # Fallback for legacy or other KIE models
             payload["input"]["image_url"] = image_urls[0]

@@ -56,7 +56,7 @@ def normalize_model_id(model_id: str) -> str:
     m = model_id.lower().strip()
     
     # Резолюционные варианты (внутренние ID)
-    variants = ["nano-banana-2-1k", "nano-banana-2-4k", "nano-banana-pro-2k", "nano-banana-pro-4k"]
+    variants = ["nano-banana-2-1k", "nano-banana-2-4k", "nano-banana-pro-2k", "nano-banana-pro-4k", "gpt-image-2"]
     if m in variants:
         return m
 
@@ -78,10 +78,11 @@ def get_model_limit(model_id: str) -> int:
 
 def get_available_models():
     default_models = {
-        "Nano Banana 2 (1K)": "nano-banana-2-1k",
-        "Nano Banana 2 (4K)": "nano-banana-2-4k",
-        "Nano Banana PRO (2K)": "nano-banana-pro-2k",
-        "Nano Banana PRO (4K)": "nano-banana-pro-4k"
+        "Nano Banana 2 [1K]": "nano-banana-2-1k",
+        "Nano Banana 2 [4K]": "nano-banana-2-4k",
+        "Nano Banana PRO [2K]": "nano-banana-pro-2k",
+        "Nano Banana PRO [4K]": "nano-banana-pro-4k",
+        "Gpt Image 2 [4K]": "gpt-image-2"
     }
     models_str = os.getenv("AVAILABLE_MODELS")
     if not models_str:
@@ -113,7 +114,8 @@ def get_model_cost(model_id: str) -> float:
         "nano-banana-2-1k": 1.0,
         "nano-banana-2-4k": 2.0,
         "nano-banana-pro-2k": 2.0,
-        "nano-banana-pro-4k": 3.0
+        "nano-banana-pro-4k": 3.0,
+        "gpt-image-2": 3.0
     }
     if model_id in variant_costs:
         return variant_costs[model_id]

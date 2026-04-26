@@ -71,7 +71,8 @@ def get_model_costs():
         "nano-banana-2-1k": 1,
         "nano-banana-2-4k": 2,
         "nano-banana-pro-2k": 2,
-        "nano-banana-pro-4k": 3
+        "nano-banana-pro-4k": 3,
+        "gpt-image-2": 3
     }
 
 
@@ -102,6 +103,7 @@ def build_main_kb(current_model: str):
         norm_mm = services.normalize_model_id(mm)
         cost = int(costs.get(norm_mm, 1))
         prefix = "✅ " if mm == current_model else ""
+        if norm_mm == "gpt-image-2-text-to-image": prefix += "🆕 "
         kb.button(text=f"{prefix}{name} ({cost} ⚡)", callback_data=f"set_model:{mm}")
     
     kb.adjust(1)
@@ -915,7 +917,7 @@ async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cos
                         await bot.send_photo(tg_user_id, photo=photo_data, caption=caption, reply_markup=build_after_gen_kb(), parse_mode="Markdown")
                         photo_sent = True
                     
-                    await bot.send_document(tg_user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), caption="💾 Оригинал (PNG/4K)")
+                    await bot.send_document(tg_user_id, document=URLInputFile(info["image_url"], filename=f"gen_{kie_task_id[:8]}.png"), caption="💾 Оригинал")
                 except Exception as e:
                     logger.warning(f"Delivery failed: {e}")
                     if not photo_sent:
