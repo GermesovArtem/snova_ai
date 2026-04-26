@@ -103,7 +103,7 @@ def build_main_kb(current_model: str):
         norm_mm = services.normalize_model_id(mm)
         cost = int(costs.get(norm_mm, 1))
         prefix = "✅ " if mm == current_model else ""
-        if norm_mm == "gpt-image-2-text-to-image": prefix += "🆕 "
+        if norm_mm == "gpt-image-2": prefix += "🆕 "
         kb.button(text=f"{prefix}{name} ({cost} ⚡)", callback_data=f"set_model:{mm}")
     
     kb.adjust(1)

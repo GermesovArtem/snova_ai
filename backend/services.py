@@ -82,7 +82,7 @@ def get_available_models():
         "Nano Banana 2 [4K]": "nano-banana-2-4k",
         "Nano Banana PRO [2K]": "nano-banana-pro-2k",
         "Nano Banana PRO [4K]": "nano-banana-pro-4k",
-        "Gpt Image 2 [4K]": "gpt-image-2"
+        "GPT Image 2 (4K)": "gpt-image-2"
     }
     models_str = os.getenv("AVAILABLE_MODELS")
     if not models_str:

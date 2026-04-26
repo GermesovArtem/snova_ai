@@ -17,7 +17,7 @@ def build_model_menu_kb(models, current_model, costs):
     for i, (name, mm) in enumerate(items):
         cost = int(costs.get(mm, 1))
         prefix = "✅ " if mm == current_model else ""
-        if mm == "gpt-image-2-text-to-image": prefix += "🆕 "
+        if mm == "gpt-image-2": prefix += "🆕 "
         button_text = f"{prefix}{name} ({cost} ⚡)"
         kb.add(Text(button_text, payload={"set_model": mm}))
         kb.row()
