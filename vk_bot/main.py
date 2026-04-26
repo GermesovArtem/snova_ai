@@ -258,8 +258,20 @@ async def action_handler(message: Message):
     elif action == "settings_menu":
         state = await bot.state_dispenser.get(message.from_id)
         if not state or not state.payload: return
-        settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
-        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings))
+        
+        async with AsyncSessionLocal() as db:
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+            model_id = user.model_preference
+
+        p = state.payload
+        settings = p.get("settings")
+        if not settings:
+            ratio = "16:9" if "gpt-image-2" in model_id.lower() else "1:1"
+            settings = {"aspect_ratio": ratio, "output_format": "png" if "pro" in model_id else "jpg"}
+            p["settings"] = settings
+            await bot.state_dispenser.set(message.from_id, state.state, **p)
+
+        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings, model_id))
 
     elif action == "confirm_settings":
         state = await bot.state_dispenser.get(message.from_id)
@@ -293,7 +305,12 @@ async def set_setting_handler(message: Message):
     settings[key] = value
     # Re-save state
     await bot.state_dispenser.set(message.from_id, state.state, **state.payload, settings=settings)
-    await safe_vk_send(message.from_id, f"Выбрано: {value}", keyboard=keyboards.build_settings_kb(settings))
+    
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        model_id = user.model_preference
+
+    await safe_vk_send(message.from_id, f"Выбрано: {value}", keyboard=keyboards.build_settings_kb(settings, model_id))
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):

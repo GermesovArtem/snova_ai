@@ -147,9 +147,13 @@ def build_settings_kb(model_id: str, settings: dict):
     kb = InlineKeyboardBuilder()
     
     # 1. Aspect Ratio
-    cur_ratio = settings.get("aspect_ratio", "1:1")
-    ratios = ["1:1", "16:9", "9:16", "3:4", "4:3", "21:9"]
-    if "nano-banana-2" in model_id: ratios.insert(0, "auto")
+    if "gpt-image-2" in model_id.lower():
+        cur_ratio = settings.get("aspect_ratio", "16:9")
+        ratios = ["16:9", "9:16", "3:4", "4:3", "21:9"]
+    else:
+        cur_ratio = settings.get("aspect_ratio", "1:1")
+        ratios = ["1:1", "16:9", "9:16", "3:4", "4:3", "21:9"]
+        if "nano-banana-2" in model_id: ratios.insert(0, "auto")
     
     kb.button(text="📐 Размер:", callback_data="noop")
     for r in ratios:

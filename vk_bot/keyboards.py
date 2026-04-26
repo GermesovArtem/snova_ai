@@ -41,12 +41,19 @@ def build_confirm_kb():
         .get_json()
     )
 
-def build_settings_kb(current_settings):
+def build_settings_kb(current_settings, model_id=""):
     kb = Keyboard(inline=True)
     
     # Aspect Ratios
-    ratios = ["1:1", "16:9", "9:16", "3:4", "4:3"]
-    cur_ratio = current_settings.get("aspect_ratio", "1:1")
+    if "gpt-image-2" in str(model_id).lower():
+        ratios = ["16:9", "9:16", "3:4", "4:3", "21:9"]
+        default_ratio = "16:9"
+    else:
+        ratios = ["1:1", "16:9", "9:16", "3:4", "4:3", "21:9"]
+        if "nano-banana-2" in str(model_id): ratios.insert(0, "auto")
+        default_ratio = "1:1"
+        
+    cur_ratio = current_settings.get("aspect_ratio", default_ratio)
     
     for i, r in enumerate(ratios):
         prefix = "🔘 " if r == cur_ratio else ""
