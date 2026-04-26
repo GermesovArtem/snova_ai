@@ -238,7 +238,7 @@ async def action_handler(message: Message):
         await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
         
         res = "1K"
-        if "-4k" in user.model_preference: res = "4K"
+        if "-4k" in user.model_preference.lower() or "gpt-image-2" in user.model_preference.lower(): res = "4K"
         elif "-2k" in user.model_preference: res = "2K"
         
         asyncio.create_task(run_vk_generation(

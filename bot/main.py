@@ -604,8 +604,9 @@ async def process_confirm_gen(callback: CallbackQuery, state: FSMContext):
     # Resolve resolution from variant
     ratio = settings.get("aspect_ratio", "1:1")
     fmt = settings.get("output_format", "png")
+    model_id = user.model_preference
     res = "1K"
-    if "-4k" in user.model_preference: res = "4K"
+    if "-4k" in model_id.lower() or "gpt-image-2" in model_id.lower(): res = "4K"
     elif "-2k" in user.model_preference: res = "2K"
 
     await start_generation_wrapper(
@@ -769,7 +770,7 @@ async def start_generation_wrapper(user_id: int, prompt: str, image_urls: list =
         user, _ = await services.get_or_create_user(db, user_id)
         
         # Determine actual resolution from model variant if not explicitly passed (e.g. from Repeat)
-        if "-4k" in user.model_preference: resolution = "4K"
+        if "-4k" in user.model_preference or "gpt-image-2" in user.model_preference: resolution = "4K"
         elif "-2k" in user.model_preference: resolution = "2K"
         elif "-1k" in user.model_preference: resolution = "1K"
 

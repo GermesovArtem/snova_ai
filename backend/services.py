@@ -88,7 +88,11 @@ def get_available_models():
     if not models_str:
         return default_models
     try:
-        return json.loads(models_str)
+        models = json.loads(models_str)
+        # Force add GPT Image 2 if it's missing (helps when .env is outdated)
+        if "gpt-image-2" not in models.values():
+            models["GPT Image 2 (4K)"] = "gpt-image-2"
+        return models
     except:
         return default_models
 
