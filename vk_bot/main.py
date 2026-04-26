@@ -139,6 +139,38 @@ async def start_handler(message: Message):
         text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_reply_kb())
 
+async def show_confirmation(vk_p_id: int, prompt: str, image_urls: list, vk_attachment_strs: list = None, is_refinement: bool = False, settings: dict = None):
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, vk_p_id, platform="vk")
+        model_id = user.model_preference
+        cost = services.get_model_cost(model_id)
+        balance = user.balance
+        human_name = human_model_name(model_id)
+
+    settings = settings or {"aspect_ratio": "1:1", "output_format": "png"}
+    ratio = settings.get("aspect_ratio", "1:1")
+    fmt = settings.get("output_format", "png")
+
+    header = messages.MSG_CONFIRM_HEADER_REFINE if is_refinement else messages.MSG_CONFIRM_HEADER_NEW
+    img_count_text = f"📸 Фото: {len(image_urls)} шт.\n" if len(image_urls) > 0 else ""
+    
+    text = messages.MSG_CONFIRMATION.format(
+        header=header,
+        safe_prompt=prompt[:150] + ("..." if len(prompt) > 150 else ""),
+        img_count_text=img_count_text,
+        human_name=human_name,
+        ratio=ratio,
+        fmt=fmt.upper(),
+        cost=int(cost),
+        balance=int(balance)
+    )
+
+    # Save to state
+    await bot.state_dispenser.set(vk_p_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, vk_atts=vk_attachment_strs, cost=cost, settings=settings, is_refinement=is_refinement)
+    
+    attachment = ",".join(vk_attachment_strs) if vk_attachment_strs else None
+    await safe_vk_send(vk_p_id, clean_markdown(text), attachment=attachment, keyboard=keyboards.build_confirm_kb())
+
 async def balance_handler(message: Message):
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
@@ -188,13 +220,27 @@ async def action_handler(message: Message):
         p = state.payload
         prompt = p.get("prompt")
         images = p.get("images", [])
+        settings = p.get("settings", {})
         
         async with AsyncSessionLocal() as db:
             user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
             model_name = human_model_name(user.model_preference)
         
         await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
-        asyncio.create_task(run_vk_generation(message.from_id, prompt, images))
+        
+        # Determine resolution from model
+        res = "1K"
+        if "-4k" in user.model_preference: res = "4K"
+        elif "-2k" in user.model_preference: res = "2K"
+        
+        asyncio.create_task(run_vk_generation(
+            vk_p_id=message.from_id, 
+            prompt=prompt, 
+            image_urls=images,
+            aspect_ratio=settings.get("aspect_ratio", "1:1"),
+            resolution=res,
+            output_format=settings.get("output_format", "png")
+        ))
         await bot.state_dispenser.delete(message.from_id)
         
     elif action == "edit_gen":
@@ -209,6 +255,28 @@ async def action_handler(message: Message):
     elif action == "reset_gen":
         await bot.state_dispenser.delete(message.from_id)
         await start_handler(message)
+    elif action == "settings_menu":
+        state = message.state_peer
+        if not state or not state.payload: return
+        settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
+        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings))
+    elif action == "confirm_settings":
+        state = message.state_peer
+        if not state or not state.payload: return
+        p = state.payload
+        await show_confirmation(message.from_id, p["prompt"], p["images"], p.get("vk_atts"), p.get("is_refinement", False), p.get("settings"))
+
+@bot.on.message(payload_map=[("set_setting", str), ("value", str)])
+async def set_setting_handler(message: Message):
+    payload = message.get_payload_json()
+    key = payload["set_setting"]
+    value = payload["value"]
+    state = message.state_peer
+    if not state or not state.payload: return
+    settings = state.payload.get("settings", {"aspect_ratio": "1:1", "output_format": "png"})
+    settings[key] = value
+    await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, **state.payload, settings=settings)
+    await safe_vk_send(message.from_id, f"Выбрано: {value}", keyboard=keyboards.build_settings_kb(settings))
 
 @bot.on.message(payload_map=[("cmd", str)])
 async def menu_cmd_handler(message: Message):
@@ -258,10 +326,9 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         cost = services.get_model_cost(user.model_preference)
-    await bot.state_dispenser.set(message.from_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, cost=cost)
-    await safe_vk_send(message.from_id, f"Задание получено. Стоимость: {cost} кр.", keyboard=keyboards.build_confirm_kb())
+    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs)
 
-async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
+async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png"):
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
@@ -269,7 +336,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list):
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
         try:
-            task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost)
+            task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost, aspect_ratio=aspect_ratio, resolution=resolution, output_format=output_format)
             for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
