@@ -527,7 +527,7 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     img_count_text = f"📸 Фото: **{len(image_urls)} шт.**\n" if len(image_urls) > 1 else ""
     header = "🔄 **Доработка результата**" if is_refinement else "✨ **Ваш промпт почти готов!**"
     
-    safe_prompt = prompt_str[:200] + ("..." if len(prompt_str) > 200 else "")
+    safe_prompt = prompt_str
     
     settings = data.get("gen_settings", {})
     # Setup defaults for display

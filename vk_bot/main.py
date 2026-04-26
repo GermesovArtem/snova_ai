@@ -165,7 +165,7 @@ async def show_confirmation(vk_p_id: int, prompt: str, image_urls: list, vk_atta
     
     text = messages.MSG_CONFIRMATION.format(
         header=header,
-        safe_prompt=prompt[:150] + ("..." if len(prompt) > 150 else ""),
+        safe_prompt=prompt,
         img_count_text=img_count_text,
         human_name=human_name,
         ratio=ratio,
