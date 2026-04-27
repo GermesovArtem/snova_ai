@@ -30,10 +30,12 @@ bot = Bot(token=VK_TOKEN)
 
 # --- STATES ---
 class BotState(BaseStateGroup):
-    IDLE = 0
-    CONFIRM_GEN = 1
-    WAIT_PROMPT = 2
-    POST_GEN = 3
+    IDLE = "idle"
+    CONFIRM_GEN = "confirm_gen"
+    WAIT_PROMPT = "wait_prompt"
+    POST_GEN = "post_gen"
+
+# ... (Middleware and other code remains same)
 
 # --- MEGA DIAGNOSTIC MIDDLEWARE ---
 class DiagnosticMiddleware(BaseMiddleware[Message]):
@@ -337,6 +339,35 @@ async def action_handler(message: Message):
             output_format=settings.get("output_format", "png"),
             is_refinement=is_refinement
         ))
+        await bot.state_dispenser.delete(message.from_id)
+
+    elif action == "edit_gen":
+        await bot.state_dispenser.delete(message.from_id)
+        await safe_vk_send(message.from_id, messages.MSG_EDIT_GEN)
+        
+    elif action == "settings_menu":
+        state = await bot.state_dispenser.get(message.from_id)
+        if not state or not state.payload: return
+        
+        async with AsyncSessionLocal() as db:
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+            model_id = user.model_preference
+
+        p = state.payload
+        settings = p.get("settings")
+        if not settings:
+            ratio = "16:9" if "gpt-image-2" in model_id.lower() else "1:1"
+            settings = {"aspect_ratio": ratio, "output_format": "png" if "pro" in model_id else "jpg"}
+            p["settings"] = settings
+            await bot.state_dispenser.set(message.from_id, state.state, **p)
+
+        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings, model_id))
+
+    elif action == "confirm_settings":
+        state = await bot.state_dispenser.get(message.from_id)
+        if not state or not state.payload: return
+        p = state.payload
+        await show_confirmation(message.from_id, p["prompt"], p["images"], p.get("vk_atts"), p.get("is_refinement", False), p.get("settings"))
 
     elif action == "refine_gen":
         state = await bot.state_dispenser.get(message.from_id)
