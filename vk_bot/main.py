@@ -372,8 +372,23 @@ async def action_handler(message: Message):
         prompt = p.get("last_prompt")
         images = p.get("last_images", [])
         if not prompt: return
-        await safe_vk_send(message.from_id, "🔄 Повторяем генерацию! Проверьте настройки:")
-        await show_confirmation(message.from_id, prompt, images)
+        
+        async with AsyncSessionLocal() as db:
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+            model_name = human_model_name(user.model_preference)
+        
+        await safe_vk_send(message.from_id, f"🔄 Повторяем генерацию ({model_name})...")
+        
+        res = "1K"
+        if "-4k" in user.model_preference.lower() or "gpt-image-2" in user.model_preference.lower(): res = "4K"
+        elif "-2k" in user.model_preference: res = "2K"
+        
+        asyncio.create_task(run_vk_generation(
+            vk_p_id=message.from_id, 
+            prompt=prompt, 
+            image_urls=images,
+            resolution=res
+        ))
 
     elif action == "check_sub":
         group_id = "233112492"
