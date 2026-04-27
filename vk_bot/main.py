@@ -110,59 +110,27 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
-    # Detect format from magic bytes
+    # Detect format from magic bytes for the filename
     filename = "photo.png"
-    mime = "image/png"
     if image_bytes.startswith(b"\xff\xd8\xff"):
         filename = "photo.jpg"
-        mime = "image/jpeg"
     elif image_bytes.startswith(b"RIFF") and b"WEBP" in image_bytes[:12]:
         filename = "photo.webp"
-        mime = "image/webp"
 
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.199"})
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            raise Exception(f"Failed to get VK Upload Server: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
-            
-        if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
-        upload_url = data["response"]["upload_url"]
-        
-        # Try as PNG first, most stable for KIE results
-        files = {"photo": (filename, image_bytes, mime)}
-        try:
-            resp = await client.post(upload_url, files=files)
-            resp.raise_for_status()
-            upload_data = resp.json()
-        except Exception as e:
-            raise Exception(f"Failed to upload to VK server: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
-        
-        if not upload_data or not upload_data.get("photo"):
-             raise Exception(f"Upload failed: server returned empty photo data. Raw: {upload_data}")
-
-        try:
-            resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
-                "photo": upload_data["photo"], 
-                "server": upload_data["server"], 
-                "hash": upload_data["hash"], 
-                "access_token": VK_TOKEN, 
-                "v": "5.199"
-            })
-            resp.raise_for_status()
-            photo_resp = resp.json()
-        except Exception as e:
-            raise Exception(f"Failed to save VK photo: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
-        if "error" in photo_resp: 
-             raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
-        
-        if "response" not in photo_resp or not photo_resp["response"]:
-             raise Exception(f"SavePhoto Error: Empty response from VK. Raw: {photo_resp}")
-
-        photo = photo_resp["response"][0]
-        return f"photo{photo['owner_id']}_{photo['id']}"
+    from io import BytesIO
+    photo_uploader = PhotoMessageUploader(bot.api)
+    try:
+        # Use vkbottle's uploader but with explicit filename to help it detect MIME
+        photo_att = await photo_uploader.upload(
+            file_source=BytesIO(image_bytes), 
+            peer_id=peer_id,
+            file_name=filename
+        )
+        return photo_att
+    except Exception as e:
+        # Fallback/Detail logging
+        print(f"VKBottle upload failed: {e}")
+        raise e
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
     message = clean_markdown(message)
