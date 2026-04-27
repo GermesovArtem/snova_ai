@@ -221,83 +221,6 @@ async def buy_handler(message: Message):
             logger.error(f"Payment error: {e}")
             await safe_vk_send(message.from_id, "Ошибка при создании счета. Попробуйте позже.")
 
-@bot.on.message(payload_map=[("action", str)])
-async def action_handler(message: Message):
-    action = message.get_payload_json()["action"]
-    if action == "confirm_gen":
-        state = await bot.state_dispenser.get(message.from_id)
-        if not state or not state.payload:
-             await safe_vk_send(message.from_id, "Ошибка: данные не найдены. Пожалуйста, пришлите фото или текст снова.")
-             return
-        
-        p = state.payload
-        prompt = p.get("prompt")
-        images = p.get("images", [])
-        settings = p.get("settings", {})
-        
-        async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-            model_name = human_model_name(user.model_preference)
-        
-        await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
-        
-        res = "1K"
-        if "-4k" in user.model_preference.lower() or "gpt-image-2" in user.model_preference.lower(): res = "4K"
-        elif "-2k" in user.model_preference: res = "2K"
-        
-        asyncio.create_task(run_vk_generation(
-            vk_p_id=message.from_id, 
-            prompt=prompt, 
-            image_urls=images,
-            aspect_ratio=settings.get("aspect_ratio", "1:1"),
-            resolution=res,
-            output_format=settings.get("output_format", "png")
-        ))
-        await bot.state_dispenser.delete(message.from_id)
-        
-    elif action == "edit_gen":
-        await bot.state_dispenser.delete(message.from_id)
-        await safe_vk_send(message.from_id, messages.MSG_EDIT_GEN)
-        
-    elif action == "settings_menu":
-        state = await bot.state_dispenser.get(message.from_id)
-        if not state or not state.payload: return
-        
-        async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-            model_id = user.model_preference
-
-        p = state.payload
-        settings = p.get("settings")
-        if not settings:
-            ratio = "16:9" if "gpt-image-2" in model_id.lower() else "1:1"
-            settings = {"aspect_ratio": ratio, "output_format": "png" if "pro" in model_id else "jpg"}
-            p["settings"] = settings
-            await bot.state_dispenser.set(message.from_id, state.state, **p)
-
-        await safe_vk_send(message.from_id, messages.MSG_SETTINGS_MENU, keyboard=keyboards.build_settings_kb(settings, model_id))
-
-    elif action == "confirm_settings":
-        state = await bot.state_dispenser.get(message.from_id)
-        if not state or not state.payload: return
-        p = state.payload
-        await show_confirmation(message.from_id, p["prompt"], p["images"], p.get("vk_atts"), p.get("is_refinement", False), p.get("settings"))
-
-    elif action == "repeat_gen":
-        state = await bot.state_dispenser.get(message.from_id)
-        if state and state.payload:
-             p = state.payload
-             if p.get("last_prompt"):
-                  asyncio.create_task(run_vk_generation(message.from_id, p["last_prompt"], p.get("last_images", [])))
-
-    elif action == "reset_gen":
-        await bot.state_dispenser.delete(message.from_id)
-        async with AsyncSessionLocal() as db:
-            user, created = await services.get_or_create_user(db, message.from_id, platform="vk")
-            limit = get_limit_for_model(user.model_preference)
-            text = messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
-            await safe_vk_send(message.from_id, text, keyboard=keyboards.build_reply_kb())
-
 @bot.on.message(payload_map=[("set_setting", str), ("value", str)])
 async def set_setting_handler(message: Message):
     payload = message.get_payload_json()
@@ -431,6 +354,7 @@ async def action_handler(message: Message):
         prompt = p.get("last_prompt")
         images = p.get("last_images", [])
         if not prompt: return
+        await safe_vk_send(message.from_id, "🔄 Повторяем генерацию! Проверьте настройки:")
         await show_confirmation(message.from_id, prompt, images)
 
     elif action == "check_sub":
