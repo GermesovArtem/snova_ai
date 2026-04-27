@@ -110,14 +110,23 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
+    # Detect format from magic bytes
+    filename = "photo.png"
+    mime = "image/png"
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        filename = "photo.jpg"
+        mime = "image/jpeg"
+    elif image_bytes.startswith(b"RIFF") and b"WEBP" in image_bytes[:12]:
+        filename = "photo.webp"
+        mime = "image/webp"
+
     async with httpx.AsyncClient() as client:
         resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.199"})
         data = resp.json()
         if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
         upload_url = data["response"]["upload_url"]
         
-        # Try as PNG first, most stable for KIE results
-        files = {"photo": ("photo.png", image_bytes, "image/png")}
+        files = {"photo": (filename, image_bytes, mime)}
         resp = await client.post(upload_url, files=files)
         upload_data = resp.json()
         
