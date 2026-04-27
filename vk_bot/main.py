@@ -115,12 +115,29 @@ async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
         data = resp.json()
         if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
         upload_url = data["response"]["upload_url"]
-        files = {"photo": ("photo.jpg", image_bytes, "image/jpeg")}
+        
+        # Try as PNG first, most stable for KIE results
+        files = {"photo": ("photo.png", image_bytes, "image/png")}
         resp = await client.post(upload_url, files=files)
         upload_data = resp.json()
-        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={"photo": upload_data["photo"], "server": upload_data["server"], "hash": upload_data["hash"], "access_token": VK_TOKEN, "v": "5.199"})
+        
+        if not upload_data or not upload_data.get("photo"):
+             raise Exception(f"Upload failed: server returned empty photo data. Raw: {upload_data}")
+
+        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
+            "photo": upload_data["photo"], 
+            "server": upload_data["server"], 
+            "hash": upload_data["hash"], 
+            "access_token": VK_TOKEN, 
+            "v": "5.199"
+        })
         photo_resp = resp.json()
-        if "error" in photo_resp: raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
+        if "error" in photo_resp: 
+             raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
+        
+        if "response" not in photo_resp or not photo_resp["response"]:
+             raise Exception(f"SavePhoto Error: Empty response from VK. Raw: {photo_resp}")
+
         photo = photo_resp["response"][0]
         return f"photo{photo['owner_id']}_{photo['id']}"
 
