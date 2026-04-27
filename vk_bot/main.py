@@ -470,7 +470,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
         try:
             task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost, aspect_ratio=aspect_ratio, resolution=resolution, output_format=output_format, is_refinement=is_refinement)
-            for i in range(150):
+            for i in range(240): # 240 * 5s = 1200s (20 mins)
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)
                 if info.get("state") in ["success", "completed"]:
