@@ -163,9 +163,10 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
             if "error" in res_json: print(f"VK API ERROR LOG: {res_json['error']}")
         except Exception as e: print(f"VK SEND EXCEPTION: {e}")
 
-@bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start"] or (msg.get_payload_json() or {}).get("command") == "start")
+@bot.on.message(func=lambda msg: (msg.text or "").strip().lower() in ["начать", "начни", "старт", "/start", "start"] or (msg.get_payload_json() or {}).get("command") in ["start", "begin"])
 async def start_handler(message: Message):
-    print(f"START_HANDLER EXECUTING FOR {message.from_id}")
+    # Log to console to verify the trigger
+    print(f"\n[START_HANDLER] Triggered for user {message.from_id} | Text: '{message.text}' | Payload: '{message.payload}'")
     async with AsyncSessionLocal() as db:
         real_name = await get_vk_user_name(message.from_id)
         user, created = await services.get_or_create_user(db, platform_id=message.from_id, name=real_name or f"VK_{message.from_id}", platform="vk")
