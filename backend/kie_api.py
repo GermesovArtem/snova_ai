@@ -21,6 +21,15 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
     # KIE API expects base model name without resolution suffixes
     api_model = model.replace("-1k", "").replace("-2k", "").replace("-4k", "")
     
+    # Gpt Image 2 Logic: Use specific sub-models for text/image tasks
+    if "gpt-image-2" in api_model:
+        if image_urls:
+            api_model = "gpt-image-2-image-to-image"
+        else:
+            api_model = "gpt-image-2-text-to-image"
+        # Resolution MUST be 4K for these models according to user
+        resolution = "4K"
+
     # GPT Image 2 4K Constraint: must NOT be 1:1 or auto. Force 16:9 if needed.
     effective_ratio = aspect_ratio
     if "gpt-image-2" in api_model and resolution == "4K":
