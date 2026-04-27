@@ -362,8 +362,17 @@ async def action_handler(message: Message):
             await safe_vk_send(message.from_id, "Ошибка: результат не найден.")
             return
         last_url = state.payload["last_url"]
-        await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=[last_url], is_refinement=True)
-        await safe_vk_send(message.from_id, "Бот запомнил это фото. Напишите, что нужно изменить? 👇")
+        
+        # Download and upload to VK to show it
+        vk_id = None
+        try:
+            async with httpx.AsyncClient() as client:
+                 r = await client.get(last_url, timeout=30)
+                 vk_id = await vk_upload_photo(r.content, message.from_id)
+        except: pass
+
+        await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=[last_url], vk_atts=[vk_id] if vk_id else [], is_refinement=True)
+        await safe_vk_send(message.from_id, "Бот запомнил это фото. Напишите, что нужно изменить? 👇", attachment=vk_id)
 
     elif action == "repeat_gen":
         state = await bot.state_dispenser.get(message.from_id)
@@ -373,22 +382,17 @@ async def action_handler(message: Message):
         images = p.get("last_images", [])
         if not prompt: return
         
-        async with AsyncSessionLocal() as db:
-            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-            model_name = human_model_name(user.model_preference)
-        
-        await safe_vk_send(message.from_id, f"🔄 Повторяем генерацию ({model_name})...")
-        
-        res = "1K"
-        if "-4k" in user.model_preference.lower() or "gpt-image-2" in user.model_preference.lower(): res = "4K"
-        elif "-2k" in user.model_preference: res = "2K"
-        
-        asyncio.create_task(run_vk_generation(
-            vk_p_id=message.from_id, 
-            prompt=prompt, 
-            image_urls=images,
-            resolution=res
-        ))
+        vk_atts = []
+        if images:
+             try:
+                 async with httpx.AsyncClient() as client:
+                      r = await client.get(images[0], timeout=30)
+                      vk_id = await vk_upload_photo(r.content, message.from_id)
+                      vk_atts = [vk_id]
+             except: pass
+
+        await safe_vk_send(message.from_id, "🔄 Повторяем генерацию! Проверьте настройки:")
+        await show_confirmation(message.from_id, prompt, images, vk_attachment_strs=vk_atts)
 
     elif action == "check_sub":
         group_id = "233112492"
