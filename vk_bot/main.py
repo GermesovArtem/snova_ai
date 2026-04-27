@@ -446,13 +446,16 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             raise Exception(f"Ошибка при скачивании результата: {download_err}")
 
                         try:
-                            # 1. Upload Preview Photo
-                            photo_uploader = PhotoMessageUploader(bot.api)
-                            photo_att = await photo_uploader.upload(file_source=r.content, peer_id=vk_p_id)
+                            # 1. Upload Preview Photo (using manual method for better error catching)
+                            photo_att = await vk_upload_photo(r.content, vk_p_id)
                             
                             # 2. Upload Document (High Quality)
                             doc_uploader = DocMessagesUploader(bot.api)
-                            doc_att = await doc_uploader.upload(title=f"gen_{task_id[:8]}.png", file_source=r.content, peer_id=vk_p_id)
+                            doc_att = await doc_uploader.upload(
+                                title=f"gen_{task_id[:8]}.png", 
+                                file_source=r.content, 
+                                peer_id=vk_p_id
+                            )
                             
                             await safe_vk_send(vk_p_id, "🔥 Готово!", attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
                             await safe_vk_send(vk_p_id, "💾 Оригинал", attachment=doc_att)
