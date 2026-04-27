@@ -42,6 +42,7 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         # 2. It supports up to 14 images
         if "nano-banana" in api_model.lower():
             payload["input"]["image_input"] = image_urls
+            payload["input"]["image_urls"] = image_urls # Added for google/nano-banana-edit
         elif "gpt-image-2" in api_model.lower():
             # For Gpt Image 2, the field is 'input_urls'
             payload["input"]["input_urls"] = image_urls
