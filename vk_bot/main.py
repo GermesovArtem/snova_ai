@@ -121,26 +121,40 @@ async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
         mime = "image/webp"
 
     async with httpx.AsyncClient() as client:
-        resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.199"})
-        data = resp.json()
+        try:
+            resp = await client.post("https://api.vk.com/method/photos.getMessagesUploadServer", data={"peer_id": str(peer_id), "access_token": VK_TOKEN, "v": "5.199"})
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            raise Exception(f"Failed to get VK Upload Server: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
+            
         if "error" in data: raise Exception(f"UploadServer Error: {data['error']['error_msg']}")
         upload_url = data["response"]["upload_url"]
         
+        # Try as PNG first, most stable for KIE results
         files = {"photo": (filename, image_bytes, mime)}
-        resp = await client.post(upload_url, files=files)
-        upload_data = resp.json()
+        try:
+            resp = await client.post(upload_url, files=files)
+            resp.raise_for_status()
+            upload_data = resp.json()
+        except Exception as e:
+            raise Exception(f"Failed to upload to VK server: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
         
         if not upload_data or not upload_data.get("photo"):
              raise Exception(f"Upload failed: server returned empty photo data. Raw: {upload_data}")
 
-        resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
-            "photo": upload_data["photo"], 
-            "server": upload_data["server"], 
-            "hash": upload_data["hash"], 
-            "access_token": VK_TOKEN, 
-            "v": "5.199"
-        })
-        photo_resp = resp.json()
+        try:
+            resp = await client.post("https://api.vk.com/method/photos.saveMessagesPhoto", data={
+                "photo": upload_data["photo"], 
+                "server": upload_data["server"], 
+                "hash": upload_data["hash"], 
+                "access_token": VK_TOKEN, 
+                "v": "5.199"
+            })
+            resp.raise_for_status()
+            photo_resp = resp.json()
+        except Exception as e:
+            raise Exception(f"Failed to save VK photo: {e}. Raw response: {getattr(resp, 'text', 'N/A')[:200]}")
         if "error" in photo_resp: 
              raise Exception(f"SavePhoto Error: {photo_resp['error']['error_msg']}")
         
