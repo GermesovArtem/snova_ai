@@ -76,8 +76,18 @@ def build_after_gen_kb():
     return (
         Keyboard(inline=True)
         .add(Text("🔄 Повторить", payload={"action": "repeat_gen"}), color=KeyboardButtonColor.PRIMARY)
+        .add(Text("✏️ Редактировать", payload={"action": "refine_gen"}), color=KeyboardButtonColor.PRIMARY)
         .row()
         .add(Text("🗑 Начать заново", payload={"action": "reset_gen"}), color=KeyboardButtonColor.SECONDARY)
+        .get_json()
+    )
+
+def build_sub_check_kb():
+    return (
+        Keyboard(inline=True)
+        .add(OpenLink("https://vk.com/public233112492", "✨ Подписаться на сообщество"))
+        .row()
+        .add(Text("✅ Я подписался!", payload={"action": "check_sub"}), color=KeyboardButtonColor.POSITIVE)
         .get_json()
     )
 

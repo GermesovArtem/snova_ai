@@ -144,9 +144,13 @@ async def start_handler(message: Message):
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
-        limit = get_limit_for_model(user.model_preference)
-        text = messages.MSG_START_NEW.format(balance=int(user.balance), limit=limit) if created else messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
-    await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_reply_kb())
+        if created:
+            text = messages.MSG_START_NEW_VK.format(balance=int(user.balance))
+            kb = keyboards.build_sub_check_kb()
+        else:
+            text = messages.MSG_START_REGULAR.format(name=user.name or "", balance=int(user.balance))
+            kb = keyboards.build_reply_kb()
+    await safe_vk_send(message.from_id, clean_markdown(text), keyboard=kb)
 
 async def show_confirmation(vk_p_id: int, prompt: str, image_urls: list, vk_attachment_strs: list = None, is_refinement: bool = False, settings: dict = None):
     async with AsyncSessionLocal() as db:
@@ -337,10 +341,21 @@ async def model_menu_handler(message: Message):
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
 
 @bot.on.message()
-async def generic_handler(message: Message, existing_images=None, existing_vk_atts=None):
-    if not message.text and not message.attachments and not existing_images: return
+async def generic_handler(message: Message):
+    if not message.text and not message.attachments: return
     if message.get_payload_json(): return
-    image_urls, vk_attachment_strs = existing_images or [], existing_vk_atts or []
+    
+    # Check current state for existing images/context
+    state = await bot.state_dispenser.get(message.from_id)
+    image_urls, vk_attachment_strs = [], []
+    is_refinement = False
+    
+    if state and state.state == BotState.WAIT_PROMPT:
+        image_urls = state.payload.get("images", [])
+        vk_attachment_strs = state.payload.get("vk_atts", [])
+        is_refinement = state.payload.get("is_refinement", False)
+    
+    # Extract attachments from current message
     if message.attachments:
         for att in message.attachments:
             url, vk_id = None, ""
@@ -351,18 +366,102 @@ async def generic_handler(message: Message, existing_images=None, existing_vk_at
                  url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                  if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
             if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
+    
     prompt = (message.text or "").strip()
+    
+    # If only images sent, wait for prompt
     if image_urls and not prompt:
-         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs)
-         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs))
+         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
+         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs) if vk_attachment_strs else None)
          return
-    if not prompt and not image_urls: return
-    async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
-        cost = services.get_model_cost(user.model_preference)
-    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs)
 
-async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png"):
+    if not prompt and not image_urls: return
+    
+    # We have both prompt and (optionally) images (either new or from state)
+    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
+
+@bot.on.message(payload_map=[("action", str)])
+async def action_handler(message: Message):
+    action = message.get_payload_json()["action"]
+    if action == "confirm_gen":
+        state = await bot.state_dispenser.get(message.from_id)
+        if not state or not state.payload:
+             await safe_vk_send(message.from_id, "Ошибка: данные не найдены. Пожалуйста, пришлите фото или текст снова.")
+             return
+        
+        p = state.payload
+        prompt = p.get("prompt")
+        images = p.get("images", [])
+        settings = p.get("settings", {})
+        is_refinement = p.get("is_refinement", False)
+        
+        async with AsyncSessionLocal() as db:
+            user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+            model_name = human_model_name(user.model_preference)
+        
+        await safe_vk_send(message.from_id, messages.MSG_GEN_STARTING.format(model_name=model_name))
+        
+        res = "1K"
+        if "-4k" in user.model_preference.lower() or "gpt-image-2" in user.model_preference.lower(): res = "4K"
+        elif "-2k" in user.model_preference: res = "2K"
+        
+        asyncio.create_task(run_vk_generation(
+            vk_p_id=message.from_id, 
+            prompt=prompt, 
+            image_urls=images,
+            aspect_ratio=settings.get("aspect_ratio", "1:1"),
+            resolution=res,
+            output_format=settings.get("output_format", "png"),
+            is_refinement=is_refinement
+        ))
+
+    elif action == "refine_gen":
+        state = await bot.state_dispenser.get(message.from_id)
+        if not state or not state.payload or "last_url" not in state.payload:
+            await safe_vk_send(message.from_id, "Ошибка: результат не найден.")
+            return
+        last_url = state.payload["last_url"]
+        await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=[last_url], is_refinement=True)
+        await safe_vk_send(message.from_id, "Бот запомнил это фото. Напишите, что нужно изменить? 👇")
+
+    elif action == "repeat_gen":
+        state = await bot.state_dispenser.get(message.from_id)
+        if not state or not state.payload: return
+        p = state.payload
+        prompt = p.get("last_prompt")
+        images = p.get("last_images", [])
+        if not prompt: return
+        await show_confirmation(message.from_id, prompt, images)
+
+    elif action == "check_sub":
+        group_id = "233112492"
+        url = "https://api.vk.com/method/groups.isMember"
+        params = {"group_id": group_id, "user_id": str(message.from_id), "access_token": VK_TOKEN, "v": "5.199"}
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(url, data=params)
+                res = resp.json()
+                if res.get("response") == 1:
+                    async with AsyncSessionLocal() as db:
+                        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+                        if not user.bonus_received:
+                            user.balance += 3.0
+                            user.bonus_received = True
+                            await db.commit()
+                            await safe_vk_send(message.from_id, messages.MSG_SUB_SUCCESS, keyboard=keyboards.build_reply_kb())
+                        else:
+                            await safe_vk_send(message.from_id, messages.MSG_SUB_ALREADY, keyboard=keyboards.build_reply_kb())
+                else:
+                    await safe_vk_send(message.from_id, messages.MSG_SUB_FAIL, keyboard=keyboards.build_sub_check_kb())
+            except Exception as e:
+                logger.error(f"Check sub error: {e}")
+                await safe_vk_send(message.from_id, "Ошибка при проверке подписки. Попробуйте позже.")
+
+    elif action == "reset_gen":
+        await bot.state_dispenser.delete(message.from_id)
+        await safe_vk_send(message.from_id, messages.MSG_CANCEL_FSM, keyboard=keyboards.build_reply_kb())
+
+async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png", is_refinement: bool = False):
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         res = await db.execute(select(models.User).filter_by(vk_id=vk_p_id))
@@ -370,7 +469,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
         if not user: return
         user_id, model, cost = user.id, user.model_preference, services.get_model_cost(user.model_preference)
         try:
-            task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost, aspect_ratio=aspect_ratio, resolution=resolution, output_format=output_format)
+            task_id = await services.start_generation_flow(db, user_id, prompt, image_urls, model, cost, aspect_ratio=aspect_ratio, resolution=resolution, output_format=output_format, is_refinement=is_refinement)
             for i in range(150):
                 await asyncio.sleep(5)
                 info = await services.check_generation_status(task_id)

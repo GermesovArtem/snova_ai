@@ -177,6 +177,8 @@ async def get_or_create_user(db: AsyncSession, platform_id: int, name: str = Non
     if not user:
         # Create new user record
         starting_balance = float(os.getenv("STARTING_BALANCE", 3.0))
+        if platform == "vk":
+            starting_balance = 0.0
         default_model = os.getenv("DEFAULT_MODEL", "nano-banana-2-1k")
         
         user_data = {
@@ -242,7 +244,8 @@ async def start_generation_flow(
     resolution: str = "1K",
     output_format: str = "png",
     status_message_id: int = None,
-    handle_charging: bool = True
+    handle_charging: bool = True,
+    is_refinement: bool = False
 ) -> str:
     """
     Initializes generation task in DB, optionally freezes credits, and calls KIE AI.
@@ -300,10 +303,15 @@ async def start_generation_flow(
             else:
                 kie_image_urls.append(url)
 
+        # Logic for auto-switching to edit model for Nano Banana refinement
+        api_model_id = model_id
+        if is_refinement and "nano-banana" in model_id.lower() and "edit" not in model_id.lower():
+            api_model_id = "google/nano-banana-edit"
+
         kie_result = await create_task(
             prompt=prompt, 
             image_urls=kie_image_urls, 
-            model=model_id, 
+            model=api_model_id, 
             aspect_ratio=aspect_ratio, 
             resolution=resolution,
             output_format=output_format

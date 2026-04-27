@@ -19,6 +19,7 @@ class User(Base):
     balance = Column(Float, default=10.0) # Default balance
     frozen_balance = Column(Float, default=0.0)
     model_preference = Column(String, default="nano-banana-2")
+    bonus_received = Column(Boolean, default=False)
     email_verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 

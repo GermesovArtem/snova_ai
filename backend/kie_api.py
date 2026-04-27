@@ -28,11 +28,17 @@ async def create_task(model: str, prompt: str, image_urls: Optional[List[str]] =
         else:
             api_model = "gpt-image-2-text-to-image"
 
+    # GPT Image 2 4K Constraint: must NOT be 1:1 or auto. Force 16:9 if needed.
+    effective_ratio = aspect_ratio
+    if "gpt-image-2" in api_model and resolution == "4K":
+        if aspect_ratio in ["auto", "1:1"]:
+            effective_ratio = "16:9"
+
     payload: dict[str, Any] = {
         "model": api_model, 
         "input": {
             "prompt": prompt,
-            "aspect_ratio": aspect_ratio,
+            "aspect_ratio": effective_ratio,
             "resolution": resolution,
             "output_format": output_format
         }
