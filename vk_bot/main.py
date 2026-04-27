@@ -265,45 +265,6 @@ async def model_menu_handler(message: Message):
         text = messages.MSG_MODEL_MENU.format(human_name=human_model_name(user.model_preference), limit=get_limit_for_model(user.model_preference), balance=int(user.balance))
     await safe_vk_send(message.from_id, clean_markdown(text), keyboard=keyboards.build_model_menu_kb(services.get_available_models(), user.model_preference, json.loads(costs_str)))
 
-@bot.on.message()
-async def generic_handler(message: Message):
-    if not message.text and not message.attachments: return
-    if message.get_payload_json(): return
-    
-    # Check current state for existing images/context
-    state = await bot.state_dispenser.get(message.from_id)
-    image_urls, vk_attachment_strs = [], []
-    is_refinement = False
-    
-    if state and state.state == BotState.WAIT_PROMPT:
-        image_urls = state.payload.get("images", [])
-        vk_attachment_strs = state.payload.get("vk_atts", [])
-        is_refinement = state.payload.get("is_refinement", False)
-    
-    # Extract attachments from current message
-    if message.attachments:
-        for att in message.attachments:
-            url, vk_id = None, ""
-            if att.photo: 
-                 url = att.photo.sizes[-1].url; vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
-                 if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
-            elif att.doc and att.doc.type == 1: 
-                 url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
-                 if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
-            if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
-    
-    prompt = (message.text or "").strip()
-    
-    # If only images sent, wait for prompt
-    if image_urls and not prompt:
-         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
-         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs) if vk_attachment_strs else None)
-         return
-
-    if not prompt and not image_urls: return
-    
-    # We have both prompt and (optionally) images (either new or from state)
-    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
 
 @bot.on.message(payload_map=[("action", str)])
 async def action_handler(message: Message):
@@ -415,6 +376,46 @@ async def action_handler(message: Message):
     elif action == "reset_gen":
         await bot.state_dispenser.delete(message.from_id)
         await safe_vk_send(message.from_id, messages.MSG_CANCEL_FSM, keyboard=keyboards.build_reply_kb())
+
+@bot.on.message()
+async def generic_handler(message: Message):
+    if not message.text and not message.attachments: return
+    if message.get_payload_json(): return
+    
+    # Check current state for existing images/context
+    state = await bot.state_dispenser.get(message.from_id)
+    image_urls, vk_attachment_strs = [], []
+    is_refinement = False
+    
+    if state and state.state == BotState.WAIT_PROMPT:
+        image_urls = state.payload.get("images", [])
+        vk_attachment_strs = state.payload.get("vk_atts", [])
+        is_refinement = state.payload.get("is_refinement", False)
+    
+    # Extract attachments from current message
+    if message.attachments:
+        for att in message.attachments:
+            url, vk_id = None, ""
+            if att.photo: 
+                 url = att.photo.sizes[-1].url; vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
+                 if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
+            elif att.doc and att.doc.type == 1: 
+                 url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
+                 if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
+            if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
+    
+    prompt = (message.text or "").strip()
+    
+    # If only images sent, wait for prompt
+    if image_urls and not prompt:
+         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
+         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs) if vk_attachment_strs else None)
+         return
+
+    if not prompt and not image_urls: return
+    
+    # We have both prompt and (optionally) images (either new or from state)
+    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png", is_refinement: bool = False):
     async with AsyncSessionLocal() as db:
