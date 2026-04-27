@@ -217,13 +217,15 @@ async def pre_charge_generation(db, user: models.User, model_id: str) -> float:
     return cost
 
 async def refund_frozen_credits(db, user_id: int, cost: float):
-    """Refunds credits if generation fails (e.g., 402 code)"""
+    """Refunds credits if generation fails. Only if they were actually frozen."""
     res = await db.execute(select(models.User).filter_by(id=user_id))
     user = res.scalars().first()
-    if user:
+    if user and user.frozen_balance >= cost:
         user.balance += cost
         user.frozen_balance -= cost
         await db.commit()
+    elif user:
+        logger.warning(f"Attempted to refund {cost} to user {user_id} but frozen_balance is only {user.frozen_balance}")
 
 async def commit_frozen_credits(db: AsyncSession, user_id: int, cost: float):
     """Permanently deducts frozen credits upon success"""
@@ -329,8 +331,10 @@ async def start_generation_flow(
         await db.commit()
         return kie_task_id
     except Exception as e:
-        # Proper refund on failure: add back to balance, remove from frozen
-        await refund_frozen_credits(db, user_id, cost)
+        # Proper refund ONLY if we actually charged/froze them
+        if handle_charging:
+            await refund_frozen_credits(db, user_id, cost)
+        
         if 'new_task' in locals():
             new_task.status = "failed"
             await db.commit()

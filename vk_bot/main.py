@@ -50,8 +50,9 @@ class DiagnosticMiddleware(BaseMiddleware[Message]):
              if cmd in ["начать", "старт", "/start"] or payload_data.get("command") == "start":
                   print("-> TRIGGER: START COMMAND. RESETTING STATE.")
                   await bot.state_dispenser.delete(self.event.from_id)
-        except Exception as e:
-             print(f"ERROR IN MIDDLEWARE: {e}")
+        except Exception:
+             import traceback
+             print(f"ERROR IN MIDDLEWARE:\n{traceback.format_exc()}")
         return True
 
 bot.labeler.message_view.register_middleware(DiagnosticMiddleware)
@@ -500,7 +501,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
             raise Exception("Timeout: Время ожидания истекло (20 мин)")
         except Exception as e:
             print(f"GEN ERROR: {e}")
-            await services.refund_frozen_credits(db, user_id, cost)
+            # No manual refund here, start_generation_flow handles it internally if charging happened
             await safe_vk_send(vk_p_id, f"❌ {e}")
 
 if __name__ == "__main__":
