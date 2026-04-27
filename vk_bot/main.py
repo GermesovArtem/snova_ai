@@ -173,7 +173,8 @@ async def start_handler(message: Message):
         if not created and real_name and (not user.name or "VK_" in user.name):
              user.name = real_name
              await db.commit()
-        if created:
+        # Show newbie message if user is literally new OR if they have 0 balance and haven't got bonus yet
+        if created or (user.balance == 0 and not user.bonus_received):
             text = messages.MSG_START_NEW_VK.format(balance=int(user.balance))
             kb = keyboards.build_sub_check_kb()
         else:
