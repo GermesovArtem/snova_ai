@@ -339,10 +339,12 @@ async def start_generation_flow(
                 kie_image_urls.append(url)
 
         # Logic for auto-switching to edit model for OLD Nano Banana refinement
-        # Nano Banana 2 should handle refinements natively
+        # Nano Banana 2 and Pro should handle refinements natively
         api_model_id = model_id
-        if is_refinement and "nano-banana" in model_id.lower() and "2" not in model_id.lower() and "edit" not in model_id.lower():
+        is_modern = "2" in model_id.lower() or "pro" in model_id.lower()
+        if is_refinement and "nano-banana" in model_id.lower() and not is_modern and "edit" not in model_id.lower():
             api_model_id = "google/nano-banana-edit"
+        
 
         kie_result = await create_task(
             prompt=prompt, 
