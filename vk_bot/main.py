@@ -110,32 +110,21 @@ def get_limit_for_model(model_name: str) -> int:
     return 14
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
-    # Detect format from magic bytes for the filename
-    filename = "photo.png"
-    if image_bytes.startswith(b"\xff\xd8\xff"):
-        filename = "photo.jpg"
-    elif image_bytes.startswith(b"RIFF") and b"WEBP" in image_bytes[:12]:
-        filename = "photo.webp"
-
-    from io import BytesIO
+    # This is the exact logic that worked today at 11:38
+    # No manual httpx, just standard vkbottle uploader
     photo_uploader = PhotoMessageUploader(bot.api)
-    try:
-        # Use vkbottle's uploader but with explicit filename to help it detect MIME
-        photo_att = await photo_uploader.upload(
-            file_source=BytesIO(image_bytes), 
-            peer_id=peer_id,
-            file_name=filename
-        )
-        return photo_att
-    except Exception as e:
-        # Fallback/Detail logging
-        print(f"VKBottle upload failed: {e}")
-        raise e
+    return await photo_uploader.upload(file_source=image_bytes, peer_id=peer_id)
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
     message = clean_markdown(message)
     url = "https://api.vk.com/method/messages.send"
-    params = {"peer_id": str(peer_id), "message": message, "random_id": str(random.randint(1, 2**31)), "access_token": VK_TOKEN, "v": "5.199"}
+    params = {
+        "peer_id": str(peer_id), 
+        "message": message, 
+        "random_id": str(random.randint(1, 2**31)), 
+        "access_token": VK_TOKEN, 
+        "v": "5.131"
+    }
     if attachment: params["attachment"] = attachment
     if keyboard: params["keyboard"] = keyboard
     async with httpx.AsyncClient() as client:
