@@ -476,10 +476,20 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                 if info.get("state") in ["success", "completed"]:
                     img_url = info.get("image_url")
                     if isinstance(img_url, list) and len(img_url) > 0: img_url = img_url[0]
+                    
+                    if not img_url:
+                        raise Exception("Ошибка: KIE вернул успех, но URL изображения пуст.")
+
                     await services.commit_frozen_credits(db, user_id, cost)
                     async with httpx.AsyncClient() as client:
-                        r = await client.get(img_url, timeout=60.0)
-                        if r.status_code == 200:
+                        try:
+                            r = await client.get(img_url, timeout=120.0)
+                            if r.status_code != 200:
+                                raise Exception(f"Не удалось скачать готовое фото (HTTP {r.status_code})")
+                        except Exception as download_err:
+                            raise Exception(f"Ошибка при скачивании результата: {download_err}")
+
+                        try:
                             # 1. Upload Preview Photo
                             photo_uploader = PhotoMessageUploader(bot.api)
                             photo_att = await photo_uploader.upload(file_source=r.content, peer_id=vk_p_id)
@@ -493,12 +503,18 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             
                             await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return
-                elif info.get("state") in ["failed", "error"]: raise Exception(info.get("error"))
-            raise Exception("Timeout")
+                        except Exception as upload_err:
+                            print(f"VK UPLOAD ERROR: {upload_err}")
+                            raise Exception(f"Ошибка при отправке фото в ВК: {upload_err}")
+
+                elif info.get("state") in ["failed", "error"]:
+                    raise Exception(info.get("error") or "Ошибка на стороне нейросети")
+            
+            raise Exception("Timeout: Время ожидания истекло (20 мин)")
         except Exception as e:
             print(f"GEN ERROR: {e}")
             await services.refund_frozen_credits(db, user_id, cost)
-            await safe_vk_send(vk_p_id, f"Ошибка: {e}")
+            await safe_vk_send(vk_p_id, f"❌ {e}")
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
