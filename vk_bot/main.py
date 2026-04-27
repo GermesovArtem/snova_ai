@@ -347,6 +347,9 @@ async def action_handler(message: Message):
             return
         last_url = state.payload["last_url"]
         
+        # Give immediate feedback
+        await safe_vk_send(message.from_id, "⏳ Подготавливаю превью для редактирования...")
+        
         # Download and upload to VK to show it
         vk_id = None
         try:
@@ -365,6 +368,9 @@ async def action_handler(message: Message):
         prompt = p.get("last_prompt")
         images = p.get("last_images", [])
         if not prompt: return
+        
+        # Give immediate feedback
+        await safe_vk_send(message.from_id, "⏳ Подготавливаю повторную генерацию...")
         
         vk_atts = []
         if images:
