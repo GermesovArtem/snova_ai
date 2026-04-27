@@ -517,8 +517,9 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
             raise Exception("Timeout: Время ожидания истекло (20 мин)")
         except Exception as e:
             print(f"GEN ERROR: {e}")
-            # No manual refund here, start_generation_flow handles it internally if charging happened
-            await safe_vk_send(vk_p_id, f"❌ {e}")
+            # Use our translation service to make it friendly
+            friendly_err = services.translate_error(str(e))
+            await safe_vk_send(vk_p_id, friendly_err)
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

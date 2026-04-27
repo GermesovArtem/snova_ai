@@ -956,7 +956,7 @@ async def run_generation_task(db_user_id: int, tg_user_id: int, prompt: str, cos
             
         # Use translated message if possible
         err_msg = services.translate_error(str(e))
-        await bot.send_message(tg_user_id, f"❌ {err_msg}\n\nЕсли проблема в промпте, попробуйте изменить его. Если это сбой сервера — мы уже в курсе и чиним!")
+        await bot.send_message(tg_user_id, f"{err_msg}\n\nЕсли проблема в промпте, попробуйте изменить его. Если это сбой сервера — мы уже в курсе и чиним!")
         try: await bot.delete_message(tg_user_id, msg_id)
         except: pass
 
