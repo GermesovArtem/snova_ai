@@ -475,10 +475,20 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             raise Exception(f"Ошибка при скачивании результата: {download_err}")
 
                         try:
-                            # 1. Upload Preview Photo (using manual method for better error catching)
-                            photo_att = await vk_upload_photo(r.content, vk_p_id)
+                            # Log content size for debugging
+                            logger.info(f"Uploading result for user {vk_p_id}. Size: {len(r.content)} bytes")
                             
-                            # 2. Upload Document (High Quality)
+                            # 1. Upload Preview Photo (with fallback to document if it fails)
+                            photo_att = None
+                            try:
+                                photo_att = await vk_upload_photo(r.content, vk_p_id)
+                            except Exception as photo_err:
+                                logger.warning(f"Photo upload failed, trying as doc: {photo_err}")
+                                doc_uploader = DocMessagesUploader(bot.api)
+                                doc_res = await doc_uploader.upload(title="preview.png", file_source=r.content, peer_id=vk_p_id)
+                                photo_att = doc_res
+                            
+                            # 2. Upload Document (High Quality Original)
                             doc_uploader = DocMessagesUploader(bot.api)
                             doc_att = await doc_uploader.upload(
                                 title=f"gen_{task_id[:8]}.png", 
@@ -487,7 +497,7 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             )
                             
                             await safe_vk_send(vk_p_id, "🔥 Готово!", attachment=photo_att, keyboard=keyboards.build_after_gen_kb())
-                            await safe_vk_send(vk_p_id, "💾 Оригинал", attachment=doc_att)
+                            await safe_vk_send(vk_p_id, "💾 Оригинал (без сжатия)", attachment=doc_att)
                             
                             await bot.state_dispenser.set(vk_p_id, BotState.POST_GEN, last_url=img_url, last_prompt=prompt, last_images=image_urls)
                             return
