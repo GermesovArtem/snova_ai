@@ -504,15 +504,16 @@ async def _process_merged_burst(user_id: int, burst: list[Message]):
     is_refinement = False
     
     if state:
-        # Robust state name checking
-        s_name = str(state.state).split(".")[-1] # Handle both object and string
-        logger.info(f"DEBUG: Loaded state for {user_id}: {s_name}")
+        # Robust state name checking (handle vkbottle's "Group:state" format)
+        s_name_upper = str(state.state).upper()
+        logger.info(f"DEBUG: Loaded state for {user_id}: {state.state}")
         
-        if s_name in ["WAIT_PROMPT", "CONFIRM_GEN"]:
+        if "WAIT_PROMPT" in s_name_upper or "CONFIRM_GEN" in s_name_upper:
             image_urls = state.payload.get("images", []).copy()
             vk_attachment_strs = state.payload.get("vk_atts", []).copy()
             is_refinement = state.payload.get("is_refinement", False)
             logger.info(f"  -> Merging with {len(image_urls)} existing images from state")
+
 
     # 2. Accumulate NEW data from ALL messages in the burst
     prompt = ""
