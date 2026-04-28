@@ -118,6 +118,10 @@ async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
     return await photo_uploader.upload(file_source=image_bytes, peer_id=peer_id)
 
 async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keyboard: str = None):
+    # Log outgoing message
+    log_msg = (message[:50] + "..") if len(message) > 50 else message
+    logger.info(f"OUTGOING -> {peer_id}: '{log_msg}' [atts={attachment}]")
+    
     message = clean_markdown(message)
     url = "https://api.vk.com/method/messages.send"
     params = {
@@ -133,8 +137,8 @@ async def safe_vk_send(peer_id: int, message: str, attachment: str = None, keybo
         try:
             resp = await client.post(url, data=params)
             res_json = resp.json()
-            if "error" in res_json: print(f"VK API ERROR LOG: {res_json['error']}")
-        except Exception as e: print(f"VK SEND EXCEPTION: {e}")
+            if "error" in res_json: logger.error(f"VK API ERROR: {res_json['error']}")
+        except Exception as e: logger.error(f"VK SEND EXCEPTION: {e}")
 
 async def safe_clear_state(peer_id: int):
     """Safely delete state without raising KeyError if it doesn't exist."""
@@ -436,7 +440,17 @@ async def generic_handler(message: Message):
     now = time.time()
     dt = now - arrival_times.get(user_id, 0)
     arrival_times[user_id] = now
-    logger.info(f"Message from {user_id} arrived. Time since last: {dt:.3f}s")
+    logger.info(f"--- Message from {user_id} arrived. Time since last: {dt:.3f}s ---")
+    
+    # RAW LOGGING for deep debugging
+    try:
+        raw_json = message.json()
+        logger.info(f"RAW MSG JSON: {raw_json}")
+        # Log summary of attachments found by vkbottle
+        logger.info(f"  Vkbottle saw {len(message.attachments or [])} attachments in this msg")
+    except Exception as raw_e:
+
+        logger.error(f"Raw logging error: {raw_e}")
     
     # Atomic-like initialization of the burst list
     if user_id not in pending_bursts:
