@@ -642,8 +642,9 @@ async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_
                             print(f"VK UPLOAD ERROR: {upload_err}")
                             raise Exception(f"Ошибка при отправке фото в ВК: {upload_err}")
 
-                elif info.get("state") in ["failed", "error"]:
+                elif info.get("state") == "failed":
                     raise Exception(info.get("error") or "Ошибка на стороне нейросети")
+
             
             raise Exception("Timeout: Время ожидания истекло (20 мин)")
         except Exception as e:
