@@ -104,8 +104,8 @@ async def startup():
             except Exception as e:
                 logger.warning(f"Migration: Sequence setup skipped/failed (likely SQLite or already set): {e}")
 
-        except Exception as e:
-            logger.error(f"Critical Migration error: {e}")
+    # Запускаем фоновую задачу проверки платежей
+    asyncio.create_task(payment_sync_loop())
 
     # Ensure starting models are normalized
     async with AsyncSessionLocal() as db:
@@ -162,6 +162,7 @@ async def get_config_models():
         return {"success": False, "error": str(e)}
 
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -325,6 +326,23 @@ async def get_generation(task_uuid: str, user: models.User = Depends(get_current
         "data": info
     }
 
+async def payment_sync_loop():
+    """Фоновый цикл проверки зависших платежей каждые 10 минут"""
+    import asyncio
+    from backend.database import AsyncSessionLocal
+    from backend import services
+    
+    await asyncio.sleep(60) # Ждем 1 минуту после старта
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                await services.sync_pending_payments(db)
+        except Exception as e:
+            logger.error(f"Payment sync loop error: {e}")
+        
+        await asyncio.sleep(600) # Повтор каждые 10 минут
+
 if __name__ == "__main__":
+
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

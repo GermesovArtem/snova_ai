@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 ERRORS_RU = {
     # 1. KIE Task Status Codes & Basic Failures (from docs)
+
     "create_task_failed": "⚙️ Не удалось запустить задачу. Пожалуйста, попробуйте изменить текст или фото.",
     "generate_failed": "🎨 Произошла ошибка во время рисования. Попробуйте нажать кнопку «Повторить».",
     "501": "⚙️ Общий сбой генерации на стороне сервера. Мы уже проверяем, в чем дело!",
@@ -755,5 +756,114 @@ async def process_successful_payment(db: AsyncSession, provider_payment_id: str)
     )
     
     await db.commit()
+    
+    # 5. Уведомляем пользователя (в фоновом режиме, чтобы не блокировать вебхук)
+    try:
+        from . import services
+        import asyncio
+        asyncio.create_task(services.notify_user_payment(db_payment.user_id, credits_to_add))
+    except Exception as e:
+        logger.error(f"Failed to start notification task: {e}")
+
     logger.info(f"Successfully processed payment {provider_payment_id}. Added {credits_to_add} to user {db_payment.user_id}")
     return True
+
+async def notify_user_payment(user_id: int, credits_added: int):
+    """Отправляет уведомление об успешной оплате в ТГ или ВК"""
+    from .database import AsyncSessionLocal
+    from . import models
+    from bot import messages
+    import httpx
+    import re
+    
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_id(db, user_id)
+        if not user: return
+        
+        text = messages.MSG_PAYMENT_SUCCESS.format(amount=credits_added, balance=int(user.balance))
+        
+        if user.platform == "telegram" and user.telegram_id:
+            token = os.getenv("BOT_TOKEN")
+            if not token: return
+            async with httpx.AsyncClient() as client:
+                try:
+                    url = f"https://api.telegram.org/bot{token}/sendMessage"
+                    payload = {
+                        "chat_id": user.telegram_id,
+                        "text": text,
+                        "parse_mode": "Markdown"
+                    }
+                    await client.post(url, json=payload, timeout=10)
+                    logger.info(f"Sent TG payment notification to {user.telegram_id}")
+                except Exception as e:
+                    logger.error(f"Error sending TG notification: {e}")
+                    
+        elif user.platform == "vk" and user.vk_id:
+            token = os.getenv("VK_API_KEY")
+            if not token: return
+            
+            # Внутренняя функция для очистки маркдауна для ВК
+            def clean_vk_text(t: str) -> str:
+                if not t: return ""
+                t = t.replace("***", "").replace("**", "").replace("___", "").replace("__", "")
+                t = t.replace("`", "").replace("~", "")
+                t = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", t)
+                return t.strip()
+                
+            vk_text = clean_vk_text(text)
+            async with httpx.AsyncClient() as client:
+                try:
+                    url = "https://api.vk.com/method/messages.send"
+                    params = {
+                        "peer_id": user.vk_id,
+                        "message": vk_text,
+                        "random_id": 0,
+                        "access_token": token,
+                        "v": "5.131"
+                    }
+                    await client.get(url, params=params, timeout=10)
+                    logger.info(f"Sent VK payment notification to {user.vk_id}")
+                except Exception as e:
+                    logger.error(f"Error sending VK notification: {e}")
+
+async def sync_pending_payments(db: AsyncSession):
+    """Поллинг YooKassa для зависших платежей (на случай если вебхук не дошел)"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    import aiohttp
+    
+    # Ищем платежи в статусе pending за последние 24 часа
+    yesterday = datetime.now() - timedelta(hours=24)
+    res = await db.execute(
+        select(models.Payment)
+        .filter(models.Payment.status == "pending", models.Payment.created_at > yesterday)
+    )
+    pending_payments = res.scalars().all()
+    
+    if not pending_payments:
+        return
+        
+    logger.info(f"Sync: Checking status for {len(pending_payments)} pending payments...")
+    
+    shop_id = os.getenv("YOOKASSA_SHOP_ID")
+    secret_key = os.getenv("YOOKASSA_SECRET_KEY")
+    if not shop_id or not secret_key: return
+
+    async with aiohttp.ClientSession() as session:
+        auth = aiohttp.BasicAuth(shop_id, secret_key)
+        for payment in pending_payments:
+            try:
+                async with session.get(f"https://api.yookassa.ru/v3/payments/{payment.provider_payment_id}", auth=auth) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("status") == "succeeded":
+                            logger.info(f"Sync: Payment {payment.provider_payment_id} was paid! Processing...")
+                            await process_successful_payment(db, payment.provider_payment_id)
+                        elif data.get("status") == "canceled":
+                            payment.status = "canceled"
+                            await db.commit()
+            except Exception as e:
+                logger.error(f"Sync: Error checking payment {payment.provider_payment_id}: {e}")
+
+
+
