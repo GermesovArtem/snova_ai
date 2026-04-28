@@ -436,7 +436,7 @@ async def generic_handler(message: Message):
     if not message.text and not message.attachments: return
     if message.get_payload_json(): return
     
-    user_id = message.from_id
+    user_id = message.peer_id
     now = time.time()
     dt = now - arrival_times.get(user_id, 0)
     arrival_times[user_id] = now
@@ -471,8 +471,8 @@ async def generic_handler(message: Message):
     # Add current message to burst
     pending_bursts[user_id].append(message)
     
-    # Wait for more messages in the burst (2.0s for heavy 4K photos)
-    await asyncio.sleep(2.0)
+    # Wait for more messages in the burst (0.6s is a good balance)
+    await asyncio.sleep(0.6)
     
     # Check if this is still the last message. 
     if message != pending_bursts[user_id][-1]:
@@ -499,14 +499,20 @@ async def _process_merged_burst(user_id: int, burst: list[Message]):
     
     # 1. Load existing context from state
     state = await bot.state_dispenser.get(user_id)
+    
     image_urls, vk_attachment_strs = [], []
     is_refinement = False
     
-    if state and state.state in [BotState.WAIT_PROMPT, BotState.CONFIRM_GEN]:
-        image_urls = state.payload.get("images", []).copy()
-        vk_attachment_strs = state.payload.get("vk_atts", []).copy()
-        is_refinement = state.payload.get("is_refinement", False)
-        logger.info(f"Loaded from state: {len(image_urls)} images")
+    if state:
+        # Robust state name checking
+        s_name = str(state.state).split(".")[-1] # Handle both object and string
+        logger.info(f"DEBUG: Loaded state for {user_id}: {s_name}")
+        
+        if s_name in ["WAIT_PROMPT", "CONFIRM_GEN"]:
+            image_urls = state.payload.get("images", []).copy()
+            vk_attachment_strs = state.payload.get("vk_atts", []).copy()
+            is_refinement = state.payload.get("is_refinement", False)
+            logger.info(f"  -> Merging with {len(image_urls)} existing images from state")
 
     # 2. Accumulate NEW data from ALL messages in the burst
     prompt = ""
