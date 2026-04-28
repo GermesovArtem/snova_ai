@@ -442,15 +442,19 @@ async def generic_handler(message: Message):
     arrival_times[user_id] = now
     logger.info(f"--- Message from {user_id} arrived. Time since last: {dt:.3f}s ---")
     
-    # RAW LOGGING for deep debugging
+    # RAW LOGGING for deep debugging (Safer way)
     try:
-        raw_json = message.json()
-        logger.info(f"RAW MSG JSON: {raw_json}")
-        # Log summary of attachments found by vkbottle
-        logger.info(f"  Vkbottle saw {len(message.attachments or [])} attachments in this msg")
+        atts_summary = []
+        if message.attachments:
+            for a in message.attachments:
+                atts_summary.append({"type": a.type, "id": getattr(a, "id", "no-id")})
+        
+        logger.info(f"DEBUG: Msg ID {message.id} | Atts found: {len(message.attachments or [])} | Types: {atts_summary}")
+        if message.fwd_messages:
+            logger.info(f"DEBUG: Found {len(message.fwd_messages)} forwarded messages")
     except Exception as raw_e:
+        logger.error(f"Debug logging error: {raw_e}")
 
-        logger.error(f"Raw logging error: {raw_e}")
     
     # Atomic-like initialization of the burst list
     if user_id not in pending_bursts:
