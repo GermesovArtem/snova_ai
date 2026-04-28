@@ -650,8 +650,9 @@ async def process_media_group_delayed(mg_id: str, user_id: int):
     limit = get_model_limit(user.model_preference)
     
     if len(messages) > limit:
-        await bot.send_message(user_id, f"❌ Ошибка: выбраная модель поддерживает максимум **{limit} фото** в одном запросе. Вы прислали {len(messages)}.")
+        await bot.send_message(user_id, messages.MSG_ERR_LIMIT.format(limit=limit, count=len(messages)), parse_mode="Markdown")
         return
+
 
     # Clear refinement context for new media groups
     state = FSMContext(storage=dp.storage, key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id))

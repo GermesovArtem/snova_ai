@@ -105,10 +105,9 @@ async def get_vk_user_name(user_id: int) -> str:
     except: pass
     return ""
 
-def get_limit_for_model(model_name: str) -> int:
-    mn = model_name.lower()
-    if "pro" in mn: return 8
-    return 14
+def get_limit_for_model(model_id: str) -> int:
+    return services.get_model_limit(model_id)
+
 
 async def vk_upload_photo(image_bytes: bytes, peer_id: int) -> str:
     # This is the exact logic that worked today at 11:38
@@ -193,7 +192,8 @@ async def show_confirmation(vk_p_id: int, prompt: str, image_urls: list, vk_atta
     # Save to state
     await bot.state_dispenser.set(vk_p_id, BotState.CONFIRM_GEN, prompt=prompt, images=image_urls, vk_atts=vk_attachment_strs, cost=cost, settings=settings, is_refinement=is_refinement)
     
-    attachment = ",".join(vk_attachment_strs) if vk_attachment_strs else None
+    attachment = ",".join(vk_attachment_strs[:10]) if vk_attachment_strs else None
+
     await safe_vk_send(vk_p_id, clean_markdown(text), attachment=attachment, keyboard=keyboards.build_confirm_kb())
 
 async def balance_handler(message: Message):
@@ -376,10 +376,14 @@ async def action_handler(message: Message):
         if images:
              try:
                  async with httpx.AsyncClient() as client:
-                      r = await client.get(images[0], timeout=30)
-                      vk_id = await vk_upload_photo(r.content, message.from_id)
-                      vk_atts = [vk_id]
-             except: pass
+                      # Upload up to 5 photos for preview to avoid VK timeouts/limits
+                      for img_url in images[:5]:
+                          r = await client.get(img_url, timeout=30)
+                          vk_id = await vk_upload_photo(r.content, message.from_id)
+                          vk_atts.append(vk_id)
+             except Exception as e:
+                 logger.error(f"Error uploading photos for repeat_gen: {e}")
+
 
         await safe_vk_send(message.from_id, "🔄 Повторяем генерацию! Проверьте настройки:")
         await show_confirmation(message.from_id, prompt, images, vk_attachment_strs=vk_atts)
@@ -441,11 +445,27 @@ async def generic_handler(message: Message):
     
     prompt = (message.text or "").strip()
     
+    # Check limits
+    async with AsyncSessionLocal() as db:
+        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        limit = get_limit_for_model(user.model_preference)
+
+    if len(image_urls) > limit:
+        await safe_vk_send(message.from_id, messages.MSG_ERR_LIMIT.format(limit=limit, count=len(image_urls)))
+        # Optional: truncate or clear
+        image_urls = image_urls[:limit]
+        vk_attachment_strs = vk_attachment_strs[:limit]
+
     # If only images sent, wait for prompt
     if image_urls and not prompt:
          await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
-         await safe_vk_send(message.from_id, "Фото получены. Напишите задание 👇", attachment=",".join(vk_attachment_strs) if vk_attachment_strs else None)
+         count_text = f" ({len(image_urls)} шт.)" if len(image_urls) > 1 else ""
+         # VK allows max 10 attachments per message
+         preview_atts = ",".join(vk_attachment_strs[:10]) if vk_attachment_strs else None
+         await safe_vk_send(message.from_id, f"📸 Фото получены{count_text}. Напишите задание 👇", attachment=preview_atts)
          return
+
+
 
     if not prompt and not image_urls: return
     

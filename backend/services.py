@@ -93,6 +93,10 @@ def normalize_model_id(model_id: str) -> str:
     if m in variants:
         return m
 
+    # GPT Image 2 special handling (even with prefixes/suffixes)
+    if "gpt-image-2" in m:
+        return "gpt-image-2"
+
     # Маппинг полных путей KIE в наши внутренние варианты
     if "nano-banana-pro" in m:
         return "nano-banana-pro-4k" if "4k" in m else "nano-banana-pro-2k"
@@ -104,10 +108,16 @@ def normalize_model_id(model_id: str) -> str:
     return m
 
 def get_model_limit(model_id: str) -> int:
-    """Returns official limit for image_input: 8 for PRO, 14 for v2"""
-    if "pro" in str(model_id).lower():
+    """Returns official limit for image_input: 8 for PRO, 14 for v2, 16 for GPT"""
+    mid = normalize_model_id(model_id)
+    if "gpt-image-2" in mid:
+        return 16
+    if "pro" in mid:
         return 8
     return 14
+
+
+
 
 def get_available_models():
     default_models = {
@@ -144,9 +154,9 @@ async def fix_all_model_ids(db):
 
 def get_model_cost(model_id: str) -> float:
     # Auto-normalize to handle old DB values
-    model_id = normalize_model_id(model_id)
+    norm_id = normalize_model_id(model_id)
     
-    # New variant costs
+    # New variant costs (Hardcoded source of truth)
     variant_costs = {
         "nano-banana-2-1k": 1.0,
         "nano-banana-2-4k": 2.0,
@@ -154,22 +164,28 @@ def get_model_cost(model_id: str) -> float:
         "nano-banana-pro-4k": 3.0,
         "gpt-image-2": 3.0
     }
-    if model_id in variant_costs:
-        return variant_costs[model_id]
+    
+    cost = 2.0 # Default fallback
+    if norm_id in variant_costs:
+        cost = variant_costs[norm_id]
+    else:
+        # Check .env override if not in variant_costs
+        costs_str = os.getenv("CREDITS_PER_MODEL")
+        if costs_str:
+            try:
+                costs = json.loads(costs_str)
+                # Normalize keys in env to match
+                normalized_env_costs = {normalize_model_id(k): v for k, v in costs.items()}
+                if norm_id in normalized_env_costs:
+                    cost = float(normalized_env_costs[norm_id])
+                elif "gpt-image-2" in norm_id: # Extra safety for GPT
+                    cost = 3.0
+            except:
+                pass
+    
+    logger.info(f"Model Cost calculated: original='{model_id}', normalized='{norm_id}', final_cost={cost}")
+    return cost
 
-    # Default fallback prices without 'google/' prefix to match normalization
-    costs_str = os.getenv("CREDITS_PER_MODEL")
-    if costs_str:
-        try:
-            costs = json.loads(costs_str)
-            normalized_costs = {normalize_model_id(k): v for k, v in costs.items()}
-            if model_id in normalized_costs:
-                return float(normalized_costs[model_id])
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-            
-    fallback = {"nano-banana-2": 2.0, "nano-banana-pro": 3.0, "google/nano-banana": 1.0}
-    return float(fallback.get(model_id, 2.0))
 
 async def get_user_by_id(db: AsyncSession, user_id: int):
     # This is INTERNAL ID lookup
