@@ -561,18 +561,19 @@ async def _process_merged_burst(user_id: int, burst: list[Message]):
     # 4. Handle logic (Images only vs Prompt+Images)
     if image_urls and not prompt:
          await bot.state_dispenser.set(user_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
+         logger.info(f"  -> State updated for {user_id}: {len(image_urls)} images saved.")
          count_text = f" ({len(image_urls)} шт.)" if len(image_urls) > 1 else ""
          preview_atts = ",".join(vk_attachment_strs[:10]) if vk_attachment_strs else None
          await safe_vk_send(user_id, f"📸 Фото получены{count_text}. Напишите задание 👇", attachment=preview_atts)
          return
 
-
-
     if not prompt and not image_urls:
         return
     
     # We have both prompt and (optionally) images (either new or from state)
+    logger.info(f"  -> Showing confirmation for {user_id} with {len(image_urls)} images and prompt: '{prompt}'")
     await show_confirmation(user_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
+
 
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png", is_refinement: bool = False):
