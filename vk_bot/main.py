@@ -179,6 +179,11 @@ async def show_confirmation(vk_p_id: int, prompt: str, image_urls: list, vk_atta
 
     settings = settings or {"aspect_ratio": "1:1", "output_format": "png"}
     ratio = settings.get("aspect_ratio", "1:1")
+    
+    # GPT Image 2 forces 16:9 if it's 4K and user selected 1:1 or auto
+    if "gpt-image-2" in model_id.lower() and ratio in ["1:1", "auto"]:
+        ratio = "16:9 (Авто-коррекция)"
+        
     fmt = settings.get("output_format", "png")
 
     header = messages.MSG_CONFIRM_HEADER_REFINE if is_refinement else messages.MSG_CONFIRM_HEADER_NEW

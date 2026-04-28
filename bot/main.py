@@ -532,6 +532,11 @@ async def show_confirmation(user_id: int, prompt: str | None, image_urls: list, 
     settings = data.get("gen_settings", {})
     # Setup defaults for display
     ratio = settings.get("aspect_ratio", "1:1")
+    
+    # GPT Image 2 forces 16:9 if it's 4K and user selected 1:1 or auto
+    if "gpt-image-2" in actual_model.lower() and ratio in ["1:1", "auto"]:
+        ratio = "16:9 (Авто-коррекция)"
+        
     res = settings.get("resolution", "4K")
     fmt = settings.get("output_format", "png")
 
