@@ -264,10 +264,12 @@ async def menu_cmd_handler(message: Message):
 
 @bot.on.message(text=["✨ создать", "✨ Создать", "Создать", "создать"])
 async def cmd_create_handler(message: Message):
+    await safe_clear_state(message.from_id)
     async with AsyncSessionLocal() as db:
         user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
     await safe_vk_send(message.from_id, clean_markdown(messages.MSG_GEN_PROMPT.format(limit=limit)), keyboard=keyboards.build_reply_kb())
+
 
 @bot.on.message(text=["🤖 модель", "🤖 Модель", "Модель", "модель"])
 async def model_menu_handler(message: Message):
@@ -419,27 +421,50 @@ async def action_handler(message: Message):
 
 # Global locks for atomic state updates
 user_locks = {}
-
+# Burst accumulator for VK messages (since VK has no media groups)
+pending_bursts = {}
 
 @bot.on.message()
 async def generic_handler(message: Message):
-    # Get or create lock for this user
+    # Ignore payloads and empty messages
+    if not message.text and not message.attachments: return
+    if message.get_payload_json(): return
+    
     user_id = message.from_id
+    
+    # Initialize burst for user
+    if user_id not in pending_bursts:
+        pending_bursts[user_id] = []
+    
+    # Add current message to burst
+    pending_bursts[user_id].append(message)
+    
+    # Wait for more messages in the burst
+    await asyncio.sleep(0.8)
+    
+    # Only the LAST message in the burst will proceed to processing
+    if message != pending_bursts[user_id][-1]:
+        return
+    
+    # Process all collected messages
+    messages_to_process = pending_bursts[user_id]
+    pending_bursts[user_id] = []
+    
+    # Get or create lock for this user
     if user_id not in user_locks:
         user_locks[user_id] = asyncio.Lock()
     
     async with user_locks[user_id]:
-        await _process_generic_message(message)
+        await _process_merged_burst(user_id, messages_to_process)
 
-async def _process_generic_message(message: Message):
-    if not message.text and not message.attachments: return
-    if message.get_payload_json(): return
+async def _process_merged_burst(user_id: int, burst: list[Message]):
+    # Use the last message for context (state check, reply destination)
+    last_msg = burst[-1]
     
-    logger.info(f"--- Processing message from {message.from_id} ---")
-    logger.info(f"Attachments count: {len(message.attachments or [])}")
+    logger.info(f"--- Processing BURST from {user_id} ({len(burst)} messages) ---")
     
-    # Check current state for existing images/context
-    state = await bot.state_dispenser.get(message.from_id)
+    # 1. Load existing context from state
+    state = await bot.state_dispenser.get(user_id)
     image_urls, vk_attachment_strs = [], []
     is_refinement = False
     
@@ -449,72 +474,65 @@ async def _process_generic_message(message: Message):
         is_refinement = state.payload.get("is_refinement", False)
         logger.info(f"Loaded from state: {len(image_urls)} images")
 
-    
-    # Extract attachments from current message and forwarded messages
-    all_attachments = list(message.attachments or [])
-    if message.fwd_messages:
-        for fwd in message.fwd_messages:
-            if fwd.attachments:
-                all_attachments.extend(fwd.attachments)
-    if message.reply_message and message.reply_message.attachments:
-        all_attachments.extend(message.reply_message.attachments)
-
-    if all_attachments:
-        for idx, att in enumerate(all_attachments):
-            url, vk_id = None, ""
-            logger.info(f"Checking attachment {idx}: type={att.type}")
+    # 2. Accumulate NEW data from ALL messages in the burst
+    prompt = ""
+    for msg in burst:
+        if msg.text:
+            # We take the text from the message as the prompt
+            prompt = msg.text.strip()
             
+        # Extract attachments
+        all_atts = list(msg.attachments or [])
+        if msg.fwd_messages:
+            for fwd in msg.fwd_messages:
+                if fwd.attachments: all_atts.extend(fwd.attachments)
+        if msg.reply_message and msg.reply_message.attachments:
+            all_atts.extend(msg.reply_message.attachments)
+
+        for att in all_atts:
+            url, vk_id = None, ""
             if att.photo: 
-                 url = att.photo.sizes[-1].url; vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
+                 url = att.photo.sizes[-1].url
+                 vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
                  if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
-                 logger.info(f"  -> Found PHOTO: {vk_id}")
             elif att.doc:
                  ext = (att.doc.ext or "").lower()
-                 logger.info(f"  -> Found DOC: type={att.doc.type}, ext={ext}")
-                 # Type 1 is image, but also check extensions for safety
                  if att.doc.type == 1 or ext in ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp']:
-                     url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
+                     url = att.doc.url
+                     vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                      if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
-                     logger.info(f"  -> Valid IMAGE DOC: {vk_id}")
             
-            if url:
-                if url not in image_urls:
-                    vk_attachment_strs.append(vk_id)
-                    image_urls.append(url)
-                    logger.info(f"  -> Added to list. Total now: {len(image_urls)}")
-                else:
-                    logger.info("  -> Duplicate URL, skipped")
+            if url and url not in image_urls:
+                vk_attachment_strs.append(vk_id)
+                image_urls.append(url)
+                logger.info(f"  -> Added image. Total: {len(image_urls)}")
 
-
-    
-    prompt = (message.text or "").strip()
-    
-    # Check limits
+    # 3. Check Limits
     async with AsyncSessionLocal() as db:
-        user, _ = await services.get_or_create_user(db, message.from_id, platform="vk")
+        user, _ = await services.get_or_create_user(db, user_id, platform="vk")
         limit = get_limit_for_model(user.model_preference)
 
     if len(image_urls) > limit:
-        await safe_vk_send(message.from_id, messages.MSG_ERR_LIMIT.format(limit=limit, count=len(image_urls)))
-        # Optional: truncate or clear
+        await safe_vk_send(user_id, messages.MSG_ERR_LIMIT.format(limit=limit, count=len(image_urls)))
         image_urls = image_urls[:limit]
         vk_attachment_strs = vk_attachment_strs[:limit]
 
-    # If only images sent, wait for prompt
+    # 4. Handle logic (Images only vs Prompt+Images)
     if image_urls and not prompt:
-         await bot.state_dispenser.set(message.from_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
+         await bot.state_dispenser.set(user_id, BotState.WAIT_PROMPT, images=image_urls, vk_atts=vk_attachment_strs, is_refinement=is_refinement)
          count_text = f" ({len(image_urls)} шт.)" if len(image_urls) > 1 else ""
-         # VK allows max 10 attachments per message
          preview_atts = ",".join(vk_attachment_strs[:10]) if vk_attachment_strs else None
-         await safe_vk_send(message.from_id, f"📸 Фото получены{count_text}. Напишите задание 👇", attachment=preview_atts)
+         await safe_vk_send(user_id, f"📸 Фото получены{count_text}. Напишите задание 👇", attachment=preview_atts)
          return
 
 
 
-    if not prompt and not image_urls: return
+    if not prompt and not image_urls:
+        return
     
     # We have both prompt and (optionally) images (either new or from state)
-    await show_confirmation(message.from_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
+    await show_confirmation(user_id, prompt, image_urls, vk_attachment_strs, is_refinement=is_refinement)
+
 
 async def run_vk_generation(vk_p_id: int, prompt: str, image_urls: list, aspect_ratio: str = "1:1", resolution: str = "1K", output_format: str = "png", is_refinement: bool = False):
     async with AsyncSessionLocal() as db:
