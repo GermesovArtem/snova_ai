@@ -27,6 +27,8 @@ VK_TOKEN = os.getenv("VK_API_TOKEN")
 GROUP_ID = os.getenv("VK_GROUP_ID")
 
 bot = Bot(token=VK_TOKEN)
+logger.info("🚀 VK Bot process started. Version: 2.1 (Enhanced Multi-Photo & Polling)")
+
 
 # --- STATES ---
 class BotState(BaseStateGroup):
@@ -411,37 +413,79 @@ async def action_handler(message: Message):
             except Exception as e:
                 logger.error(f"Check sub error: {e}")
                 await safe_vk_send(message.from_id, "Ошибка при проверке подписки. Попробуйте позже.")
-
     elif action == "reset_gen":
         await safe_clear_state(message.from_id)
         await safe_vk_send(message.from_id, messages.MSG_CANCEL_FSM, keyboard=keyboards.build_reply_kb())
 
+# Global locks for atomic state updates
+user_locks = {}
+
+
 @bot.on.message()
 async def generic_handler(message: Message):
+    # Get or create lock for this user
+    user_id = message.from_id
+    if user_id not in user_locks:
+        user_locks[user_id] = asyncio.Lock()
+    
+    async with user_locks[user_id]:
+        await _process_generic_message(message)
+
+async def _process_generic_message(message: Message):
     if not message.text and not message.attachments: return
     if message.get_payload_json(): return
+    
+    logger.info(f"--- Processing message from {message.from_id} ---")
+    logger.info(f"Attachments count: {len(message.attachments or [])}")
     
     # Check current state for existing images/context
     state = await bot.state_dispenser.get(message.from_id)
     image_urls, vk_attachment_strs = [], []
     is_refinement = False
     
-    if state and state.state == BotState.WAIT_PROMPT:
-        image_urls = state.payload.get("images", [])
-        vk_attachment_strs = state.payload.get("vk_atts", [])
+    if state and state.state in [BotState.WAIT_PROMPT, BotState.CONFIRM_GEN]:
+        image_urls = state.payload.get("images", []).copy()
+        vk_attachment_strs = state.payload.get("vk_atts", []).copy()
         is_refinement = state.payload.get("is_refinement", False)
+        logger.info(f"Loaded from state: {len(image_urls)} images")
+
     
-    # Extract attachments from current message
-    if message.attachments:
-        for att in message.attachments:
+    # Extract attachments from current message and forwarded messages
+    all_attachments = list(message.attachments or [])
+    if message.fwd_messages:
+        for fwd in message.fwd_messages:
+            if fwd.attachments:
+                all_attachments.extend(fwd.attachments)
+    if message.reply_message and message.reply_message.attachments:
+        all_attachments.extend(message.reply_message.attachments)
+
+    if all_attachments:
+        for idx, att in enumerate(all_attachments):
             url, vk_id = None, ""
+            logger.info(f"Checking attachment {idx}: type={att.type}")
+            
             if att.photo: 
                  url = att.photo.sizes[-1].url; vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
                  if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
-            elif att.doc and att.doc.type == 1: 
-                 url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
-                 if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
-            if url: vk_attachment_strs.append(vk_id); image_urls.append(url)
+                 logger.info(f"  -> Found PHOTO: {vk_id}")
+            elif att.doc:
+                 ext = (att.doc.ext or "").lower()
+                 logger.info(f"  -> Found DOC: type={att.doc.type}, ext={ext}")
+                 # Type 1 is image, but also check extensions for safety
+                 if att.doc.type == 1 or ext in ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp']:
+                     url = att.doc.url; vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
+                     if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
+                     logger.info(f"  -> Valid IMAGE DOC: {vk_id}")
+            
+            if url:
+                if url not in image_urls:
+                    vk_attachment_strs.append(vk_id)
+                    image_urls.append(url)
+                    logger.info(f"  -> Added to list. Total now: {len(image_urls)}")
+                else:
+                    logger.info("  -> Duplicate URL, skipped")
+
+
     
     prompt = (message.text or "").strip()
     
