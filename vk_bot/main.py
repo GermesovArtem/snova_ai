@@ -504,16 +504,21 @@ async def _process_merged_burst(user_id: int, burst: list[Message]):
     prompt = ""
     for msg in burst:
         if msg.text:
-            # We take the text from the message as the prompt
             prompt = msg.text.strip()
             
-        # Extract attachments
-        all_atts = list(msg.attachments or [])
-        if msg.fwd_messages:
-            for fwd in msg.fwd_messages:
-                if fwd.attachments: all_atts.extend(fwd.attachments)
-        if msg.reply_message and msg.reply_message.attachments:
-            all_atts.extend(msg.reply_message.attachments)
+        # Recursive attachment extraction
+        def get_all_atts(m):
+            atts = list(m.attachments or [])
+            if m.fwd_messages:
+                for fwd in m.fwd_messages:
+                    atts.extend(get_all_atts(fwd))
+            if m.reply_message:
+                atts.extend(get_all_atts(m.reply_message))
+            return atts
+
+        all_atts = get_all_atts(msg)
+        if len(all_atts) > 1:
+            logger.info(f"  -> Found {len(all_atts)} total attachments (including nested)")
 
         for att in all_atts:
             url, vk_id = None, ""
@@ -521,17 +526,19 @@ async def _process_merged_burst(user_id: int, burst: list[Message]):
                  url = att.photo.sizes[-1].url
                  vk_id = f"photo{att.photo.owner_id}_{att.photo.id}"
                  if hasattr(att.photo, "access_key") and att.photo.access_key: vk_id += f"_{att.photo.access_key}"
+                 logger.info(f"    - Found PHOTO in nested: {vk_id}")
             elif att.doc:
                  ext = (att.doc.ext or "").lower()
                  if att.doc.type == 1 or ext in ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp']:
                      url = att.doc.url
                      vk_id = f"doc{att.doc.owner_id}_{att.doc.id}"
                      if hasattr(att.doc, "access_key") and att.doc.access_key: vk_id += f"_{att.doc.access_key}"
+                     logger.info(f"    - Found DOC IMAGE in nested: {vk_id}")
             
             if url and url not in image_urls:
                 vk_attachment_strs.append(vk_id)
                 image_urls.append(url)
-                logger.info(f"  -> Added image. Total: {len(image_urls)}")
+
 
     # 3. Check Limits
     async with AsyncSessionLocal() as db:
