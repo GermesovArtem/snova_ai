@@ -797,9 +797,8 @@ async def notify_user_payment(user_id: int, credits_added: int):
                     logger.info(f"Sent TG payment notification to {user.telegram_id}")
                 except Exception as e:
                     logger.error(f"Error sending TG notification: {e}")
-                    
         elif user.platform == "vk" and user.vk_id:
-            token = os.getenv("VK_API_KEY")
+            token = os.getenv("VK_API_TOKEN")
             if not token: return
             
             # Внутренняя функция для очистки маркдауна для ВК
@@ -808,23 +807,27 @@ async def notify_user_payment(user_id: int, credits_added: int):
                 t = t.replace("***", "").replace("**", "").replace("___", "").replace("__", "")
                 t = t.replace("`", "").replace("~", "")
                 t = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", t)
-                return t.strip()
+                t = t.replace("*", "") 
+                return t
                 
             vk_text = clean_vk_text(text)
+            
             async with httpx.AsyncClient() as client:
                 try:
                     url = "https://api.vk.com/method/messages.send"
-                    params = {
-                        "peer_id": user.vk_id,
+                    import random
+                    payload = {
+                        "peer_id": str(user.vk_id),
                         "message": vk_text,
-                        "random_id": 0,
+                        "random_id": str(random.randint(1, 2**31)),
                         "access_token": token,
                         "v": "5.131"
                     }
-                    await client.get(url, params=params, timeout=10)
+                    await client.post(url, data=payload, timeout=10)
                     logger.info(f"Sent VK payment notification to {user.vk_id}")
                 except Exception as e:
                     logger.error(f"Error sending VK notification: {e}")
+
 
 async def sync_pending_payments(db: AsyncSession):
     """Поллинг YooKassa для зависших платежей (на случай если вебхук не дошел)"""

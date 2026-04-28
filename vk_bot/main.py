@@ -224,6 +224,24 @@ async def set_model_handler(message: Message):
     limit = get_limit_for_model(model)
     await safe_vk_send(message.from_id, messages.MSG_MODEL_SET_NEXT.format(limit=limit), keyboard=keyboards.build_reply_kb())
 
+async def auto_check_payment_vk(vk_p_id: int, payment_id: str, amount: float, price: int):
+    # Poll for 15 minutes max (90 checks * 10 seconds)
+    from yookassa import Payment
+    for _ in range(90):
+        await asyncio.sleep(10)
+        try:
+            payment_info = Payment.find_one(payment_id)
+            if payment_info.status == 'succeeded':
+                async with AsyncSessionLocal() as db:
+                    # Centralized atomic processing (will send VK notification)
+                    await services.process_successful_payment(db, payment_id)
+                    return
+            elif payment_info.status == 'canceled':
+                break
+        except Exception as e:
+            logger.error(f"Error checking Yookassa payment (VK): {e}")
+            break
+
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):
     payload = message.get_payload_json()
@@ -234,10 +252,21 @@ async def buy_handler(message: Message):
         description = f"Пополнение на {amount} ⚡ для S•NOVA AI (VK)"
         try:
             payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
+            
+            from sqlalchemy import select
+            res = await db.execute(select(models.Payment).filter_by(user_id=user.id).order_by(models.Payment.id.desc()))
+            db_payment = res.scalars().first()
+            provider_id = db_payment.provider_payment_id if db_payment else None
+            
             await safe_vk_send(message.from_id, f"Счет на {price} руб. создан. После оплаты баланс пополнится автоматически.", keyboard=keyboards.build_pay_link_kb(payment_url))
+            
+            if provider_id:
+                asyncio.create_task(auto_check_payment_vk(message.from_id, provider_id, float(amount), int(price)))
+                
         except Exception as e:
             logger.error(f"Payment error: {e}")
             await safe_vk_send(message.from_id, "Ошибка при создании счета. Попробуйте позже.")
+
 
 @bot.on.message(payload_map=[("set_setting", str), ("value", str)])
 async def set_setting_handler(message: Message):
