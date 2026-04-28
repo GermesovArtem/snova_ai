@@ -440,8 +440,17 @@ async def generic_handler(message: Message):
     now = time.time()
     dt = now - arrival_times.get(user_id, 0)
     arrival_times[user_id] = now
-    logger.info(f"--- Message from {user_id} arrived. Time since last: {dt:.3f}s ---")
+    logger.info(f"--- Message {message.id} from {user_id} arrived. DT: {dt:.3f}s ---")
     
+    # NEW: Fetch FULL message from API to bypass potential payload truncation
+    try:
+        full_msgs = await bot.api.messages.get_by_id(message_ids=[message.id])
+        if full_msgs and full_msgs.items:
+            message = full_msgs.items[0]
+            logger.info(f"  -> Fetched full message. Atts found: {len(message.attachments or [])}")
+    except Exception as e:
+        logger.warning(f"  -> Failed to fetch full message: {e}")
+
     # RAW LOGGING for deep debugging (Safer way)
     try:
         atts_summary = []
@@ -449,11 +458,10 @@ async def generic_handler(message: Message):
             for a in message.attachments:
                 atts_summary.append({"type": a.type, "id": getattr(a, "id", "no-id")})
         
-        logger.info(f"DEBUG: Msg ID {message.id} | Atts found: {len(message.attachments or [])} | Types: {atts_summary}")
-        if message.fwd_messages:
-            logger.info(f"DEBUG: Found {len(message.fwd_messages)} forwarded messages")
+        logger.info(f"DEBUG: Msg ID {message.id} | Final Atts: {len(message.attachments or [])} | Types: {atts_summary}")
     except Exception as raw_e:
         logger.error(f"Debug logging error: {raw_e}")
+
 
     
     # Atomic-like initialization of the burst list
