@@ -419,10 +419,12 @@ async def action_handler(message: Message):
         await safe_clear_state(message.from_id)
         await safe_vk_send(message.from_id, messages.MSG_CANCEL_FSM, keyboard=keyboards.build_reply_kb())
 
-# Global locks for atomic state updates
-user_locks = {}
 # Burst accumulator for VK messages (since VK has no media groups)
 pending_bursts = {}
+user_locks = {}
+
+import time
+arrival_times = {}
 
 @bot.on.message()
 async def generic_handler(message: Message):
@@ -431,30 +433,36 @@ async def generic_handler(message: Message):
     if message.get_payload_json(): return
     
     user_id = message.from_id
+    now = time.time()
+    dt = now - arrival_times.get(user_id, 0)
+    arrival_times[user_id] = now
+    logger.info(f"Message from {user_id} arrived. Time since last: {dt:.3f}s")
     
-    # Initialize burst for user
+    # Atomic-like initialization of the burst list
     if user_id not in pending_bursts:
         pending_bursts[user_id] = []
     
     # Add current message to burst
     pending_bursts[user_id].append(message)
     
-    # Wait for more messages in the burst
-    await asyncio.sleep(0.8)
+    # Wait for more messages in the burst (2.0s for heavy 4K photos)
+    await asyncio.sleep(2.0)
     
-    # Only the LAST message in the burst will proceed to processing
+    # Check if this is still the last message. 
     if message != pending_bursts[user_id][-1]:
         return
+
     
-    # Process all collected messages
+    # We are the last message! Take all accumulated messages and clear the list
     messages_to_process = pending_bursts[user_id]
     pending_bursts[user_id] = []
     
-    # Get or create lock for this user
+    # Atomic-like initialization of the lock
     if user_id not in user_locks:
         user_locks[user_id] = asyncio.Lock()
     
-    async with user_locks[user_id]:
+    lock = user_locks[user_id]
+    async with lock:
         await _process_merged_burst(user_id, messages_to_process)
 
 async def _process_merged_burst(user_id: int, burst: list[Message]):
