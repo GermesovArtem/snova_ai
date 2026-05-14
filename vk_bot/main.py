@@ -18,6 +18,10 @@ from vk_bot import keyboards
 
 load_dotenv()
 
+from yookassa import Configuration
+Configuration.account_id = os.getenv("YOOKASSA_SHOP_ID")
+Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
+
 # Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

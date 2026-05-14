@@ -370,13 +370,14 @@ async def process_buy_packet(callback_query: CallbackQuery):
     
     async with AsyncSessionLocal() as db:
         try:
+            user, _ = await services.get_or_create_user(db, callback_query.from_user.id)
             description = f"Пополнение на {amount} ⚡ для S•NOVA AI"
-            payment_url = await services.create_yookassa_payment(db, callback_query.from_user.id, float(price), description)
+            payment_url = await services.create_yookassa_payment(db, user.id, float(price), description)
             
             # Since create_yookassa_payment already saved to DB, we just need to get the provider ID if we want auto_check
             # But with Webhook, auto_check is less critical. We'll still keep a manual check button.
             from sqlalchemy import select
-            res = await db.execute(select(models.Payment).filter_by(user_id=callback_query.from_user.id).order_by(models.Payment.id.desc()))
+            res = await db.execute(select(models.Payment).filter_by(user_id=user.id).order_by(models.Payment.id.desc()))
             db_payment = res.scalars().first()
             provider_id = db_payment.provider_payment_id if db_payment else None
             
@@ -412,7 +413,7 @@ async def process_check_payment(callback_query: CallbackQuery):
         payment_info = Payment.find_one(payment_id)
         if payment_info.status == 'succeeded':
             async with AsyncSessionLocal() as db:
-                await services.update_user_balance(db, callback_query.from_user.id, amount)
+                await services.process_successful_payment(db, payment_id)
             await callback_query.message.edit_text(f"✅ Оплата **{price} руб.** прошла успешно! Начислено **{amount} ⚡**", parse_mode="Markdown")
             await callback_query.answer("Оплата подтверждена!", show_alert=True)
         elif payment_info.status == 'canceled':

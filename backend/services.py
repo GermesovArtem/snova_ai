@@ -512,14 +512,14 @@ async def get_admin_stats(db) -> dict:
         new_vk_today = (await db.execute(select(func.count(models.User.id)).filter(models.User.platform=="vk", models.User.created_at >= today_start))).scalar() or 0
         
         # Gen stats split (via join)
-        tg_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User).filter(models.User.platform=="telegram"))).scalar() or 0
-        vk_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User).filter(models.User.platform=="vk"))).scalar() or 0
+        tg_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User, models.GenerationTask.user_id == models.User.id).filter(models.User.platform=="telegram"))).scalar() or 0
+        vk_gens = (await db.execute(select(func.count(models.GenerationTask.id)).join(models.User, models.GenerationTask.user_id == models.User.id).filter(models.User.platform=="vk"))).scalar() or 0
         
         total_revenue = (await db.execute(select(func.sum(models.Payment.amount_rub)).filter(models.Payment.status == "succeeded"))).scalar() or 0.0
         
         # Revenue by platform
-        tg_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User).filter(models.Payment.status == "succeeded", models.User.platform=="telegram"))).scalar() or 0.0
-        vk_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User).filter(models.Payment.status == "succeeded", models.User.platform=="vk"))).scalar() or 0.0
+        tg_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User, models.Payment.user_id == models.User.id).filter(models.Payment.status == "succeeded", models.User.platform=="telegram"))).scalar() or 0.0
+        vk_rev = (await db.execute(select(func.sum(models.Payment.amount_rub)).join(models.User, models.Payment.user_id == models.User.id).filter(models.Payment.status == "succeeded", models.User.platform=="vk"))).scalar() or 0.0
 
         return {
             "total_users": int(total_users),
@@ -558,7 +558,14 @@ async def search_user(db, query: str) -> models.User:
         return res.scalars().first()
 
 async def update_user_balance(db, user_id: int, amount: float) -> models.User:
-    res = await db.execute(select(models.User).filter_by(id=user_id))
+    from sqlalchemy import or_
+    res = await db.execute(select(models.User).filter(
+        or_(
+            models.User.id == user_id,
+            models.User.telegram_id == user_id,
+            models.User.vk_id == user_id
+        )
+    ))
     user = res.scalars().first()
     if user:
         user.balance += amount
@@ -718,8 +725,15 @@ async def process_successful_payment(db: AsyncSession, provider_payment_id: str)
         return False
         
     # ДОПОЛНИТЕЛЬНАЯ ЗАЩИТА: Блокируем также и пользователя
+    from sqlalchemy import or_
     user_res = await db.execute(
-        select(models.User).filter_by(id=db_payment.user_id).with_for_update()
+        select(models.User).filter(
+            or_(
+                models.User.id == db_payment.user_id,
+                models.User.telegram_id == db_payment.user_id,
+                models.User.vk_id == db_payment.user_id
+            )
+        ).with_for_update()
     )
     user = user_res.scalars().first()
     if not user:
@@ -749,11 +763,7 @@ async def process_successful_payment(db: AsyncSession, provider_payment_id: str)
         credits_to_add = int(amount_rub * best_ratio)
         
     # 4. Начисляем пользователю
-    await db.execute(
-        update(models.User)
-        .where(models.User.id == db_payment.user_id)
-        .values(balance=models.User.balance + credits_to_add)
-    )
+    user.balance += credits_to_add
     
     await db.commit()
     
@@ -761,11 +771,11 @@ async def process_successful_payment(db: AsyncSession, provider_payment_id: str)
     try:
         from . import services
         import asyncio
-        asyncio.create_task(services.notify_user_payment(db_payment.user_id, credits_to_add))
+        asyncio.create_task(services.notify_user_payment(user.id, credits_to_add))
     except Exception as e:
         logger.error(f"Failed to start notification task: {e}")
 
-    logger.info(f"Successfully processed payment {provider_payment_id}. Added {credits_to_add} to user {db_payment.user_id}")
+    logger.info(f"Successfully processed payment {provider_payment_id}. Added {credits_to_add} to user {user.id}")
     return True
 
 async def notify_user_payment(user_id: int, credits_added: int):
