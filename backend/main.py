@@ -103,8 +103,11 @@ async def startup():
                 logger.info(f"Migration: Reset id sequence to {max_id}")
             except Exception as e:
                 logger.warning(f"Migration: Sequence setup skipped/failed (likely SQLite or already set): {e}")
+        except Exception as e:
+            logger.error(f"Migration error in TG ID separation: {e}")
 
     # Запускаем фоновую задачу проверки платежей
+    import asyncio
     asyncio.create_task(payment_sync_loop())
 
     # Ensure starting models are normalized
