@@ -846,7 +846,7 @@ async def sync_pending_payments(db: AsyncSession):
     import aiohttp
     
     # Ищем платежи в статусе pending за последние 24 часа
-    yesterday = datetime.now() - timedelta(hours=24)
+    yesterday = datetime.utcnow() - timedelta(hours=24)
     res = await db.execute(
         select(models.Payment)
         .filter(models.Payment.status == "pending", models.Payment.created_at > yesterday)

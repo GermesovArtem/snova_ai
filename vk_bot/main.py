@@ -235,21 +235,36 @@ async def set_model_handler(message: Message):
 
 async def auto_check_payment_vk(vk_p_id: int, payment_id: str, amount: float, price: int):
     # Poll for 15 minutes max (90 checks * 10 seconds)
-    from yookassa import Payment
+    import aiohttp
+    import os
+    shop_id = os.getenv("YOOKASSA_SHOP_ID")
+    secret_key = os.getenv("YOOKASSA_SECRET_KEY")
+    if not shop_id or not secret_key:
+        logger.error("YooKassa credentials missing for auto_check_payment_vk")
+        return
+        
+    auth = aiohttp.BasicAuth(shop_id, secret_key)
+    
     for _ in range(90):
         await asyncio.sleep(10)
         try:
-            payment_info = Payment.find_one(payment_id)
-            if payment_info.status == 'succeeded':
-                async with AsyncSessionLocal() as db:
-                    # Centralized atomic processing (will send VK notification)
-                    await services.process_successful_payment(db, payment_id)
-                    return
-            elif payment_info.status == 'canceled':
-                break
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://api.yookassa.ru/v3/payments/{payment_id}", auth=auth) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        status = data.get("status")
+                        if status == 'succeeded':
+                            async with AsyncSessionLocal() as db:
+                                await services.process_successful_payment(db, payment_id)
+                                return
+                        elif status == 'canceled':
+                            break
+                    else:
+                        logger.error(f"VK Payment check API returned {resp.status}")
         except Exception as e:
             logger.error(f"Error checking Yookassa payment (VK): {e}")
-            break
+            # Continue polling instead of breaking on temporary network errors
+            continue
 
 @bot.on.message(payload_map=[("buy", str)])
 async def buy_handler(message: Message):

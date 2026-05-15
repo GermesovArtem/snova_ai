@@ -62,19 +62,32 @@ async def get_stats(db: AsyncSession = Depends(get_db), admin: str = Depends(ver
 
 @router.get("/users")
 async def list_users(db: AsyncSession = Depends(get_db), admin: str = Depends(verify_admin_token)):
-    res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(100))
-    users = res.scalars().all()
-    # Simple conversion to avoid serialization issues
-    safe_users = []
-    for u in users:
-        safe_users.append({
-            "id": u.id,
-            "name": u.name,
-            "platform": u.platform,
-            "balance": u.balance,
-            "created_at": u.created_at.isoformat() if u.created_at else None
-        })
-    return {"success": True, "data": safe_users}
+    try:
+        res = await db.execute(select(models.User).order_by(models.User.created_at.desc()).limit(100))
+        users = res.scalars().all()
+        # Simple conversion to avoid serialization issues
+        safe_users = []
+        for u in users:
+            # Handle created_at safely
+            created_at_str = None
+            if u.created_at:
+                if hasattr(u.created_at, 'isoformat'):
+                    created_at_str = u.created_at.isoformat()
+                else:
+                    created_at_str = str(u.created_at)
+                    
+            safe_users.append({
+                "id": u.id,
+                "name": u.name,
+                "platform": u.platform,
+                "balance": u.balance,
+                "created_at": created_at_str
+            })
+        return {"success": True, "data": safe_users}
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error in list_users: {e}", exc_info=True)
+        return {"success": False, "data": []}
 
 class BalanceUpdate(BaseModel):
     amount: float
